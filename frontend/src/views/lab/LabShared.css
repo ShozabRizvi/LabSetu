@@ -1,0 +1,355 @@
+.lab-view-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.lab-header-row {
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+}
+
+.lab-view-container h2 {
+  font-size: 1.5rem;
+  margin: 0;
+  color: #111827;
+}
+
+.lab-help-banner {
+  background-color: #f8fafc;
+  padding: 0.75rem 1.25rem;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  font-size: 0.85rem;
+  color: #4b5563;
+  margin-bottom: 0.5rem;
+}
+
+.lab-recent-link {
+  color: #f59e0b;
+  font-size: 0.85rem;
+  text-decoration: none;
+  font-weight: 500;
+}
+
+/* Controls & Forms */
+.lab-controls-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.lab-form-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.lab-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.lab-field label {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: #374151;
+}
+
+.lab-search-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.lab-search-icon {
+  position: absolute;
+  left: 0.5rem;
+  width: 16px;
+  height: 16px;
+  color: #9ca3af;
+}
+
+.lab-search-input-wrapper .lab-input {
+  padding-left: 2rem;
+}
+
+.lab-input, .lab-select {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  background-color: #ffffff;
+}
+
+.lab-date-pager {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.lab-pager-btn {
+  background-color: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.lab-date-input {
+  width: 120px;
+  text-align: center;
+}
+
+.lab-goto-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.lab-goto-wrapper label {
+  font-size: 0.85rem;
+  color: #4b5563;
+}
+
+.lab-sort-wrapper {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.lab-sort-wrapper label {
+  font-size: 0.85rem;
+  color: #4b5563;
+  font-weight: 500;
+}
+
+.lab-select-minimal {
+  border: none;
+  background: transparent;
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+/* Tabs */
+.lab-tabs-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.lab-tabs {
+  display: flex;
+  gap: 1rem;
+}
+
+.lab-tab {
+  background: none;
+  border: none;
+  padding: 0.75rem 1rem;
+  font-weight: 500;
+  cursor: pointer;
+  color: #4b5563;
+  border-bottom: 2px solid transparent;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.lab-tab.active {
+  color: #2563eb;
+  border-bottom: 2px solid #2563eb;
+}
+
+.lab-badge {
+  background-color: #f3f4f6;
+  padding: 0.1rem 0.5rem;
+  border-radius: 12px;
+  font-size: 0.75rem;
+}
+
+.lab-tab.active .lab-badge {
+  background-color: #dbeafe;
+  color: #2563eb;
+}
+
+.lab-print-status {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: #6b7280;
+  font-size: 0.85rem;
+}
+
+/* Buttons */
+.lab-actions-inline {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.lab-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: 1px solid transparent;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  font-weight: 500;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.lab-btn-icon {
+  width: 16px;
+  height: 16px;
+}
+
+.lab-small-icon {
+  width: 14px;
+  height: 14px;
+}
+
+.lab-btn-outline {
+  background-color: #ffffff;
+  border-color: #d1d5db;
+  color: #2563eb;
+}
+
+.lab-btn-blue {
+  background-color: #2563eb;
+  color: #ffffff;
+}
+
+.lab-btn-white {
+  background-color: #ffffff;
+  border-color: #d1d5db;
+  color: #374151;
+}
+
+.lab-link-btn {
+  background: none;
+  border: none;
+  color: #2563eb;
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+/* Specific elements like Duration group */
+.lab-duration-group {
+  display: flex;
+  gap: 0;
+}
+.lab-select-duration {
+  border-right: none;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  background-color: #f9fafb;
+}
+.lab-input-date {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  width: 200px;
+}
+
+/* Table */
+.lab-data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+  background-color: #ffffff;
+  border: 1px solid #e5e7eb;
+}
+
+.lab-data-table th {
+  text-align: left;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid #e5e7eb;
+  background-color: #f9fafb;
+  color: #6b7280;
+  font-weight: 500;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+}
+
+.lab-data-table td {
+  padding: 1rem;
+  border-bottom: 1px solid #e5e7eb;
+  color: #111827;
+}
+
+/* Status Badges */
+.lab-status-badge {
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.status-new {
+  background-color: #dbeafe;
+  color: #1e40af;
+}
+
+.status-progress {
+  background-color: #fef3c7;
+  color: #92400e;
+}
+
+.status-final {
+  background-color: #d1fae5;
+  color: #065f46;
+}
+
+.status-signed {
+  background-color: #e5e7eb;
+  color: #374151;
+}
+
+/* Interactive Hover Rule */
+.lab-hover-interactive {
+  transition: all 0.2s;
+}
+.lab-hover-interactive:hover {
+  background-color: #dcfce7 !important;
+  color: #15803d !important;
+}
+.lab-hover-interactive:hover td {
+  color: #15803d !important;
+}
+
+/* View all pill */
+.lab-view-all-pill {
+  background-color: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  padding: 0.25rem 0.75rem;
+  font-size: 0.75rem;
+  color: #4b5563;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.lab-view-all-pill:hover, .lab-hover-interactive:hover .lab-view-all-pill {
+  background-color: #dcfce7;
+  color: #15803d;
+  border-color: #15803d;
+}
+

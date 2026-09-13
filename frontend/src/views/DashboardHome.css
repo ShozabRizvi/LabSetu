@@ -1,0 +1,297 @@
+.dashboard-home-container {
+  padding: 0;
+  position: relative;
+  min-height: 100%;
+}
+
+.dashboard-home-grid {
+  display: flex;
+  gap: 1.5rem;
+}
+
+.dashboard-home-left {
+  flex: 3; /* Approx 75% */
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.dashboard-home-right {
+  flex: 1; /* Approx 25% */
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+/* Typography & Colors */
+.dashboard-home-card-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #000000;
+}
+
+.dashboard-home-card-subtitle {
+  margin: 0.25rem 0 0 0;
+  font-size: 0.85rem;
+  color: #6b7280;
+}
+
+/* Cards Base */
+.dashboard-home-card {
+  background-color: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 1.25rem;
+}
+
+/* Quick Access Cards */
+.dashboard-home-quick-access {
+  display: flex;
+  gap: 1rem;
+}
+
+.dashboard-home-qa-card {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem;
+  background-color: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.dashboard-home-qa-card:hover {
+  background-color: #dcfce7;
+  color: #15803d;
+  border-color: #15803d;
+}
+
+.dashboard-home-qa-icon-wrapper {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.green-bg { background-color: #dcfce7; }
+.green-text { color: #15803d; }
+.blue-bg { background-color: #dbeafe; }
+.blue-text { color: #2563eb; }
+.purple-bg { background-color: #f3e8ff; }
+.purple-text { color: #9333ea; }
+
+.dashboard-home-qa-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.dashboard-home-qa-text {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: inherit;
+}
+
+/* Status Rows */
+.dashboard-home-status-row {
+  display: flex;
+  gap: 1.5rem;
+}
+
+.dashboard-home-status-card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 250px;
+}
+
+.dashboard-home-empty-card {
+  flex: 1;
+}
+
+.dashboard-home-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  border-bottom: 1px solid #f3f4f6;
+  padding-bottom: 1rem;
+  margin-bottom: 1rem;
+}
+
+.dashboard-home-view-all {
+  text-decoration: none;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #2563eb;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.dashboard-home-view-all:hover {
+  background-color: #dcfce7;
+  color: #15803d;
+}
+
+.dashboard-home-card-body.centered {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+}
+
+.dashboard-home-status-icon-box {
+  width: 48px;
+  height: 48px;
+  background-color: #f3f4f6;
+  border-radius: 8px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.dashboard-home-status-icon {
+  width: 24px;
+  height: 24px;
+  color: #6b7280;
+}
+
+.dashboard-home-status-text {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: #000000;
+}
+
+.dashboard-home-status-subtext {
+  margin: 0.5rem 0 0 0;
+  font-size: 0.85rem;
+  color: #6b7280;
+}
+
+/* SMS Card */
+.dashboard-home-sms-card {
+  display: flex;
+  align-items: center;
+  padding: 1rem 1.25rem;
+  background-color: #eff6ff;
+  border: none;
+}
+
+.dashboard-home-sms-text {
+  font-weight: 500;
+  font-size: 0.95rem;
+  color: #1e3a8a;
+  margin-right: 0.75rem;
+}
+
+.dashboard-home-sms-badge {
+  background-color: #dbeafe;
+  color: #1e3a8a;
+  padding: 0.2rem 0.5rem;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  margin-right: auto;
+}
+
+.dashboard-home-sms-icon {
+  width: 16px;
+  height: 16px;
+  color: #1e3a8a;
+}
+
+/* Legal Links */
+.dashboard-home-legal-links {
+  display: flex;
+  justify-content: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 0 1rem;
+}
+
+.dashboard-home-legal-links a {
+  text-decoration: none;
+  font-size: 0.85rem;
+  color: #2563eb;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.dashboard-home-legal-links a:hover {
+  background-color: #dcfce7;
+  color: #15803d;
+}
+
+/* Support Pill */
+.dashboard-home-support-pill {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  background-color: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 24px;
+  padding: 0.5rem 1.25rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  cursor: pointer;
+  transition: all 0.2s;
+  z-index: 50;
+}
+
+.dashboard-home-support-pill:hover {
+  background-color: #dcfce7;
+  color: #15803d;
+  border-color: #15803d;
+}
+
+.dashboard-home-support-icon {
+  width: 24px;
+  height: 24px;
+  color: #2563eb;
+  transition: all 0.2s;
+}
+
+.dashboard-home-support-text-block {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.dashboard-home-support-title {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: #000000;
+  transition: all 0.2s;
+}
+
+.dashboard-home-support-pill:hover .dashboard-home-support-title,
+.dashboard-home-support-pill:hover .dashboard-home-support-icon {
+  color: #15803d;
+}
+
+.dashboard-home-support-status {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.75rem;
+  color: #6b7280;
+}
+
+.dashboard-home-support-dot {
+  width: 6px;
+  height: 6px;
+  background-color: #9ca3af;
+  border-radius: 50%;
+}

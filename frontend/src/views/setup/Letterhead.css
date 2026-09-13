@@ -1,0 +1,95 @@
+.letterhead-grid {
+  display: grid;
+  grid-template-columns: 1fr 2fr 1fr;
+  gap: 2rem;
+}
+
+.letterhead-info-box {
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+  display: flex;
+  gap: 0.75rem;
+  font-size: 0.85rem;
+  color: #4b5563;
+  line-height: 1.5;
+}
+
+.letterhead-mockup-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  max-width: 400px;
+}
+
+.letterhead-success-banner {
+  background-color: #f0fdf4;
+  color: #166534;
+  border: 1px solid #bbf7d0;
+  border-radius: 4px;
+  padding: 0.4rem 1rem;
+  font-size: 0.8rem;
+  margin-bottom: 1rem;
+  width: 100%;
+  text-align: center;
+}
+
+.letterhead-paper {
+  background-color: white;
+  width: 100%;
+  aspect-ratio: 1 / 1.414; /* A4 aspect ratio */
+  border: 1px solid #d1d5db;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.letterhead-header {
+  background-color: #1e3a8a;
+  color: white;
+  padding: 1rem;
+  height: 15%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.letterhead-footer {
+  background-color: #1e3a8a;
+  color: white;
+  height: 5%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.letterhead-content {
+  flex: 1;
+}
+
+.letterhead-margin-line {
+  position: absolute;
+  left: -20px;
+  right: 0;
+  border-top: 1px dashed #ef4444;
+}
+
+.letterhead-margin-line.top-margin {
+  top: 20%;
+}
+
+.letterhead-margin-line.bottom-margin {
+  bottom: 15%;
+}
+
+.margin-label {
+  position: absolute;
+  left: -60px;
+  top: -8px;
+  font-size: 0.7rem;
+  color: #ef4444;
+  font-weight: 600;
+}

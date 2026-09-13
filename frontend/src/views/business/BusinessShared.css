@@ -1,0 +1,50 @@
+.business-page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.business-page h2 {
+  font-size: 1.5rem;
+  margin-top: 0;
+  margin-bottom: 1.5rem;
+  color: #000000;
+}
+
+.b-date-picker input {
+  padding: 0.5rem;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  color: #4b5563;
+}
+
+.b-empty-state {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  flex: 1;
+}
+
+.b-empty-icon-box {
+  background-color: #f3f4f6;
+  width: 48px;
+  height: 48px;
+  border-radius: 8px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.b-empty-icon {
+  width: 24px;
+  height: 24px;
+  color: #6b7280;
+}
+
+.b-empty-state p {
+  font-weight: 500;
+  color: #000000;
+  margin: 0;
+}

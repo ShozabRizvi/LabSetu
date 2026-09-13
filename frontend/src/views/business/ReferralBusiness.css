@@ -1,0 +1,96 @@
+.referral-business-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.rb-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.rb-header h2 {
+  margin: 0;
+  font-size: 1.5rem;
+}
+
+.rb-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.rb-btn {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #d1d5db;
+  background-color: #ffffff;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  color: #4b5563;
+}
+
+.rb-btn-blue {
+  background-color: #2563eb;
+  color: #ffffff;
+  border: 1px solid #2563eb;
+}
+
+.rb-filters {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 0;
+}
+
+.rb-filter-group {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.rb-icon {
+  width: 16px;
+  height: 16px;
+}
+
+.rb-filter-label {
+  font-weight: 500;
+  font-size: 0.9rem;
+}
+
+.rb-tag {
+  font-size: 0.9rem;
+  color: #4b5563;
+  cursor: pointer;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+}
+
+.rb-tag.active {
+  background-color: #2563eb;
+  color: #ffffff;
+}
+
+.rb-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.rb-table th {
+  text-align: left;
+  padding: 0.75rem;
+  border-bottom: 1px solid #e5e7eb;
+  border-top: 1px solid #e5e7eb;
+  color: #6b7280;
+  font-weight: 500;
+}
+
+.rb-table td {
+  padding: 1rem 0.75rem;
+}
+
+.rb-empty {
+  height: 200px;
+}

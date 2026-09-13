@@ -1,0 +1,107 @@
+.registration-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  background-color: #ffffff;
+  color: #000000;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  margin: 0;
+  padding: 1rem;
+}
+
+.registration-card {
+  width: 100%;
+  max-width: 440px;
+  padding: 3rem 2.5rem;
+  background-color: #ffffff;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  border-radius: 12px;
+  border: 1px solid #f3f4f6;
+  text-align: center;
+}
+
+.registration-header {
+  margin-bottom: 2rem;
+}
+
+.registration-logo {
+  max-width: 80px;
+  margin-bottom: 1.25rem;
+}
+
+.registration-title {
+  margin: 0 0 0.5rem 0;
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: #000000;
+}
+
+.registration-subtitle {
+  margin: 0;
+  font-size: 0.95rem;
+  color: #6b7280;
+}
+
+.registration-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.registration-input-group {
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+}
+
+.registration-input-group label {
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+  font-size: 0.875rem;
+  color: #374151;
+}
+
+.registration-input-group input {
+  padding: 0.75rem 1rem;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 1rem;
+  background-color: #ffffff;
+  transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+}
+
+.registration-input-group input:focus {
+  outline: none;
+  border-color: #15803d;
+  box-shadow: 0 0 0 3px rgba(21, 128, 61, 0.1);
+}
+
+.registration-button {
+  margin-top: 0.5rem;
+  padding: 0.875rem;
+  background-color: #ffffff;
+  color: #000000;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease-in-out;
+}
+
+.registration-button:hover {
+  background-color: #dcfce7;
+  color: #15803d;
+  border-color: #15803d;
+}
+
+.registration-error {
+  color: #ef4444;
+  font-size: 0.875rem;
+  margin: 0;
+  padding: 0.5rem;
+  background-color: #fef2f2;
+  border-radius: 6px;
+  border: 1px solid #fecaca;
+}

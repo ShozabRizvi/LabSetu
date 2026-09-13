@@ -1,0 +1,49 @@
+.cases-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.cases-container h2 {
+  font-size: 1.5rem;
+  margin: 0;
+  color: #111827;
+}
+
+.cases-date-picker {
+  display: flex;
+}
+
+.cases-date-input {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  color: #4b5563;
+  width: 250px;
+}
+
+.cases-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+  background-color: #ffffff;
+  border: 1px solid #e5e7eb;
+}
+
+.cases-table th {
+  text-align: left;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid #e5e7eb;
+  background-color: #f9fafb;
+  color: #6b7280;
+  font-weight: 500;
+}
+
+.cases-table td {
+  padding: 1rem;
+}
+
+.cases-empty-cell {
+  height: 200px;
+}
