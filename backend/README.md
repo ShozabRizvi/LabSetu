@@ -1,4 +1,4 @@
-# Reduced Backend APIs
+# Backend APIs
 
 This Express service implements only the assigned business due reports, imaging and outsource routing, and lab analytics APIs. It uses parameterized PostgreSQL queries. Production access is disabled until the authority JWT and laboratory scope contract is verified. It does not implement billing creation, authentication issuance, image processing, or frontend changes.
 
