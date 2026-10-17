@@ -1,5 +1,5 @@
 import React from 'react';
-import { NavLink, Outlet, useLocation } from 'react-router-dom';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import './SetupLayout.css';
 import { 
   BuildingOffice2Icon, 
@@ -15,6 +15,7 @@ import {
 
 export default function SetupLayout() {
   const location = useLocation();
+  const navigate = useNavigate();
 
   const links = [
     { to: 'kyc', label: 'KYC', icon: <IdentificationIcon className="setup-icon" /> },
@@ -27,6 +28,23 @@ export default function SetupLayout() {
     { to: 'panels', label: 'Panels', icon: <BeakerIcon className="setup-icon" /> },
     { to: 'proofread', label: 'Proofread', icon: <CheckBadgeIcon className="setup-icon" /> },
   ];
+
+  const currentPathEnd = location.pathname.split('/').pop();
+  const currentIndex = links.findIndex(l => l.to === currentPathEnd);
+
+  const handlePrev = () => {
+    if (currentIndex > 0) {
+      navigate(`/app/setup/${links[currentIndex - 1].to}`);
+    }
+  };
+
+  const handleNext = () => {
+    if (currentIndex >= 0 && currentIndex < links.length - 1) {
+      navigate(`/app/setup/${links[currentIndex + 1].to}`);
+    } else {
+      navigate('/app/dashboard');
+    }
+  };
 
   return (
     <div className="setup-layout-container">
@@ -49,10 +67,29 @@ export default function SetupLayout() {
         </nav>
         
         <div className="setup-sidebar-footer">
-          <button className="setup-skip-btn">Skip setup »</button>
+          <button 
+            type="button" 
+            className="setup-skip-btn"
+            onClick={() => navigate('/app/dashboard')}
+          >
+            Skip setup »
+          </button>
           <div className="setup-footer-controls">
-            <button className="setup-control-btn">‹ Prev</button>
-            <button className="setup-control-btn primary">Next ›</button>
+            <button 
+              type="button" 
+              className="setup-control-btn"
+              onClick={handlePrev}
+              disabled={currentIndex <= 0}
+            >
+              ‹ Prev
+            </button>
+            <button 
+              type="button" 
+              className="setup-control-btn primary"
+              onClick={handleNext}
+            >
+              {currentIndex === links.length - 1 ? 'Finish ›' : 'Next ›'}
+            </button>
           </div>
         </div>
       </aside>
