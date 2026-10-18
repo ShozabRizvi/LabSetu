@@ -186,7 +186,9 @@ export default function ReferralBusiness() {
     setTimeout(() => setActionNotice(''), 2800);
   };
 
-  const currentRecords = referralList || INITIAL_REFERRALS;
+  const currentRecords = Array.isArray(referralList)
+    ? referralList
+    : (Array.isArray(referralList?.data) ? referralList.data : INITIAL_REFERRALS);
 
   // Compute metrics for active filter
   const totalFilteredCases = currentRecords.reduce((acc, doc) => {

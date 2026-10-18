@@ -82,7 +82,8 @@ export default function AppointmentWizard() {
   const [reference, setReference] = useState('');
   const [notice, setNotice] = useState('');
   const selectedDepartment = departments.find((item) => item.id === department);
-  const availableSlots = useMemo(() => appointmentSlots.filter((item) => !appointments.some((a) => a.date === date && a.slot === item.id && a.department === department)), [appointments, date, department]);
+  const safeAppts = Array.isArray(appointments) ? appointments : [];
+  const availableSlots = useMemo(() => appointmentSlots.filter((item) => !safeAppts.some((a) => a.date === date && a.slot === item.id && a.department === department)), [safeAppts, date, department]);
 
   const savePatientDetails = (event) => {
     event.preventDefault();

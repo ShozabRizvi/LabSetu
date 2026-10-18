@@ -34,11 +34,12 @@ export default function CitizenDashboard({ lang: propLang }) {
   const [selectedReport, setSelectedReport] = useState(null);
 
   const readyReports = demoCitizenReports.filter(r => r.status === 'Ready');
-  const upcomingAppts = appointments.filter(a => a.status === 'Confirmed');
+  const safeAppts = Array.isArray(appointments) ? appointments : [];
+  const upcomingAppts = safeAppts.filter(a => a.status === 'Confirmed');
 
   const cancelAppointment = (id) => {
     if (window.confirm('Are you sure you want to cancel this appointment?')) {
-      setAppointments(appointments.map(a => a.id === id ? { ...a, status: 'Cancelled' } : a));
+      setAppointments((Array.isArray(appointments) ? appointments : []).map(a => a.id === id ? { ...a, status: 'Cancelled' } : a));
     }
   };
 
