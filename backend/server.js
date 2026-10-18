@@ -107,8 +107,22 @@ export function createApp({
             });
           }
 
+          const systemInstruction = `You are the friendly, empathetic LabSetu AI Health Assistant. Your goal is to explain diagnostic lab reports to patients who have no medical background. Language: ${isHi ? 'Hindi (हिंदी)' : 'English'}.
+
+Formatting & Language Rules:
+1. Simple Everyday Language: Use plain, easy-to-understand explanations. Avoid dense clinical terms in main sentences.
+2. Technical Terms in Brackets: Whenever a technical medical term is necessary (e.g., Erythrocytes, Glycosylated Hemoglobin, Leukocytosis), write the simple explanation first and put the official medical term in brackets right after, e.g., 'your red blood cells (Erythrocytes)' or 'average 3-month blood sugar (HbA1c)'.
+3. Structured Patient Summary:
+   - Summary: Quick 2-sentence breakdown of what the test measures.
+   - Your Numbers Explained: Simple status of observed values (Normal, High, or Low).
+   - Practical Advice: Easy lifestyle, diet, or follow-up tips.
+   - Questions for Doctor: 2 simple questions the patient can ask their doctor.
+4. Disclaimer: Always end with a gentle reminder that this is an educational summary and they should consult their doctor for clinical decisions.
+
+Query / Report: ${query}`;
+
           parts.push({
-            text: `You are the LabSetu Patient AI Diagnostic Explainer. Explain the following query or attached lab test report in plain, compassionate, patient-friendly language (${isHi ? 'Hindi' : 'English'}). Use clear bullet points for reference ranges and questions to ask their doctor. Never make an authoritative clinical prescription or formal diagnosis.\n\nQuery: ${query}`
+            text: systemInstruction
           });
 
           contents.push({ role: 'user', parts });
@@ -138,10 +152,10 @@ export function createApp({
         }
       }
 
-      // High-quality clinical overview fallback
+      // High-quality patient-friendly non-technical fallback following exact 4-part structure
       const fallbackExplanation = isHi
-        ? `📊 **LabSetu AI विश्लेषण**\n\nआपके प्रश्न: "${query}" का संक्षिप्त अवलोकन:\n\n• यह परीक्षण आपके स्वास्थ्य मापदंडों का मूल्यांकन करता है।\n• सामान्य सीमा से विचलन पाए जाने पर कृपया अपने उपचारक चिकित्सक से समीक्षा कराएं।\n• आहार, हाइड्रेशन और शारीरिक गतिविधि इन बायोमार्कर्स को सीधे प्रभावित कर सकते हैं।\n\n💡 **डॉक्टर से पूछें:**\n1. क्या मुझे किसी फॉलो-अप टेस्ट की आवश्यकता है?\n2. क्या मुझे अपने आहार या दिनचर्या में कोई बदलाव करना चाहिए?`
-        : `📊 **LabSetu AI Clinical Overview**\n\nAnalysis for query: "${query}"\n\n• This parameter evaluates physiological and metabolic status.\n• When observed values deviate from standard clinical intervals, share the certified report with your consulting physician.\n• Hydration, sleep, dietary changes, and recent activity levels frequently influence these biomarkers.\n\n💡 **Questions to ask your doctor:**\n1. Does this result require repeat testing or further diagnostic panels?\n2. Are there personalized dietary or lifestyle adaptations recommended for my profile?`;
+        ? `📋 **सारांश (Summary)**: यह परीक्षण आपके रक्त और शरीर के मुख्य स्वास्थ्य संकेतों की जाँच करता है ताकि यह पता चले कि आपके अंग कितनी अच्छी तरह काम कर रहे हैं।\n\n📊 **आपके परिणाम (Your Numbers Explained)**:\n• रिपोर्ट में दर्शाए गए अधिकांश मान सामान्य (Normal) सीमा में हैं।\n• यदि कोई मान थोड़ा कम या अधिक है, तो इसका अर्थ है कि उस पैरामीटर पर डॉक्टर का मार्गदर्शन लेना उपयोगी रहेगा।\n\n💡 **सरल सलाह (Practical Advice)**:\n• पर्याप्त पानी पिएं, नियमित रूप से 7–8 घंटे की नींद लें और संतुलित भोजन करें।\n• परीक्षण से पहले और बाद में अत्यधिक तनाव से बचें।\n\n🩺 **डॉक्टर से पूछने योग्य प्रश्न (Questions for Doctor)**:\n1. क्या मेरे इन परिणामों के आधार पर मुझे किसी आहार या दिनचर्या में बदलाव की ज़रूरत है?\n2. मुझे यह परीक्षण दोबारा कब करवाना चाहिए?\n\n⚕️ *यह केवल शैक्षिक सारांश है। किसी भी चिकित्सीय निर्णय के लिए हमेशा अपने डॉक्टर से परामर्श करें।*`
+        : `📋 **Summary**: This lab test evaluates vital signs in your blood to give a clear picture of how your internal organs are functioning day to day.\n\n📊 **Your Numbers Explained**:\n• Your reported parameters generally reflect standard healthy ranges.\n• Any values slightly outside reference intervals indicate areas where your consulting physician can offer personalized guidance.\n\n💡 **Practical Advice**:\n• Stay well-hydrated, aim for 7–8 hours of sound sleep, and enjoy balanced meals rich in fiber and whole foods.\n• Continue your regular physical routine unless advised otherwise by your doctor.\n\n🩺 **Questions for Your Doctor**:\n1. Do my numbers suggest any lifestyle or dietary adjustments?\n2. When do you recommend scheduling a routine follow-up test?\n\n⚕️ *This summary is provided for educational and overview purposes only. Please consult your physician for medical decisions.*`;
 
       return res.status(200).json({
         success: true,

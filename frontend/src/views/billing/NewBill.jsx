@@ -227,7 +227,7 @@ export default function NewBill() {
   };
 
   return (
-    <div className="newbill-container">
+    <div className="newbill-container printable-area">
       {/* Header */}
       <div className="newbill-header">
         <h1>Create New Laboratory Bill</h1>

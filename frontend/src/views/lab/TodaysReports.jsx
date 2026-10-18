@@ -397,7 +397,7 @@ export default function TodaysReports() {
           onClick={() => setActiveReport(null)}
         >
           <div 
-            className="report-modal-wrapper"
+            className="report-modal-wrapper printable-area"
             onClick={e => e.stopPropagation()}
           >
             {/* Modal Utility Bar (Hidden in Print) */}
@@ -491,7 +491,7 @@ export default function TodaysReports() {
                   </div>
                 </div>
               ) : (
-                <div className="clinical-report-sheet">
+                <div id="printable-report" className="clinical-report-sheet printable-area">
                   {/* Top Green Accent Bar */}
                   <div style={{ height: '4px', background: 'linear-gradient(90deg, #15803d, #22c55e)', borderRadius: '2px', marginBottom: '1.25rem' }} />
 

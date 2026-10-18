@@ -162,11 +162,11 @@ export default function SearchReports() {
 
       {/* Report Quick View Modal */}
       {selectedReport && (
-        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '1rem' }} onClick={() => setSelectedReport(null)}>
-          <div style={{ backgroundColor: '#ffffff', borderRadius: '12px', maxWidth: '480px', width: '100%', padding: '1.5rem' }} onClick={e => e.stopPropagation()}>
+        <div className="citizen-modal-backdrop" style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '1rem' }} onClick={() => setSelectedReport(null)}>
+          <div id="printable-report" className="printable-area" style={{ backgroundColor: '#ffffff', borderRadius: '12px', maxWidth: '480px', width: '100%', padding: '1.5rem' }} onClick={e => e.stopPropagation()}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
               <h3 style={{ margin: 0, fontSize: '1.15rem' }}>Report Details: {selectedReport.regNo}</h3>
-              <button type="button" onClick={() => setSelectedReport(null)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
+              <button type="button" className="no-print" onClick={() => setSelectedReport(null)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
                 <XMarkIcon style={{ width: '20px' }} />
               </button>
             </div>
@@ -178,7 +178,7 @@ export default function SearchReports() {
               <div><span>Referred By:</span> {selectedReport.ref}</div>
               <div><span>Centre:</span> {selectedReport.cc}</div>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '1.25rem' }}>
+            <div className="no-print" style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '1.25rem' }}>
               <button type="button" onClick={() => window.print()} style={{ padding: '0.55rem 1rem', borderRadius: '6px', border: '1px solid #15803d', backgroundColor: '#15803d', color: '#ffffff', fontWeight: '600', cursor: 'pointer' }}>Print Slip</button>
               <button type="button" onClick={() => setSelectedReport(null)} style={{ padding: '0.55rem 1rem', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#ffffff', cursor: 'pointer' }}>Close</button>
             </div>

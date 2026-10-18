@@ -143,6 +143,7 @@ function App() {
               <Route path="home-collection" element={<CitizenHomeCollection />} />
               <Route path="reports" element={<CitizenReports />} />
               <Route path="explainer" element={<CitizenReportExplainer />} />
+              <Route path="ai-explainer" element={<CitizenReportExplainer />} />
               <Route path="labs" element={<CitizenNearbyLabs />} />
               <Route path="reminders" element={<CitizenReminders />} />
               <Route path="family" element={<CitizenFamilyProfiles />} />
