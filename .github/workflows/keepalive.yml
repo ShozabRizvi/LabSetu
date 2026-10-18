@@ -1,0 +1,38 @@
+name: Keep LabSetu Render & Supabase Alive
+
+on:
+  schedule:
+    # Runs every 14 minutes to prevent Render's 15-minute free-tier idle spin-down
+    - cron: '*/14 * * * *'
+  workflow_dispatch: # Allows manual trigger anytime from GitHub Actions tab
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Render Backend Health Check
+        env:
+          RENDER_URL: ${{ secrets.RENDER_BACKEND_URL }} # e.g. https://labsetu-backend.onrender.com
+        run: |
+          if [ -n "$RENDER_URL" ]; then
+            echo "🚀 Pinging Render backend at $RENDER_URL/api/health..."
+            curl -s -f -X GET "$RENDER_URL/api/health" || echo "⚠️ Render backend ping failed or waking up"
+            echo "✅ Render ping cycle finished."
+          else
+            echo "⚠️ RENDER_BACKEND_URL secret is not set, skipping Render ping."
+          fi
+
+      - name: Ping Supabase Database Rest API
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}       # e.g. https://your-project.supabase.co
+          SUPABASE_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          if [ -n "$SUPABASE_URL" ] && [ -n "$SUPABASE_KEY" ]; then
+            echo "⚡ Pinging Supabase REST endpoint..."
+            curl -s -f -X GET "${SUPABASE_URL}/rest/v1/" \
+              -H "apikey: $SUPABASE_KEY" \
+              -H "Authorization: Bearer $SUPABASE_KEY" || echo "⚠️ Supabase ping failed"
+            echo "✅ Supabase pinged successfully!"
+          else
+            echo "⚠️ SUPABASE secrets are not set, skipping Supabase ping."
+          fi
