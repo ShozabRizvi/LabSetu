@@ -1,9 +1,7 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Link } from 'react-router-dom';
 import logo from '../assets/logo.png';
-import { useAuth } from '../context/AuthContext';
 import {
-  MagnifyingGlassIcon,
   ShieldCheckIcon,
   ClockIcon,
   DocumentChartBarIcon,
@@ -12,122 +10,22 @@ import {
   BuildingOffice2Icon,
   UserCircleIcon,
   ArrowRightIcon,
-  CheckBadgeIcon,
-  Bars3Icon,
-  XMarkIcon
+  CheckBadgeIcon
 } from '@heroicons/react/24/outline';
 import './Home.css';
 
 export default function Home() {
-  const { currentUser, role } = useAuth();
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-
   return (
     <div className="home-container">
-      {/* Top Header Navbar */}
-      <header className="home-header">
-        <div className="home-header-left">
-          <Link to="/" className="home-logo-link">
-            <img src={logo} alt="LabSetu Logo" className="home-logo" />
-            <span className="home-brand">
-              Lab<span className="home-brand-accent">Setu</span>
-            </span>
-          </Link>
-          <span className="home-tagline-badge">Unified Diagnostic Network</span>
-        </div>
-
-        <nav className="home-nav-links">
-          <Link to="/portal/tests" className="home-nav-link">Find Tests</Link>
-          <Link to="/portal/labs" className="home-nav-link">Participating Labs</Link>
-          <Link to="/portal/home-collection" className="home-nav-link">Home Collection</Link>
-          <Link to="/portal/explainer" className="home-nav-link">AI Report Explainer</Link>
-        </nav>
-
-        <div className="home-header-actions">
-          {currentUser ? (
-            <Link
-              to={role === 'citizen' ? '/portal/dashboard' : '/app/getting-started'}
-              className="home-btn home-btn-primary"
-            >
-              <UserCircleIcon style={{ width: '18px' }} /> Go to Dashboard ({currentUser.name})
-            </Link>
-          ) : (
-            <>
-              <Link to="/login" className="home-btn home-btn-secondary" id="nav-login-btn">
-                Log In
-              </Link>
-              <Link to="/signup" className="home-btn home-btn-primary" id="nav-signup-btn">
-                Register Free
-              </Link>
-            </>
-          )}
-
-          {/* Mobile Hamburger Toggle */}
-          <button
-            type="button"
-            className="home-mobile-toggle"
-            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-            aria-label="Toggle navigation menu"
-          >
-            {isMobileMenuOpen ? (
-              <XMarkIcon style={{ width: '24px', height: '24px' }} />
-            ) : (
-              <Bars3Icon style={{ width: '24px', height: '24px' }} />
-            )}
-          </button>
-        </div>
-      </header>
-
-      {/* Mobile Slide-down Drawer */}
-      {isMobileMenuOpen && (
-        <div className="home-mobile-drawer">
-          <nav className="home-mobile-nav">
-            <Link to="/portal/tests" className="home-mobile-link" onClick={() => setIsMobileMenuOpen(false)}>
-              Find Tests
-            </Link>
-            <Link to="/portal/labs" className="home-mobile-link" onClick={() => setIsMobileMenuOpen(false)}>
-              Participating Labs
-            </Link>
-            <Link to="/portal/home-collection" className="home-mobile-link" onClick={() => setIsMobileMenuOpen(false)}>
-              Home Collection
-            </Link>
-            <Link to="/portal/explainer" className="home-mobile-link" onClick={() => setIsMobileMenuOpen(false)}>
-              AI Report Explainer
-            </Link>
-          </nav>
-          <div className="home-mobile-auth-actions">
-            {currentUser ? (
-              <Link
-                to={role === 'citizen' ? '/portal/dashboard' : '/app/getting-started'}
-                className="home-btn home-btn-primary"
-                style={{ width: '100%', justifyContent: 'center' }}
-                onClick={() => setIsMobileMenuOpen(false)}
-              >
-                <UserCircleIcon style={{ width: '18px' }} /> Dashboard ({currentUser.name})
-              </Link>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', width: '100%' }}>
-                <Link
-                  to="/login"
-                  className="home-btn home-btn-secondary"
-                  style={{ width: '100%', justifyContent: 'center' }}
-                  onClick={() => setIsMobileMenuOpen(false)}
-                >
-                  Log In
-                </Link>
-                <Link
-                  to="/signup"
-                  className="home-btn home-btn-primary"
-                  style={{ width: '100%', justifyContent: 'center' }}
-                  onClick={() => setIsMobileMenuOpen(false)}
-                >
-                  Register Free
-                </Link>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+      {/* Top Center Logo (Header Removed) */}
+      <div className="home-top-logo-bar">
+        <Link to="/" className="home-top-logo-link" aria-label="LabSetu Home">
+          <img src={logo} alt="LabSetu Logo" className="home-top-logo-img" />
+          <span className="home-top-logo-text">
+            Lab<span className="home-top-logo-accent">Setu</span>
+          </span>
+        </Link>
+      </div>
 
       {/* Hero Section */}
       <section className="home-hero">
@@ -148,10 +46,18 @@ export default function Home() {
           </p>
 
           <div className="home-hero-cta-group">
-            <Link to="/login" className="home-cta-btn home-cta-primary">
+            <Link 
+              to="/login?role=citizen" 
+              state={{ defaultRole: 'citizen' }} 
+              className="home-cta-btn home-cta-primary"
+            >
               Patient Portal Login <ArrowRightIcon style={{ width: '18px' }} />
             </Link>
-            <Link to="/signup" className="home-cta-btn home-cta-outline">
+            <Link 
+              to="/login?role=authority" 
+              state={{ defaultRole: 'authority' }} 
+              className="home-cta-btn home-cta-outline"
+            >
               Authority &amp; Lab Sign In
             </Link>
           </div>
@@ -209,7 +115,11 @@ export default function Home() {
               <li>✓ Family profiles &amp; preparation reminders</li>
             </ul>
             <div className="home-role-btn-wrap">
-              <Link to="/login" state={{ defaultRole: 'citizen' }} className="home-role-btn primary">
+              <Link 
+                to="/login?role=citizen" 
+                state={{ defaultRole: 'citizen' }} 
+                className="home-role-btn primary"
+              >
                 Enter as Patient / Citizen →
               </Link>
             </div>
@@ -234,7 +144,11 @@ export default function Home() {
               <li>✓ Immutable activity ledger &amp; data export</li>
             </ul>
             <div className="home-role-btn-wrap">
-              <Link to="/login" state={{ defaultRole: 'authority' }} className="home-role-btn secondary">
+              <Link 
+                to="/login?role=authority" 
+                state={{ defaultRole: 'authority' }} 
+                className="home-role-btn secondary"
+              >
                 Enter as Lab Authority →
               </Link>
             </div>
@@ -299,7 +213,8 @@ export default function Home() {
             <p>© 2026 LabSetu Technologies. Adhering to NABL diagnostic data security protocols.</p>
           </div>
           <div className="home-footer-links">
-            <Link to="/login">Login</Link>
+            <Link to="/login?role=citizen" state={{ defaultRole: 'citizen' }}>Patient Login</Link>
+            <Link to="/login?role=authority" state={{ defaultRole: 'authority' }}>Authority Login</Link>
             <Link to="/signup">Register</Link>
             <Link to="/forgot-password">Reset Password</Link>
             <Link to="/portal/tests">Diagnostic Tests</Link>

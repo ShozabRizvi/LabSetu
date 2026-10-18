@@ -59,24 +59,19 @@ export function AuthProvider({ children }) {
         }
       }
 
-      const savedAuth = localStorage.getItem('labsetu_auth');
+      // Clear persistent auth credentials so newly started website sessions always require sign in
+      localStorage.removeItem('labsetu_auth');
+      localStorage.removeItem('userEmail');
+      localStorage.removeItem('userRole');
+      localStorage.removeItem('labsetu_token');
+
+      // Check current session only (preserves login across page refresh within active tab)
+      const savedAuth = sessionStorage.getItem('labsetu_auth');
       if (savedAuth) {
         const parsed = JSON.parse(savedAuth);
         setCurrentUser(parsed);
       } else {
-        // Check legacy userEmail
-        const legacyEmail = localStorage.getItem('userEmail');
-        const legacyRole = localStorage.getItem('userRole') || 'authority';
-        if (legacyEmail) {
-          const authUser = {
-            email: legacyEmail,
-            name: legacyRole === 'authority' ? 'Shozab Rizvi' : 'Demo Patient',
-            role: legacyRole,
-            phone: '9876543210'
-          };
-          setCurrentUser(authUser);
-          localStorage.setItem('labsetu_auth', JSON.stringify(authUser));
-        }
+        setCurrentUser(null);
       }
     } catch {
       // ignore parse errors
@@ -98,9 +93,7 @@ export function AuthProvider({ children }) {
     const res = await authService.login(identifier, password, role);
     if (res.success && res.user) {
       setCurrentUser(res.user);
-      localStorage.setItem('labsetu_auth', JSON.stringify(res.user));
-      localStorage.setItem('userEmail', res.user.email);
-      localStorage.setItem('userRole', res.user.role);
+      sessionStorage.setItem('labsetu_auth', JSON.stringify(res.user));
     }
     return res;
   };
@@ -116,9 +109,12 @@ export function AuthProvider({ children }) {
   const logout = async () => {
     await authService.logout();
     setCurrentUser(null);
+    sessionStorage.removeItem('labsetu_auth');
+    sessionStorage.removeItem('labsetu_token');
     localStorage.removeItem('labsetu_auth');
     localStorage.removeItem('userEmail');
     localStorage.removeItem('userRole');
+    localStorage.removeItem('labsetu_token');
   };
 
   return (

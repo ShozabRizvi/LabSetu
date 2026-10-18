@@ -26,17 +26,29 @@ export default function Registration({ initialMode }) {
     return 'signin';
   };
 
+  const getInitialRole = () => {
+    const params = new URLSearchParams(location.search);
+    const queryRole = params.get('role');
+    if (queryRole === 'authority' || queryRole === 'citizen') return queryRole;
+    if (location.state?.defaultRole) return location.state.defaultRole;
+    return 'citizen';
+  };
+
   // Mode: 'signin' | 'signup' | 'forgot'
   const [mode, setMode] = useState(getPathMode());
   // Role: 'citizen' | 'authority'
-  const [role, setRole] = useState(location.state?.defaultRole || 'citizen');
+  const [role, setRole] = useState(getInitialRole);
 
   useEffect(() => {
     setMode(getPathMode());
-    if (location.state?.defaultRole) {
+    const params = new URLSearchParams(location.search);
+    const queryRole = params.get('role');
+    if (queryRole === 'authority' || queryRole === 'citizen') {
+      setRole(queryRole);
+    } else if (location.state?.defaultRole) {
       setRole(location.state.defaultRole);
     }
-  }, [location.pathname, initialMode]);
+  }, [location.pathname, location.search, location.state, initialMode]);
 
   // Sign in state
   const [loginEmail, setLoginEmail] = useState('');

@@ -172,7 +172,7 @@ export const authService = {
   async getCurrentUser() {
     const fallbackFn = async () => {
       try {
-        const saved = localStorage.getItem('labsetu_auth');
+        const saved = sessionStorage.getItem('labsetu_auth');
         return saved ? { success: true, user: JSON.parse(saved) } : { success: false, user: null };
       } catch {
         return { success: false, user: null };
