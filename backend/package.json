@@ -1,17 +1,19 @@
 {
   "name": "labsetu-backend",
   "version": "1.0.0",
-  "description": "LabSetu Reference REST API Backend Server",
-  "main": "server.js",
+  "description": "LabSetu Production & Reference Backend APIs",
+  "private": true,
   "type": "module",
   "scripts": {
     "start": "node server.js",
-    "dev": "node --watch server.js"
+    "dev": "node --watch server.js",
+    "test": "node --test"
   },
   "dependencies": {
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
-    "jsonwebtoken": "^9.0.2"
+    "jsonwebtoken": "^9.0.2",
+    "pg": "^8.16.3"
   }
 }
