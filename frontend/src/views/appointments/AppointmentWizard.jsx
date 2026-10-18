@@ -16,15 +16,69 @@ const dateValue = (offset = 0) => {
 export default function AppointmentWizard() {
   const { currentUser } = useAuth();
   const { data: appointments, update: saveAppointments } = useDemoResource('appointments', []);
-  const [step, setStep] = useState(0);
-  const [patient, setPatient] = useState({
-    name: currentUser?.name || '',
-    mobile: currentUser?.phone || ''
-  });
-  const [verified, setVerified] = useState(false);
-  const [department, setDepartment] = useState('');
-  const [date, setDate] = useState(dateValue(1));
-  const [slot, setSlot] = useState('');
+
+  const defaultDraft = {
+    step: 0,
+    patient: {
+      name: currentUser?.name || '',
+      mobile: currentUser?.phone || ''
+    },
+    verified: false,
+    department: '',
+    date: dateValue(1),
+    slot: ''
+  };
+
+  const { data: apptDraft, update: updateApptDraft } = useDemoResource('active_appointment_draft', defaultDraft);
+
+  const step = apptDraft?.step ?? 0;
+  const setStep = (val) => {
+    updateApptDraft(prev => ({
+      ...(prev || defaultDraft),
+      step: typeof val === 'function' ? val((prev || defaultDraft).step) : val
+    }));
+  };
+
+  const patient = apptDraft?.patient || defaultDraft.patient;
+  const setPatient = (val) => {
+    updateApptDraft(prev => ({
+      ...(prev || defaultDraft),
+      patient: typeof val === 'function' ? val((prev || defaultDraft).patient) : val
+    }));
+  };
+
+  const verified = apptDraft?.verified ?? false;
+  const setVerified = (val) => {
+    updateApptDraft(prev => ({
+      ...(prev || defaultDraft),
+      verified: typeof val === 'function' ? val((prev || defaultDraft).verified) : val
+    }));
+  };
+
+  const department = apptDraft?.department || '';
+  const setDepartment = (val) => {
+    updateApptDraft(prev => ({
+      ...(prev || defaultDraft),
+      department: typeof val === 'function' ? val((prev || defaultDraft).department) : val
+    }));
+  };
+
+  const date = apptDraft?.date || dateValue(1);
+  const setDate = (val) => {
+    updateApptDraft(prev => ({
+      ...(prev || defaultDraft),
+      date: typeof val === 'function' ? val((prev || defaultDraft).date) : val
+    }));
+  };
+
+  const slot = apptDraft?.slot || '';
+  const setSlot = (val) => {
+    updateApptDraft(prev => ({
+      ...(prev || defaultDraft),
+      slot: typeof val === 'function' ? val((prev || defaultDraft).slot) : val
+    }));
+  };
+
   const [reference, setReference] = useState('');
   const [notice, setNotice] = useState('');
   const selectedDepartment = departments.find((item) => item.id === department);
@@ -73,12 +127,7 @@ export default function AppointmentWizard() {
   };
 
   const restart = () => { 
-    setStep(0); 
-    setPatient({ name: currentUser?.name || '', mobile: currentUser?.phone || '' }); 
-    setVerified(false); 
-    setDepartment(''); 
-    setDate(dateValue(1)); 
-    setSlot(''); 
+    updateApptDraft(defaultDraft);
     setReference(''); 
     setNotice(''); 
   };

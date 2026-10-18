@@ -22,20 +22,22 @@ class ApiClient {
   }
 
   /**
-   * Returns current JWT token from sessionStorage
+   * Returns current JWT token from sessionStorage or localStorage
    */
   getToken() {
-    return sessionStorage.getItem('labsetu_token') || null;
+    return sessionStorage.getItem('labsetu_token') || localStorage.getItem('labsetu_token') || null;
   }
 
   /**
-   * Sets the JWT token in sessionStorage
+   * Sets the JWT token in sessionStorage and localStorage
    */
   setToken(token) {
     if (token) {
       sessionStorage.setItem('labsetu_token', token);
+      localStorage.setItem('labsetu_token', token);
     } else {
       sessionStorage.removeItem('labsetu_token');
+      localStorage.removeItem('labsetu_token');
     }
   }
 

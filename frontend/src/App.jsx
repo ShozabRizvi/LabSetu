@@ -37,6 +37,7 @@ import LabAnalytics from './views/lab/LabAnalytics';
 import TestCategories from './views/lab/TestCategories';
 import Interpretations from './views/lab/Interpretations';
 import TestCounts from './views/lab/TestCounts';
+import AiReportViewer from './views/lab/AiReportViewer';
 
 // USG
 import UsgTodaysCases from './views/usg/TodaysCases';
@@ -83,11 +84,13 @@ import CitizenSupport from './views/citizen/CitizenSupport';
 import CitizenPrivacy from './views/citizen/CitizenPrivacy';
 import CitizenProfile from './views/citizen/CitizenProfile';
 import NotFound from './views/NotFound';
+import SplashScreen from './components/common/SplashScreen';
 
 function App() {
   return (
     <AuthProvider>
       <LanguageProvider>
+        <SplashScreen minDuration={1000} />
         <Router>
         <Routes>
           {/* Public Homepage with visible Login Button */}
@@ -206,6 +209,7 @@ function App() {
             <Route path="lab/test-categories" element={<TestCategories />} />
             <Route path="lab/interpretations" element={<Interpretations />} />
             <Route path="lab/test-counts" element={<TestCounts />} />
+            <Route path="lab/ai-report-viewer" element={<AiReportViewer />} />
 
             {/* USG Sub-routes */}
             <Route path="usg/todays-cases" element={<UsgTodaysCases />} />

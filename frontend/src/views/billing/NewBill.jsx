@@ -7,30 +7,72 @@ import { demoDashboardData } from '../../data/mockLabData';
 export default function NewBill() {
   const { data: dashData, update: updateDashData } = useDemoResource('dashboard', demoDashboardData);
 
-  const [activeCategory, setActiveCategory] = useState('All');
+  const defaultBillWorkflow = {
+    patientForm: {
+      mobile: '',
+      uhid: '',
+      firstName: '',
+      lastName: '',
+      age: '',
+      gender: 'Select',
+      doctor: 'Self',
+      agent: 'None (Walk-in)'
+    },
+    cart: [],
+    discount: 0,
+    paymentBreakdown: {
+      cash: 0,
+      upi: 0,
+      card: 0,
+      due: 0
+    },
+    activeCategory: 'All'
+  };
+
+  // Persistent workflow state: refreshes keep active patient and cart draft intact
+  const { data: billWorkflow, update: updateBillWorkflow } = useDemoResource('active_billing_workflow', defaultBillWorkflow);
+
+  const patientForm = billWorkflow?.patientForm || defaultBillWorkflow.patientForm;
+  const setPatientForm = (val) => {
+    updateBillWorkflow(prev => ({
+      ...(prev || defaultBillWorkflow),
+      patientForm: typeof val === 'function' ? val((prev || defaultBillWorkflow).patientForm) : val
+    }));
+  };
+
+  const cart = billWorkflow?.cart || [];
+  const setCart = (val) => {
+    updateBillWorkflow(prev => ({
+      ...(prev || defaultBillWorkflow),
+      cart: typeof val === 'function' ? val((prev || defaultBillWorkflow).cart) : val
+    }));
+  };
+
+  const discount = billWorkflow?.discount ?? 0;
+  const setDiscount = (val) => {
+    updateBillWorkflow(prev => ({
+      ...(prev || defaultBillWorkflow),
+      discount: typeof val === 'function' ? val((prev || defaultBillWorkflow).discount) : val
+    }));
+  };
+
+  const paymentBreakdown = billWorkflow?.paymentBreakdown || defaultBillWorkflow.paymentBreakdown;
+  const setPaymentBreakdown = (val) => {
+    updateBillWorkflow(prev => ({
+      ...(prev || defaultBillWorkflow),
+      paymentBreakdown: typeof val === 'function' ? val((prev || defaultBillWorkflow).paymentBreakdown) : val
+    }));
+  };
+
+  const activeCategory = billWorkflow?.activeCategory || 'All';
+  const setActiveCategory = (val) => {
+    updateBillWorkflow(prev => ({
+      ...(prev || defaultBillWorkflow),
+      activeCategory: typeof val === 'function' ? val((prev || defaultBillWorkflow).activeCategory) : val
+    }));
+  };
+
   const [testSearch, setTestSearch] = useState('');
-  const [cart, setCart] = useState([]);
-  const [discount, setDiscount] = useState(0);
-
-  // Patient details state
-  const [patientForm, setPatientForm] = useState({
-    mobile: '',
-    uhid: '',
-    firstName: '',
-    lastName: '',
-    age: '',
-    gender: 'Select',
-    doctor: 'Self',
-    agent: 'None (Walk-in)'
-  });
-
-  const [paymentBreakdown, setPaymentBreakdown] = useState({
-    cash: 0,
-    upi: 0,
-    card: 0,
-    due: 0
-  });
-
   const [savedNotice, setSavedNotice] = useState(false);
   const [billReceipt, setBillReceipt] = useState(null);
 

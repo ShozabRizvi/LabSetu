@@ -447,9 +447,11 @@ export default function CitizenLayout() {
           </div>
         </aside>
 
-        {/* Content Outlet with Lang Prop */}
+        {/* Content Outlet with Lang Prop & Sliding Page Transition */}
         <main className="citizen-main-content">
-          <Outlet context={{ lang }} />
+          <div key={location.pathname} className="layout-slide-wrapper">
+            <Outlet context={{ lang }} />
+          </div>
         </main>
       </div>
 

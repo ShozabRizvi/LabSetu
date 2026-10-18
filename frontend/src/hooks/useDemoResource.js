@@ -11,13 +11,24 @@ import apiClient from '../services/apiClient';
 export default function useDemoResource(key, initialValue) {
   const storageKey = `labsetu-demo:${key}`;
   const initialRef = useRef(initialValue);
-  const [data, setData] = useState(initialValue);
-  const [loading, setLoading] = useState(true);
+
+  // Synchronous state initialization from storage ensures zero UI flicker or data loss on refresh
+  const [data, setData] = useState(() => {
+    try {
+      const saved = window.localStorage.getItem(storageKey);
+      if (saved !== null && saved !== undefined) {
+        return JSON.parse(saved);
+      }
+    } catch {
+      // Fallback to initialValue
+    }
+    return initialValue;
+  });
+
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
   const read = useCallback(async () => {
-    setLoading(true);
-
     const fallbackFn = async () => {
       try {
         const saved = window.localStorage.getItem(storageKey);
@@ -29,17 +40,27 @@ export default function useDemoResource(key, initialValue) {
     };
 
     try {
+      // Re-fetch and hydrate from repository / Supabase endpoint
       const res = await apiClient.get(`/resources/${key}`, {}, fallbackFn);
       if (res.success && res.data !== undefined) {
         setData(res.data);
         setError('');
+        try {
+          window.localStorage.setItem(storageKey, JSON.stringify(res.data));
+        } catch {
+          // Ignore quota errors
+        }
       } else {
         const fallbackRes = await fallbackFn();
-        setData(fallbackRes.data);
+        if (fallbackRes.data !== undefined) {
+          setData(fallbackRes.data);
+        }
       }
     } catch {
       const fallbackRes = await fallbackFn();
-      setData(fallbackRes.data);
+      if (fallbackRes.data !== undefined) {
+        setData(fallbackRes.data);
+      }
     } finally {
       setLoading(false);
     }

@@ -95,7 +95,7 @@ export default function SetupLayout() {
       </aside>
       
       <main className="setup-main-content">
-        <div key={location.pathname} className="layout-fade-wrapper setup-content-card">
+        <div key={location.pathname} className="layout-slide-wrapper layout-fade-wrapper setup-content-card">
           <Outlet />
         </div>
       </main>

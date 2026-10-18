@@ -8,6 +8,7 @@ import { createAnalyticsRouter } from './src/analytics.js';
 import { createAuthorityMiddleware } from './src/auth.js';
 import { createBusinessRouter } from './src/business.js';
 import { createImagingRouter, createOutsourceRouter } from './src/imaging.js';
+import { createAiRouter } from './src/aiSimulationEngine.js';
 
 export function createApp({ pool = null, jwtSecret = process.env.SUPABASE_JWT_SECRET || process.env.JWT_SECRET, authContractVerified = false } = {}) {
   const app = express();
@@ -22,6 +23,9 @@ export function createApp({ pool = null, jwtSecret = process.env.SUPABASE_JWT_SE
   app.use('/api/imaging', createImagingRouter({ pool, requireAuthority }));
   app.use('/api/outsource', createOutsourceRouter({ pool, requireAuthority }));
   app.use('/api/analytics', createAnalyticsRouter({ pool, requireAuthority }));
+  app.use('/api/ai', createAiRouter({ requireAuthority }));
+  app.use('/api/auth', (_req, res) => res.status(503).json({ success: false, error: 'Auth endpoint reserved for Supabase integration.' }));
+  app.use('/api/appointments', (_req, res) => res.status(503).json({ success: false, error: 'Appointments endpoint reserved for integration.' }));
 
   app.use('/api', (_req, res) => res.status(404).json({ success: false, error: 'API route not found.' }));
   app.use((error, _req, res, _next) => {

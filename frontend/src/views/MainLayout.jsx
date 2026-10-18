@@ -52,7 +52,8 @@ import {
   PlusCircleIcon,
   XMarkIcon,
   Bars3Icon,
-  ArrowRightOnRectangleIcon
+  ArrowRightOnRectangleIcon,
+  SparklesIcon
 } from '@heroicons/react/24/outline';
 
 export default function MainLayout() {
@@ -462,6 +463,7 @@ export default function MainLayout() {
                   <NavLink to="/app/lab/test-categories" onClick={() => setIsMobileNavOpen(false)} className={({isActive}) => `layout-submenu-item ${isActive ? 'layout-nav-active' : ''}`}><Squares2X2Icon/> Test categories</NavLink>
                   <NavLink to="/app/lab/interpretations" onClick={() => setIsMobileNavOpen(false)} className={({isActive}) => `layout-submenu-item ${isActive ? 'layout-nav-active' : ''}`}><InformationCircleIcon/> Interpretations</NavLink>
                   <NavLink to="/app/lab/test-counts" onClick={() => setIsMobileNavOpen(false)} className={({isActive}) => `layout-submenu-item ${isActive ? 'layout-nav-active' : ''}`}><CalculatorIcon/> Test counts</NavLink>
+                  <NavLink to="/app/lab/ai-report-viewer" onClick={() => setIsMobileNavOpen(false)} className={({isActive}) => `layout-submenu-item ${isActive ? 'layout-nav-active' : ''}`}><SparklesIcon/> AI Report Viewer</NavLink>
                 </div>
               </div>
             </div>
@@ -556,7 +558,7 @@ export default function MainLayout() {
 
         {/* Main Content Area */}
         <main className="layout-main-content">
-          <div key={location.pathname} className="layout-fade-wrapper">
+          <div key={location.pathname} className="layout-slide-wrapper layout-fade-wrapper">
             <Outlet />
           </div>
         </main>

@@ -1,0 +1,162 @@
+/* ==========================================================================
+   LabSetu Splash Screen Styles
+   Hardware-accelerated, zero-jank entrance and exit
+   ========================================================================== */
+
+.labsetu-splash-container {
+  position: fixed;
+  inset: 0;
+  z-index: 999999;
+  background-color: #ffffff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+  user-select: none;
+  opacity: 1;
+  transform: translate3d(0, 0, 0) scale(1);
+  transition: opacity 0.35s cubic-bezier(0.16, 1, 0.3, 1), transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: opacity, transform;
+}
+
+.labsetu-splash-container.labsetu-splash-fadeout {
+  opacity: 0;
+  transform: translate3d(0, 0, 0) scale(1.02);
+  pointer-events: none;
+}
+
+.labsetu-splash-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  max-width: 420px;
+  padding: 2rem 1.5rem;
+  animation: splashContentPop 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes splashContentPop {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 14px, 0) scale(0.96);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+.labsetu-splash-logo-wrap {
+  width: 76px;
+  height: 76px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 1.25rem;
+  background: #f0fdf4;
+  border-radius: 20px;
+  border: 1px solid #dcfce7;
+  box-shadow: 0 10px 25px -5px rgba(21, 128, 61, 0.15);
+}
+
+.labsetu-splash-logo {
+  width: 52px;
+  height: 52px;
+  object-fit: contain;
+  filter: drop-shadow(0 2px 4px rgba(21, 128, 61, 0.2));
+}
+
+.labsetu-splash-brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  margin-bottom: 1.75rem;
+}
+
+.labsetu-splash-brand-text {
+  font-size: 2.25rem;
+  font-weight: 800;
+  color: #0f172a;
+  letter-spacing: -0.04em;
+  line-height: 1.1;
+}
+
+.labsetu-splash-brand-accent {
+  color: #15803d;
+}
+
+.labsetu-splash-tagline {
+  font-size: 0.85rem;
+  color: #64748b;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+/* Slim Green Loading Bar (Center) */
+.labsetu-splash-bar-wrapper {
+  width: 220px;
+  height: 3px;
+  background-color: #f1f5f9;
+  border-radius: 4px;
+  overflow: hidden;
+  position: relative;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.labsetu-splash-bar-fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  width: 100%;
+  background: linear-gradient(90deg, #15803d 0%, #22c55e 70%, #86efac 100%);
+  border-radius: 4px;
+  transform-origin: left center;
+  animation: splashFillTrack 1s cubic-bezier(0.25, 0.1, 0.25, 1) forwards;
+  will-change: transform;
+}
+
+@keyframes splashFillTrack {
+  0% {
+    transform: scaleX(0);
+  }
+  40% {
+    transform: scaleX(0.45);
+  }
+  80% {
+    transform: scaleX(0.85);
+  }
+  100% {
+    transform: scaleX(1);
+  }
+}
+
+.labsetu-splash-sync-label {
+  margin-top: 0.75rem;
+  font-size: 0.75rem;
+  color: #94a3b8;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+/* Slim Green Loading Bar (Bottom Edge of Screen) */
+.labsetu-splash-edge-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2.5px;
+  background-color: transparent;
+  overflow: hidden;
+}
+
+.labsetu-splash-edge-bar-fill {
+  height: 100%;
+  width: 100%;
+  background: linear-gradient(90deg, #15803d, #22c55e, #10b981);
+  transform-origin: left center;
+  animation: splashFillTrack 1s cubic-bezier(0.25, 0.1, 0.25, 1) forwards;
+  will-change: transform;
+}

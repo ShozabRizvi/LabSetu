@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import authService from '../services/authService';
+import apiClient from '../services/apiClient';
 
 const AuthContext = createContext(null);
 
@@ -27,13 +28,21 @@ const DEFAULT_USERS = [
 ];
 
 export function AuthProvider({ children }) {
-  const [currentUser, setCurrentUser] = useState(null);
+  // Synchronous initialization prevents unauthenticated flicker or redirects during page refresh
+  const [currentUser, setCurrentUser] = useState(() => {
+    try {
+      const saved = sessionStorage.getItem('labsetu_auth') || localStorage.getItem('labsetu_auth');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
   const [loading, setLoading] = useState(true);
 
-  // Initialize from localStorage
+  // Initialize and re-hydrate session on mount
   useEffect(() => {
     try {
-      // Ensure default users always exist (merge with any user-created accounts)
+      // Ensure default demo users always exist
       const storedRaw = localStorage.getItem('labsetu_users');
       if (!storedRaw) {
         localStorage.setItem('labsetu_users', JSON.stringify(DEFAULT_USERS));
@@ -45,7 +54,6 @@ export function AuthProvider({ children }) {
             if (!merged.some(u => u.email.toLowerCase() === def.email.toLowerCase())) {
               merged.push(def);
             } else {
-              // Ensure existing default users have up-to-date fields (name, centerName, etc.)
               merged = merged.map(u =>
                 u.email.toLowerCase() === def.email.toLowerCase()
                   ? { ...u, ...def, password: u.password }
@@ -59,19 +67,32 @@ export function AuthProvider({ children }) {
         }
       }
 
-      // Clear persistent auth credentials so newly started website sessions always require sign in
-      localStorage.removeItem('labsetu_auth');
-      localStorage.removeItem('userEmail');
-      localStorage.removeItem('userRole');
-      localStorage.removeItem('labsetu_token');
+      // Restore active authentication token
+      const savedToken = sessionStorage.getItem('labsetu_token') || localStorage.getItem('labsetu_token');
+      if (savedToken) {
+        apiClient.setToken(savedToken);
+      }
 
-      // Check current session only (preserves login across page refresh within active tab)
-      const savedAuth = sessionStorage.getItem('labsetu_auth');
+      // Hydrate / verify authenticated session with repository backend
+      const savedAuth = sessionStorage.getItem('labsetu_auth') || localStorage.getItem('labsetu_auth');
       if (savedAuth) {
-        const parsed = JSON.parse(savedAuth);
-        setCurrentUser(parsed);
-      } else {
-        setCurrentUser(null);
+        try {
+          const parsed = JSON.parse(savedAuth);
+          setCurrentUser(parsed);
+          
+          // Background re-fetch to ensure active session validity
+          authService.getCurrentUser().then(res => {
+            if (res.success && res.user) {
+              setCurrentUser(res.user);
+              sessionStorage.setItem('labsetu_auth', JSON.stringify(res.user));
+              localStorage.setItem('labsetu_auth', JSON.stringify(res.user));
+            }
+          }).catch(() => {
+            // Offline / fallback keeps existing persisted session intact
+          });
+        } catch {
+          // Keep current state
+        }
       }
     } catch {
       // ignore parse errors
@@ -94,6 +115,11 @@ export function AuthProvider({ children }) {
     if (res.success && res.user) {
       setCurrentUser(res.user);
       sessionStorage.setItem('labsetu_auth', JSON.stringify(res.user));
+      localStorage.setItem('labsetu_auth', JSON.stringify(res.user));
+      if (res.token) {
+        sessionStorage.setItem('labsetu_token', res.token);
+        localStorage.setItem('labsetu_token', res.token);
+      }
     }
     return res;
   };
