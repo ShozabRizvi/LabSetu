@@ -3,6 +3,7 @@ import './NewBill.css';
 import { QuestionMarkCircleIcon, XMarkIcon, MagnifyingGlassIcon, CheckCircleIcon, CreditCardIcon } from '@heroicons/react/24/outline';
 import useDemoResource from '../../hooks/useDemoResource';
 import { demoDashboardData } from '../../data/mockLabData';
+import { ensureArray } from '../../utils/arrayUtils';
 
 export default function NewBill() {
   const { data: dashData, update: updateDashData } = useDemoResource('dashboard', demoDashboardData);
@@ -102,15 +103,16 @@ export default function NewBill() {
     { id: 7, name: 'Urine Routine Examination', category: 'Haematology', price: 200 }
   ];
 
-  const filteredTests = availableTests.filter(t => {
+  const filteredTests = ensureArray(availableTests).filter(t => {
     const matchesCat = activeCategory === 'All' || t.category === activeCategory;
     const matchesSearch = !testSearch.trim() || t.name.toLowerCase().includes(testSearch.toLowerCase());
     return matchesCat && matchesSearch;
   });
 
   const addToCart = (test) => {
-    if (!cart.find(item => item.id === test.id)) {
-      setCart([...cart, test]);
+    const safeCart = ensureArray(cart);
+    if (!safeCart.find(item => item.id === test.id)) {
+      setCart([...safeCart, test]);
     }
   };
 
@@ -196,7 +198,7 @@ export default function NewBill() {
     const newRecord = {
       id: newTxnId,
       patient: fullName,
-      description: cart.map(c => c.name).join(', '),
+      description: ensureArray(cart).map(c => c.name).join(', '),
       amount: netPayable,
       status: 'Paid',
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -441,12 +443,12 @@ export default function NewBill() {
           </div>
 
           <div style={{minHeight:'150px', marginBottom:'1rem'}}>
-            {cart.length === 0 ? (
+            {ensureArray(cart).length === 0 ? (
               <div style={{color:'#9ca3af', fontSize:'0.9rem', textAlign:'center', marginTop:'3rem'}}>
                 No tests added yet. Select diagnostics from the left.
               </div>
             ) : (
-              cart.map(item => (
+              ensureArray(cart).map(item => (
                 <div key={item.id} className="newbill-cart-item">
                   <div style={{display:'flex', alignItems:'center', gap:'0.5rem'}}>
                     <button type="button" className="newbill-cart-remove" onClick={() => removeFromCart(item.id)}>

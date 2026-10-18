@@ -19,6 +19,7 @@ import {
   DocumentMagnifyingGlassIcon,
   ExclamationTriangleIcon
 } from '@heroicons/react/24/outline';
+import { ensureArray } from '../../utils/arrayUtils';
 
 export default function CitizenReports({ lang: propLang }) {
   const { currentUser } = useAuth();
@@ -114,11 +115,11 @@ export default function CitizenReports({ lang: propLang }) {
 
   const categories = ['All', 'Haematology', 'Biochemistry', 'Endocrinology'];
 
-  const filteredReports = demoCitizenReports.filter((r) => {
+  const filteredReports = ensureArray(demoCitizenReports).filter((r) => {
     const matchesCategory = selectedCategory === 'All' || r.category === selectedCategory;
     const matchesQuery = !query.trim() || 
-      r.testName.toLowerCase().includes(query.toLowerCase()) ||
-      r.id.toLowerCase().includes(query.toLowerCase());
+      r.testName?.toLowerCase().includes(query.toLowerCase()) ||
+      r.id?.toLowerCase().includes(query.toLowerCase());
     return matchesCategory && matchesQuery;
   });
 

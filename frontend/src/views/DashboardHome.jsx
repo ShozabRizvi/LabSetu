@@ -16,6 +16,7 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import useDemoResource from '../hooks/useDemoResource';
 import { demoDashboardData, demoActivitiesData } from '../data/mockLabData';
+import { ensureArray } from '../utils/arrayUtils';
 
 export default function DashboardHome() {
   const { currentUser } = useAuth();
@@ -34,8 +35,8 @@ export default function DashboardHome() {
       maximumFractionDigits: 0,
     }).format(value || 0);
 
-  const transactions = data?.recentTransactions || [];
-  const recentActivities = (activities || []).slice(0, 3);
+  const transactions = ensureArray(data?.recentTransactions);
+  const recentActivities = ensureArray(activities).slice(0, 3);
 
   return (
     <div className="dashboard-home-container">

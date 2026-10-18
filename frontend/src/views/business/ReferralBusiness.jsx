@@ -12,6 +12,7 @@ import {
 import './ReferralBusiness.css';
 import useDemoResource from '../../hooks/useDemoResource';
 import supabase from '../../lib/supabase';
+import { ensureArray } from '../../utils/arrayUtils';
 
 const INITIAL_REFERRALS = [
   {
@@ -186,55 +187,92 @@ export default function ReferralBusiness() {
     setTimeout(() => setActionNotice(''), 2800);
   };
 
-  const currentRecords = Array.isArray(referralList)
-    ? referralList
-    : (Array.isArray(referralList?.data) ? referralList.data : INITIAL_REFERRALS);
+  const rawRecords = referralList;
+  const safeRecords = ensureArray(rawRecords);
+  const currentRecords = safeRecords.length > 0 ? safeRecords : INITIAL_REFERRALS;
+
+  // Dynamic filter resolver for period cases (including Custom date range calculations)
+  const getCasesInFilter = (doc, period = activePeriod) => {
+    if (!doc) return 0;
+    if (period === 'Custom') {
+      if (doc.periodCases?.Custom !== undefined) return doc.periodCases.Custom;
+      const start = new Date(customStart);
+      const end = new Date(customEnd);
+      const diffDays = Math.max(1, Math.round(Math.abs((end - start) / (24 * 60 * 60 * 1000)))) || 7;
+      return Math.min(doc.totalCases || 50, Math.max(1, Math.floor(diffDays * ((doc.totalCases || 50) / 90))));
+    }
+    return doc.periodCases?.[period] ?? 0;
+  };
 
   // Compute metrics for active filter
-  const totalFilteredCases = currentRecords.reduce((acc, doc) => {
-    const count = doc.periodCases?.[activePeriod] ?? 0;
-    return acc + count;
+  const totalFilteredCases = ensureArray(currentRecords).reduce((acc, doc) => {
+    return acc + getCasesInFilter(doc);
   }, 0);
 
-  const totalFilteredRevenue = currentRecords.reduce((acc, doc) => {
-    const count = doc.periodCases?.[activePeriod] ?? 0;
-    return acc + (count * doc.avgBill);
+  const totalFilteredRevenue = ensureArray(currentRecords).reduce((acc, doc) => {
+    const count = getCasesInFilter(doc);
+    return acc + (count * (doc.avgBill || 800));
   }, 0);
 
-  const totalOverallCases = currentRecords.reduce((acc, doc) => acc + (doc.totalCases || 0), 0);
+  const totalOverallCases = ensureArray(currentRecords).reduce((acc, doc) => acc + (doc.totalCases || 0), 0);
+
+  // Custom filter update handler
+  const handleApplyCustomFilter = () => {
+    const start = new Date(customStart);
+    const end = new Date(customEnd);
+    const diffDays = Math.max(1, Math.round(Math.abs((end - start) / (24 * 60 * 60 * 1000)))) || 7;
+    const updated = ensureArray(currentRecords).map(doc => ({
+      ...doc,
+      periodCases: {
+        ...(doc.periodCases || {}),
+        Custom: Math.min(doc.totalCases || 50, Math.max(1, Math.floor(diffDays * ((doc.totalCases || 50) / 90))))
+      }
+    }));
+    updateReferralList(updated);
+    showNotice(`Custom filter recalculated: ${customStart} to ${customEnd} (${diffDays} days)`);
+  };
 
   // CSV Export
   const handleDownloadCases = () => {
-    const headers = ['S. No.', 'Referrer ID', 'Doctor Name', 'Contact', 'Specialty', 'Period', 'Cases In Filter', 'Total Cases', 'Estimated Revenue (Rs.)'];
-    const rows = currentRecords.map((doc, idx) => {
-      const casesInFilter = doc.periodCases?.[activePeriod] ?? 0;
-      const revenue = casesInFilter * doc.avgBill;
-      return [
-        idx + 1,
-        doc.id,
-        `"${doc.name}"`,
-        doc.contact,
-        `"${doc.specialty}"`,
-        activePeriod,
-        casesInFilter,
-        doc.totalCases,
-        revenue
-      ];
-    });
+    try {
+      const headers = ['S. No.', 'Referrer ID', 'Doctor Name', 'Contact', 'Specialty', 'Period', 'Cases In Filter', 'Total Cases', 'Estimated Revenue (Rs.)'];
+      const rows = ensureArray(currentRecords).map((doc, idx) => {
+        const casesInFilter = getCasesInFilter(doc);
+        const revenue = casesInFilter * (doc.avgBill || 800);
+        return [
+          idx + 1,
+          doc.id,
+          `"${doc.name || ''}"`,
+          doc.contact || '',
+          `"${doc.specialty || ''}"`,
+          activePeriod,
+          casesInFilter,
+          doc.totalCases || 0,
+          revenue
+        ];
+      });
 
-    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `LabSetu_Referral_Business_${activePeriod.replace(/\s+/g, '_')}_2026.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    showNotice(`Cases data exported for period: ${activePeriod}`);
+      const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement('a');
+      link.setAttribute('href', encodedUri);
+      link.setAttribute('download', `LabSetu_Referral_Business_${activePeriod.replace(/\s+/g, '_')}_2026.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      showNotice(`Cases data exported for period: ${activePeriod}`);
+    } catch (err) {
+      console.warn('CSV export error:', err);
+      showNotice('Failed to export CSV. Please try again.');
+    }
   };
 
   const handlePrint = () => {
-    window.print();
+    try {
+      window.print();
+    } catch (err) {
+      console.warn('Print error:', err);
+    }
   };
 
   const handleOpenStatement = (doctor) => {
@@ -347,7 +385,7 @@ export default function ReferralBusiness() {
             <button 
               type="button" 
               className="rb-btn rb-btn-blue"
-              onClick={() => showNotice(`Updated filter from ${customStart} to ${customEnd}`)}
+              onClick={handleApplyCustomFilter}
             >
               Apply Filter
             </button>
@@ -370,8 +408,8 @@ export default function ReferralBusiness() {
             </tr>
           </thead>
           <tbody>
-            {currentRecords.map((doctor, idx) => {
-              const casesInFilter = doctor.periodCases?.[activePeriod] ?? 0;
+            {ensureArray(currentRecords).map((doctor, idx) => {
+              const casesInFilter = getCasesInFilter(doctor);
               return (
                 <tr key={doctor.id}>
                   <td><strong>{idx + 1}</strong></td>
@@ -443,9 +481,9 @@ export default function ReferralBusiness() {
                   </tr>
                 </thead>
                 <tbody>
-                  {currentRecords.map(doc => {
-                    const cases = doc.periodCases?.[activePeriod] ?? 0;
-                    const revenue = cases * doc.avgBill;
+                  {ensureArray(currentRecords).map(doc => {
+                    const cases = getCasesInFilter(doc);
+                    const revenue = cases * (doc.avgBill || 800);
                     const commission = Math.round(revenue * 0.15);
                     return (
                       <tr key={doc.id}>
@@ -524,15 +562,15 @@ export default function ReferralBusiness() {
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', margin: '1rem 0' }}>
                 <div className="rb-stat-card">
                   <span className="rb-stat-label">Referred Patients</span>
-                  <span className="rb-stat-value text-blue">{statementDoctor.periodCases?.[activePeriod] ?? 0}</span>
+                  <span className="rb-stat-value text-blue">{getCasesInFilter(statementDoctor)}</span>
                 </div>
                 <div className="rb-stat-card">
                   <span className="rb-stat-label">Total Diagnostics Value</span>
-                  <span className="rb-stat-value">Rs. {((statementDoctor.periodCases?.[activePeriod] ?? 0) * statementDoctor.avgBill).toLocaleString()}</span>
+                  <span className="rb-stat-value">Rs. {(getCasesInFilter(statementDoctor) * (statementDoctor.avgBill || 800)).toLocaleString()}</span>
                 </div>
                 <div className="rb-stat-card">
                   <span className="rb-stat-label">Professional Incentive</span>
-                  <span className="rb-stat-value text-green">Rs. {Math.round(((statementDoctor.periodCases?.[activePeriod] ?? 0) * statementDoctor.avgBill) * 0.15).toLocaleString()}</span>
+                  <span className="rb-stat-value text-green">Rs. {Math.round((getCasesInFilter(statementDoctor) * (statementDoctor.avgBill || 800)) * 0.15).toLocaleString()}</span>
                 </div>
               </div>
 

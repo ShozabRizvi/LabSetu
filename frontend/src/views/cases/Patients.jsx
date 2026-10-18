@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import './Patients.css';
 import { MagnifyingGlassIcon, EyeIcon, XMarkIcon, UserCircleIcon } from '@heroicons/react/24/outline';
+import { ensureArray } from '../../utils/arrayUtils';
 
 export default function Patients() {
   const initialPatients = [
@@ -26,7 +27,7 @@ export default function Patients() {
     setActiveFilters(empty);
   };
 
-  const filtered = patients.filter(p => {
+  const filtered = ensureArray(patients).filter(p => {
     if (activeFilters.uhid && !p.uhid.toLowerCase().includes(activeFilters.uhid.toLowerCase())) return false;
     if (activeFilters.firstName && !p.name.toLowerCase().includes(activeFilters.firstName.toLowerCase())) return false;
     if (activeFilters.lastName && !p.name.toLowerCase().includes(activeFilters.lastName.toLowerCase())) return false;
@@ -120,7 +121,7 @@ export default function Patients() {
               </td>
             </tr>
           ) : (
-            filtered.map(p => (
+            ensureArray(filtered).map(p => (
               <tr key={p.id}>
                 <td>{p.id}</td>
                 <td style={{ fontFamily: 'monospace', fontWeight: '600' }}>{p.uhid}</td>

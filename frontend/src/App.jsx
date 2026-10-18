@@ -85,82 +85,88 @@ import CitizenPrivacy from './views/citizen/CitizenPrivacy';
 import CitizenProfile from './views/citizen/CitizenProfile';
 import NotFound from './views/NotFound';
 import SplashScreen from './components/common/SplashScreen';
+import ErrorBoundary from './components/common/ErrorBoundary';
 
 function App() {
   return (
     <AuthProvider>
       <LanguageProvider>
-        <SplashScreen minDuration={1000} />
-        <Router>
-        <Routes>
-          {/* Public Homepage with visible Login Button */}
-          <Route path="/" element={<Home />} />
+        <ErrorBoundary>
+          <SplashScreen minDuration={1000} />
+          <Router>
+          <Routes>
+            {/* Public Homepage with visible Login Button */}
+            <Route path="/" element={<Home />} />
 
-          {/* Direct Accessible Authentication Routes */}
-          <Route 
-            path="/login" 
-            element={
-              <PublicOnlyRoute>
-                <Registration initialMode="signin" />
-              </PublicOnlyRoute>
-            } 
-          />
-          <Route 
-            path="/signup" 
-            element={
-              <PublicOnlyRoute>
-                <Registration initialMode="signup" />
-              </PublicOnlyRoute>
-            } 
-          />
-          <Route 
-            path="/forgot-password" 
-            element={
-              <PublicOnlyRoute>
-                <Registration initialMode="forgot" />
-              </PublicOnlyRoute>
-            } 
-          />
+            {/* Direct Accessible Authentication Routes */}
+            <Route 
+              path="/login" 
+              element={
+                <PublicOnlyRoute>
+                  <Registration initialMode="signin" />
+                </PublicOnlyRoute>
+              } 
+            />
+            <Route 
+              path="/signup" 
+              element={
+                <PublicOnlyRoute>
+                  <Registration initialMode="signup" />
+                </PublicOnlyRoute>
+              } 
+            />
+            <Route 
+              path="/forgot-password" 
+              element={
+                <PublicOnlyRoute>
+                  <Registration initialMode="forgot" />
+                </PublicOnlyRoute>
+              } 
+            />
 
-          {/* Citizen / Patient Protected Routes */}
-          <Route 
-            path="/portal" 
-            element={
-              <ProtectedRoute allowedRoles={['citizen']}>
-                <CitizenLayout />
-              </ProtectedRoute>
-            }
-          >
-            <Route index element={<Navigate to="/portal/dashboard" replace />} />
-            <Route path="dashboard" element={<CitizenDashboard />} />
-            <Route path="appointments" element={<CitizenAppointments />} />
-            <Route path="bookings" element={<CitizenAppointments />} />
-            <Route path="appointments/book" element={<AppointmentWizard />} />
-            <Route path="home-collection" element={<CitizenHomeCollection />} />
-            <Route path="reports" element={<CitizenReports />} />
-            <Route path="explainer" element={<CitizenReportExplainer />} />
-            <Route path="labs" element={<CitizenNearbyLabs />} />
-            <Route path="reminders" element={<CitizenReminders />} />
-            <Route path="family" element={<CitizenFamilyProfiles />} />
-            <Route path="bills" element={<CitizenBills />} />
-            <Route path="tests" element={<CitizenTests />} />
-            <Route path="support" element={<CitizenSupport />} />
-            <Route path="privacy" element={<CitizenPrivacy />} />
-            <Route path="profile" element={<CitizenProfile />} />
-          </Route>
+            {/* Citizen / Patient Protected Routes */}
+            <Route 
+              path="/portal" 
+              element={
+                <ProtectedRoute allowedRoles={['citizen']}>
+                  <ErrorBoundary>
+                    <CitizenLayout />
+                  </ErrorBoundary>
+                </ProtectedRoute>
+              } 
+            >
+              <Route index element={<Navigate to="/portal/dashboard" replace />} />
+              <Route path="dashboard" element={<CitizenDashboard />} />
+              <Route path="appointments" element={<CitizenAppointments />} />
+              <Route path="bookings" element={<CitizenAppointments />} />
+              <Route path="appointments/book" element={<AppointmentWizard />} />
+              <Route path="home-collection" element={<CitizenHomeCollection />} />
+              <Route path="reports" element={<CitizenReports />} />
+              <Route path="explainer" element={<CitizenReportExplainer />} />
+              <Route path="labs" element={<CitizenNearbyLabs />} />
+              <Route path="reminders" element={<CitizenReminders />} />
+              <Route path="family" element={<CitizenFamilyProfiles />} />
+              <Route path="bills" element={<CitizenBills />} />
+              <Route path="tests" element={<CitizenTests />} />
+              <Route path="support" element={<CitizenSupport />} />
+              <Route path="privacy" element={<CitizenPrivacy />} />
+              <Route path="profile" element={<CitizenProfile />} />
+            </Route>
 
-          {/* Authority Protected Routes */}
-          <Route 
-            path="/app" 
-            element={
-              <ProtectedRoute allowedRoles={['authority']}>
-                <MainLayout />
-              </ProtectedRoute>
-            }
-          >
-            <Route index element={<Navigate to="/app/getting-started" replace />} />
-            <Route path="getting-started" element={<GettingStarted />} />
-            <Route path="dashboard" element={<DashboardHome />} />
+            {/* Authority Protected Routes */}
+            <Route 
+              path="/app" 
+              element={
+                <ProtectedRoute allowedRoles={['authority']}>
+                  <ErrorBoundary>
+                    <MainLayout />
+                  </ErrorBoundary>
+                </ProtectedRoute>
+              } 
+            >
+              <Route index element={<Navigate to="/app/getting-started" replace />} />
+              <Route path="getting-started" element={<GettingStarted />} />
+              <Route path="dashboard" element={<DashboardHome />} />
             
             {/* Appointments route for staff */}
             <Route path="appointments/book" element={<AppointmentWizard />} />
@@ -234,6 +240,7 @@ function App() {
           <Route path="*" element={<NotFound />} />
         </Routes>
       </Router>
+      </ErrorBoundary>
       </LanguageProvider>
     </AuthProvider>
   );

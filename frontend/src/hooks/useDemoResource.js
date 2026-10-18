@@ -2,131 +2,137 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import apiClient from '../services/apiClient';
 
 /**
- * Universal Data Resource Hook  (Backend-Ready & Mock-Resilient)
+ * Universal Data Resource Hook (Backend-Ready & Mock-Resilient)
  *
- * Priority chain on mount:
- *   1. Synchronous: hydrate from localStorage (zero-flicker, refresh-safe)
- *   2. Async:       GET /api/resources/:key  → overwrite state + refresh cache
- *   3. Fallback:    any network/server error  → keep localStorage value silently
- *
- * On update():
- *   1. Optimistic local state update (instant UI response)
- *   2. localStorage write (survives refresh)
- *   3. Background POST /api/resources/:key  → Supabase persistence
- *   4. Any POST error is swallowed silently so the UI never crashes
- *
- * No DevTools 404/503 spam: all fetch errors are caught and suppressed.
+ * Guarantees strict array safety:
+ * - If initialData is an array (or default []), data is ALWAYS an Array, never null/undefined.
+ * - Normalizes API responses (response, response.data, response.records).
+ * - Implements graceful local cache persistence and optimistic updates.
  */
-export default function useDemoResource(key, initialValue) {
-  const storageKey  = `labsetu-demo:${key}`;
-  const initialRef  = useRef(initialValue);
-  const isMounted   = useRef(true);
+export function useDemoResource(resourceKey, initialData = []) {
+  const storageKey = `labsetu-demo:${resourceKey}`;
+  const initialRef = useRef(initialData);
+  const isArrayExpected = Array.isArray(initialData);
 
-  // ── 1. Synchronous init from localStorage ──────────────────────────────────
+  // Synchronous safe initialization
   const [data, setData] = useState(() => {
     try {
       const saved = window.localStorage.getItem(storageKey);
-      if (saved !== null && saved !== undefined) return JSON.parse(saved);
-    } catch {
-      // corrupted JSON — ignore
-    }
-    return initialValue;
-  });
-
-  const [loading, setLoading] = useState(false);
-  const [error,   setError  ] = useState('');
-
-  // ── Local-storage helper ───────────────────────────────────────────────────
-  const persistLocal = useCallback((value) => {
-    try {
-      window.localStorage.setItem(storageKey, JSON.stringify(value));
-    } catch {
-      // Quota exceeded — not critical
-    }
-  }, [storageKey]);
-
-  const readLocal = useCallback(() => {
-    try {
-      const saved = window.localStorage.getItem(storageKey);
-      return saved ? JSON.parse(saved) : initialRef.current;
-    } catch {
-      return initialRef.current;
-    }
-  }, [storageKey]);
-
-  // ── 2. Async hydration from backend ───────────────────────────────────────
-  const read = useCallback(async () => {
-    if (!isMounted.current) return;
-    setLoading(true);
-
-    // Always-succeed local fallback used by apiClient if network fails
-    const localFallback = async () => ({ success: true, data: readLocal() });
-
-    try {
-      const res = await apiClient.get(`/resources/${key}`, {}, localFallback);
-
-      if (!isMounted.current) return;
-
-      if (res?.success && res.data !== undefined) {
-        // Use backend data only when it contains real rows / non-empty content.
-        // If the server returns an empty array but localStorage has rich data
-        // (e.g. pending first-run sync), keep the local data to avoid wiping UI.
-        const backendData = res.data;
-        const isEmpty     = Array.isArray(backendData) && backendData.length === 0;
-        const localData   = readLocal();
-        const hasLocalData = Array.isArray(localData)
-          ? localData.length > 0
-          : localData !== null && localData !== undefined;
-
-        const resolved = (isEmpty && hasLocalData) ? localData : backendData;
-        setData(resolved);
-        setError('');
-        persistLocal(resolved);
+      if (saved !== null && saved !== undefined) {
+        const parsed = JSON.parse(saved);
+        if (isArrayExpected) {
+          if (Array.isArray(parsed)) return parsed;
+          if (parsed && Array.isArray(parsed.data)) return parsed.data;
+          if (parsed && Array.isArray(parsed.records)) return parsed.records;
+          return Array.isArray(initialData) ? initialData : [];
+        }
+        return parsed || initialData;
       }
     } catch {
-      // Network completely unreachable — stay on localStorage value, no error shown
-    } finally {
-      if (isMounted.current) setLoading(false);
+      // JSON parse error — ignore
     }
-  }, [key, readLocal, persistLocal]);
+    return isArrayExpected ? (Array.isArray(initialData) ? initialData : []) : initialData;
+  });
+
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  const persistLocal = useCallback((val) => {
+    try {
+      window.localStorage.setItem(storageKey, JSON.stringify(val));
+    } catch {
+      // Quota exceeded
+    }
+  }, [storageKey]);
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const response = await apiClient.get(`/resources/${resourceKey}`);
+      
+      let safeData;
+      if (isArrayExpected) {
+        const extracted = Array.isArray(response)
+          ? response
+          : Array.isArray(response?.data)
+          ? response.data
+          : Array.isArray(response?.records)
+          ? response.records
+          : [];
+
+        // If server returned an empty array but we have initial/stored records, keep rich data
+        if (extracted.length === 0 && Array.isArray(initialRef.current) && initialRef.current.length > 0) {
+          try {
+            const saved = window.localStorage.getItem(storageKey);
+            const parsed = saved ? JSON.parse(saved) : null;
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              safeData = parsed;
+            } else {
+              safeData = initialRef.current;
+            }
+          } catch {
+            safeData = initialRef.current;
+          }
+        } else {
+          safeData = extracted;
+        }
+      } else {
+        safeData = response?.data || response?.records || response || initialRef.current || {};
+      }
+
+      setData(safeData);
+      persistLocal(safeData);
+      setError(null);
+    } catch (err) {
+      console.warn(`Resource fetch fallback for ${resourceKey}:`, err);
+      const fallbackVal = isArrayExpected
+        ? (Array.isArray(initialRef.current) ? initialRef.current : [])
+        : (initialRef.current || {});
+      setData(fallbackVal);
+      setError(err);
+    } finally {
+      setLoading(false);
+    }
+  }, [resourceKey, isArrayExpected, persistLocal, storageKey]);
 
   useEffect(() => {
-    isMounted.current = true;
-    read();
-    return () => { isMounted.current = false; };
-  }, [read]);
+    let isMounted = true;
+    fetchData();
+    return () => { isMounted = false; };
+  }, [fetchData]);
 
-  // ── 3. Optimistic update + background Supabase sync ───────────────────────
+  // Synchronous optimistic updater with background backend sync
   const update = useCallback(async (nextValue) => {
     setData((current) => {
       const resolved = typeof nextValue === 'function' ? nextValue(current) : nextValue;
-
-      // Immediate localStorage write
       persistLocal(resolved);
-      setError('');
-
-      // Background POST to /api/resources/:key (Supabase via backend)
-      // Errors are silently swallowed — localStorage is the source of truth
-      // until the backend confirms.
       apiClient
-        .post(`/resources/${key}`, resolved, {}, async () => ({ success: true }))
-        .catch(() => { /* intentionally silent */ });
-
+        .post(`/resources/${resourceKey}`, resolved, {}, async () => ({ success: true }))
+        .catch(() => {});
       return resolved;
     });
-  }, [key, persistLocal]);
+  }, [resourceKey, persistLocal]);
 
-  // ── 4. Reset to initial value ─────────────────────────────────────────────
   const reset = useCallback(() => {
-    window.localStorage.removeItem(storageKey);
-    setData(initialRef.current);
-    setError('');
+    try {
+      window.localStorage.removeItem(storageKey);
+    } catch {}
+    const defaultVal = isArrayExpected
+      ? (Array.isArray(initialRef.current) ? initialRef.current : [])
+      : initialRef.current;
+    setData(defaultVal);
+    apiClient.delete(`/resources/${resourceKey}`, {}, async () => ({ success: true })).catch(() => {});
+  }, [resourceKey, storageKey, isArrayExpected]);
 
-    // Best-effort DELETE to backend; ignore response
-    apiClient
-      .delete(`/resources/${key}`, {}, async () => ({ success: true }))
-      .catch(() => { /* intentionally silent */ });
-  }, [key, storageKey]);
-
-  return { data, loading, error, update, refresh: read, reset };
+  return {
+    data,
+    setData: update,
+    update,
+    loading,
+    error,
+    refresh: fetchData,
+    reset
+  };
 }
+
+export default useDemoResource;
