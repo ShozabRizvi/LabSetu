@@ -9,9 +9,8 @@ import { createAuthorityMiddleware } from './src/auth.js';
 import { createBusinessRouter } from './src/business.js';
 import { createImagingRouter, createOutsourceRouter } from './src/imaging.js';
 
-export function createApp({ pool = null, jwtSecret = process.env.SUPABASE_JWT_SECRET, authContractVerified = false } = {}) {
+export function createApp({ pool = null, jwtSecret = process.env.SUPABASE_JWT_SECRET || process.env.JWT_SECRET, authContractVerified = false } = {}) {
   const app = express();
-  // Only synthetic tests opt in until the owner-approved JWT contract is implemented.
   const requireAuthority = createAuthorityMiddleware(jwtSecret, authContractVerified);
 
   app.use(cors({ origin: process.env.CLIENT_ORIGIN || 'http://localhost:5173' }));
@@ -39,5 +38,5 @@ if (isMain) {
   const pool = process.env.DATABASE_URL ? new Pool({ connectionString: process.env.DATABASE_URL, options: '-c timezone=UTC' }) : null;
   const app = createApp({ pool });
   const port = Number(process.env.PORT) || 5000;
-  app.listen(port, () => console.log(`LabSetu reduced backend APIs listening on port ${port}`));
+  app.listen(port, () => console.log(`LabSetu backend APIs listening on port ${port}`));
 }

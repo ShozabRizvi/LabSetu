@@ -3,50 +3,100 @@
   justify-content: center;
   align-items: center;
   min-height: 100vh;
-  background-color: #ffffff;
+  background-color: #f8fafc;
   color: #000000;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   margin: 0;
-  padding: 1rem;
+  padding: 1.5rem 1rem;
+  box-sizing: border-box;
 }
 
 .registration-card {
   width: 100%;
-  max-width: 440px;
-  padding: 3rem 2.5rem;
+  max-width: 480px;
+  padding: 2.5rem 2rem;
   background-color: #ffffff;
-  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
-  border-radius: 12px;
-  border: 1px solid #f3f4f6;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.08), 0 8px 10px -6px rgba(0, 0, 0, 0.04);
+  border-radius: 14px;
+  border: 1px solid #e2e8f0;
   text-align: center;
+  box-sizing: border-box;
 }
 
-.registration-header {
-  margin-bottom: 2rem;
+.registration-logo-wrapper {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 1.5rem;
+  width: 100%;
+}
+
+.registration-logo-wrapper a {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  text-decoration: none;
 }
 
 .registration-logo {
   max-width: 80px;
-  margin-bottom: 1.25rem;
+  height: auto;
+  display: block;
+  margin: 0 auto;
+  transition: transform 0.2s ease;
 }
 
-.registration-title {
-  margin: 0 0 0.5rem 0;
-  font-size: 1.75rem;
-  font-weight: 700;
-  color: #000000;
+.registration-logo:hover {
+  transform: scale(1.05);
 }
 
-.registration-subtitle {
-  margin: 0;
-  font-size: 0.95rem;
-  color: #6b7280;
+/* Role Selector Tabs */
+.role-selector {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+  background-color: #f1f5f9;
+  padding: 0.35rem;
+  border-radius: 10px;
+  margin-bottom: 1.5rem;
 }
 
+.role-tab {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.65rem 0.75rem;
+  border: none;
+  background: transparent;
+  color: #64748b;
+  font-size: 0.875rem;
+  font-weight: 600;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease-in-out;
+}
+
+.role-tab:hover {
+  color: #0f172a;
+}
+
+.role-tab.active {
+  background-color: #ffffff;
+  color: #15803d;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.06);
+}
+
+.role-icon {
+  width: 18px;
+  height: 18px;
+}
+
+/* Forms */
 .registration-form {
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
+  gap: 1.1rem;
 }
 
 .registration-input-group {
@@ -56,52 +106,359 @@
 }
 
 .registration-input-group label {
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.4rem;
   font-weight: 500;
-  font-size: 0.875rem;
-  color: #374151;
+  font-size: 0.85rem;
+  color: #334155;
 }
 
-.registration-input-group input {
-  padding: 0.75rem 1rem;
-  border: 1px solid #d1d5db;
+.registration-input-group label .req {
+  color: #ef4444;
+  margin-left: 1px;
+}
+
+.registration-input-group input,
+.registration-input-group select {
+  padding: 0.7rem 0.9rem;
+  border: 1px solid #cbd5e1;
   border-radius: 8px;
-  font-size: 1rem;
+  font-size: 0.95rem;
   background-color: #ffffff;
+  color: #0f172a;
   transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+  box-sizing: border-box;
+  font-family: inherit;
 }
 
-.registration-input-group input:focus {
+.registration-input-group select {
+  appearance: auto;
+  cursor: pointer;
+}
+
+.registration-input-group input:focus,
+.registration-input-group select:focus {
   outline: none;
   border-color: #15803d;
-  box-shadow: 0 0 0 3px rgba(21, 128, 61, 0.1);
+  box-shadow: 0 0 0 3px rgba(21, 128, 61, 0.15);
 }
 
-.registration-button {
-  margin-top: 0.5rem;
-  padding: 0.875rem;
-  background-color: #ffffff;
-  color: #000000;
-  border: 1px solid #d1d5db;
+/* 2-column row for date + gender */
+.registration-row-2col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+/* Password Input Wrapper with Toggle */
+.password-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.password-input-wrapper input {
+  width: 100%;
+  padding: 0.7rem 2.5rem 0.7rem 0.9rem;
+  border: 1px solid #cbd5e1;
   border-radius: 8px;
-  font-size: 1rem;
+  font-size: 0.95rem;
+  background-color: #ffffff;
+  color: #0f172a;
+  transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+  box-sizing: border-box;
+}
+
+.password-input-wrapper input:focus {
+  outline: none;
+  border-color: #15803d;
+  box-shadow: 0 0 0 3px rgba(21, 128, 61, 0.15);
+}
+
+.password-toggle-btn {
+  position: absolute;
+  right: 0.6rem;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #94a3b8;
+  padding: 0.2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: color 0.15s ease;
+}
+
+.password-toggle-btn:hover {
+  color: #475569;
+}
+
+.pw-toggle-icon {
+  width: 18px;
+  height: 18px;
+}
+
+/* Password Strength Bar */
+.password-strength-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.4rem;
+}
+
+.password-strength-track {
+  display: flex;
+  gap: 3px;
+  flex: 1;
+}
+
+.strength-segment {
+  height: 4px;
+  flex: 1;
+  border-radius: 2px;
+  transition: background-color 0.3s ease;
+}
+
+.password-strength-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* Inline field-level error */
+.inline-field-error {
+  font-size: 0.78rem;
+  color: #ef4444;
+  margin-top: 0.25rem;
+}
+
+/* Buttons */
+.registration-button {
+  padding: 0.8rem 1rem;
+  border-radius: 8px;
+  font-size: 0.95rem;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s ease-in-out;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border: 1px solid transparent;
 }
 
-.registration-button:hover {
-  background-color: #dcfce7;
-  color: #15803d;
+.registration-button.primary {
+  background-color: #15803d;
+  color: #ffffff;
   border-color: #15803d;
 }
 
-.registration-error {
-  color: #ef4444;
+.registration-button.primary:hover:not(:disabled) {
+  background-color: #166534;
+  border-color: #166534;
+  box-shadow: 0 4px 6px -1px rgba(21, 128, 61, 0.2);
+}
+
+.registration-button.primary:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.registration-button.secondary {
+  background-color: #ffffff;
+  color: #475569;
+  border-color: #cbd5e1;
+}
+
+.registration-button.secondary:hover {
+  background-color: #f8fafc;
+  color: #0f172a;
+}
+
+.registration-link-btn {
+  background: none;
+  border: none;
+  color: #15803d;
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+}
+
+.registration-link-btn:hover {
+  color: #166534;
+}
+
+.registration-link-bold {
+  background: none;
+  border: none;
+  color: #15803d;
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+}
+
+.registration-link-bold:hover {
+  color: #166534;
+}
+
+.registration-footer-text {
+  margin-top: 0.5rem;
   font-size: 0.875rem;
-  margin: 0;
-  padding: 0.5rem;
+  color: #64748b;
+}
+
+/* Messages & Alerts */
+.registration-error {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #dc2626;
+  font-size: 0.85rem;
+  margin-bottom: 1rem;
+  padding: 0.65rem 0.85rem;
   background-color: #fef2f2;
-  border-radius: 6px;
+  border-radius: 8px;
   border: 1px solid #fecaca;
+  text-align: left;
+}
+
+.registration-success {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #15803d;
+  font-size: 0.85rem;
+  margin-bottom: 1rem;
+  padding: 0.65rem 0.85rem;
+  background-color: #f0fdf4;
+  border-radius: 8px;
+  border: 1px solid #bbf7d0;
+  text-align: left;
+}
+
+/* Demo Credentials Box */
+.demo-credentials-box {
+  margin-top: 1rem;
+  padding: 0.85rem;
+  background-color: #f8fafc;
+  border: 1px dashed #cbd5e1;
+  border-radius: 8px;
+  text-align: left;
+}
+
+.demo-credentials-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #64748b;
+  margin-bottom: 0.5rem;
+}
+
+.demo-credentials-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.demo-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.45rem 0.65rem;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  border: 1px solid #e2e8f0;
+  background-color: #ffffff;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.15s ease-in-out;
+}
+
+.demo-chip.authority {
+  color: #0369a1;
+  border-color: #bae6fd;
+}
+
+.demo-chip.authority:hover {
+  background-color: #f0f9ff;
+  border-color: #0284c7;
+}
+
+.demo-chip.citizen {
+  color: #15803d;
+  border-color: #bbf7d0;
+}
+
+.demo-chip.citizen:hover {
+  background-color: #f0fdf4;
+  border-color: #16a34a;
+}
+
+/* Forgot Password Specifics */
+.forgot-description {
+  font-size: 0.875rem;
+  color: #475569;
+  line-height: 1.5;
+  margin: 0 0 0.5rem 0;
+  text-align: left;
+}
+
+.demo-notice-box {
+  padding: 0.65rem 0.85rem;
+  background-color: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  font-size: 0.825rem;
+  color: #1e40af;
+  text-align: left;
+  line-height: 1.4;
+}
+
+.back-button {
+  margin-top: 0.25rem;
+}
+
+.forgot-success-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem 0;
+}
+
+.success-big-icon {
+  width: 52px;
+  height: 52px;
+  color: #15803d;
+}
+
+.success-heading {
+  margin: 0;
+  font-size: 1.25rem;
+  color: #0f172a;
+}
+
+.success-sub {
+  margin: 0;
+  font-size: 0.875rem;
+  color: #64748b;
+  line-height: 1.4;
+  margin-bottom: 0.5rem;
+}
+
+@media (max-width: 520px) {
+  .registration-card {
+    padding: 2rem 1.25rem;
+  }
+  .registration-row-2col {
+    grid-template-columns: 1fr;
+  }
 }

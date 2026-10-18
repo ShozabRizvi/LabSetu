@@ -1,6 +1,7 @@
 {
-  "name": "labsetu-reduced-backend-apis",
+  "name": "labsetu-backend",
   "version": "1.0.0",
+  "description": "LabSetu Production & Reference Backend APIs",
   "private": true,
   "type": "module",
   "scripts": {
