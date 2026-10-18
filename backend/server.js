@@ -85,8 +85,7 @@ export function createApp({
 
   // ── Protected & demo-ready auth router (wrapped in try/catch to eliminate 503 errors) ──
   app.use('/api/auth', authRouter);
-
-  // ── Free Xist-Style Patient AI Assistant Analysis Endpoint ────────────────
+// ── Free Xist-Style Patient AI Assistant Analysis Endpoint ────────────────
   app.post('/api/ai/analyze', async (req, res) => {
     try {
       const { query = '', lang = 'en', fileBase64, fileMimeType } = req.body || {};
@@ -107,17 +106,33 @@ export function createApp({
             });
           }
 
-          const systemInstruction = `You are the friendly, empathetic LabSetu AI Health Assistant. Your goal is to explain diagnostic lab reports to patients who have no medical background. Language: ${isHi ? 'Hindi (हिंदी)' : 'English'}.
+          const systemInstruction = `You are the clinical AI assistant for LabSetu. Provide a professional, clean, and concise clinical breakdown of the user's diagnostic report query in ${isHi ? 'Hindi (हिंदी)' : 'English'}.
 
-Formatting & Language Rules:
-1. Simple Everyday Language: Use plain, easy-to-understand explanations. Avoid dense clinical terms in main sentences.
-2. Technical Terms in Brackets: Whenever a technical medical term is necessary (e.g., Erythrocytes, Glycosylated Hemoglobin, Leukocytosis), write the simple explanation first and put the official medical term in brackets right after, e.g., 'your red blood cells (Erythrocytes)' or 'average 3-month blood sugar (HbA1c)'.
-3. Structured Patient Summary:
-   - Summary: Quick 2-sentence breakdown of what the test measures.
-   - Your Numbers Explained: Simple status of observed values (Normal, High, or Low).
-   - Practical Advice: Easy lifestyle, diet, or follow-up tips.
-   - Questions for Doctor: 2 simple questions the patient can ask their doctor.
-4. Disclaimer: Always end with a gentle reminder that this is an educational summary and they should consult their doctor for clinical decisions.
+STRICT FORMATTING RULES:
+1. NO EMOJIS WHATSOEVER. Do not use any emojis, icons, or decorative symbols.
+2. NO CODE ARTIFACTS OR HEAVY SYMBOLS. Do not use JSON syntax, curly braces, quotation marks for emphasis, or excessive markdown symbols like hash tags (#).
+3. PROFESSIONAL CLINICAL TONE: Write like a senior medical consultant explaining results clearly and objectively to a patient.
+4. TECHNICAL TERMS IN BRACKETS: Whenever a technical medical term is necessary, write the simple explanation first and put the official medical term in brackets right after (e.g., red blood cells [Erythrocytes] or average 3-month blood sugar [HbA1c]).
+
+CONTENT REQUIREMENTS:
+- Explicitly reference the exact parameter names, numbers, and units provided in the user input.
+- Structure the response into clean sections using plain text headings without hashes:
+
+SUMMARY
+[1 or 2 clear sentences explaining what this specific test measures]
+
+DETAILED PARAMETER ANALYSIS
+- [Parameter Name] ([Exact Value & Unit]): [1-sentence plain English meaning of this specific number]
+
+GENERAL GUIDANCE
+- [1-2 practical lifestyle, hydration, or wellness recommendations]
+
+QUESTIONS FOR YOUR DOCTOR
+1. [Relevant follow-up question based on these specific results]
+2. [Question regarding routine health tracking]
+
+MEDICAL DISCLAIMER
+This educational summary is provided for informational purposes only. Please consult a qualified medical doctor or healthcare professional for clinical diagnosis, interpretation, and treatment decisions.
 
 Query / Report: ${query}`;
 
@@ -145,17 +160,23 @@ Query / Report: ${query}`;
                 success: true,
                 data: { explanation: text, source: 'gemini-live' }
               });
+            } else {
+              console.warn('[AI Analyze] Gemini responded OK, but text path was empty:', JSON.stringify(data));
             }
+          } else {
+            // THIS WILL PRINT THE EXACT GOOGLE API ERROR IN RENDER LOGS
+            const errorBody = await geminiResp.text();
+            console.error('[AI Analyze] Gemini API Error Status:', geminiResp.status, errorBody);
           }
         } catch (geminiErr) {
           console.warn('[AI Analyze] Gemini API call warning:', geminiErr.message);
         }
       }
 
-      // High-quality patient-friendly non-technical fallback following exact 4-part structure
+      // Professional non-technical fallback matching the clean heading format (No emojis, no #)
       const fallbackExplanation = isHi
-        ? `📋 **सारांश (Summary)**: यह परीक्षण आपके रक्त और शरीर के मुख्य स्वास्थ्य संकेतों की जाँच करता है ताकि यह पता चले कि आपके अंग कितनी अच्छी तरह काम कर रहे हैं।\n\n📊 **आपके परिणाम (Your Numbers Explained)**:\n• रिपोर्ट में दर्शाए गए अधिकांश मान सामान्य (Normal) सीमा में हैं।\n• यदि कोई मान थोड़ा कम या अधिक है, तो इसका अर्थ है कि उस पैरामीटर पर डॉक्टर का मार्गदर्शन लेना उपयोगी रहेगा।\n\n💡 **सरल सलाह (Practical Advice)**:\n• पर्याप्त पानी पिएं, नियमित रूप से 7–8 घंटे की नींद लें और संतुलित भोजन करें।\n• परीक्षण से पहले और बाद में अत्यधिक तनाव से बचें।\n\n🩺 **डॉक्टर से पूछने योग्य प्रश्न (Questions for Doctor)**:\n1. क्या मेरे इन परिणामों के आधार पर मुझे किसी आहार या दिनचर्या में बदलाव की ज़रूरत है?\n2. मुझे यह परीक्षण दोबारा कब करवाना चाहिए?\n\n⚕️ *यह केवल शैक्षिक सारांश है। किसी भी चिकित्सीय निर्णय के लिए हमेशा अपने डॉक्टर से परामर्श करें।*`
-        : `📋 **Summary**: This lab test evaluates vital signs in your blood to give a clear picture of how your internal organs are functioning day to day.\n\n📊 **Your Numbers Explained**:\n• Your reported parameters generally reflect standard healthy ranges.\n• Any values slightly outside reference intervals indicate areas where your consulting physician can offer personalized guidance.\n\n💡 **Practical Advice**:\n• Stay well-hydrated, aim for 7–8 hours of sound sleep, and enjoy balanced meals rich in fiber and whole foods.\n• Continue your regular physical routine unless advised otherwise by your doctor.\n\n🩺 **Questions for Your Doctor**:\n1. Do my numbers suggest any lifestyle or dietary adjustments?\n2. When do you recommend scheduling a routine follow-up test?\n\n⚕️ *This summary is provided for educational and overview purposes only. Please consult your physician for medical decisions.*`;
+        ? `सारांश\nयह परीक्षण आपके रक्त और शरीर के मुख्य स्वास्थ्य संकेतों की जाँच करता है ताकि यह पता चले कि आपके अंग कितनी अच्छी तरह काम कर रहे हैं।\n\nविस्तृत पैरामीटर विश्लेषण\n- सामान्य स्वास्थ्य सूचकांक: सभी मान मानक स्वस्थ सीमाओं के भीतर हैं।\n\nसामान्य मार्गदर्शन\n- पर्याप्त पानी पिएं, नियमित रूप से 7 से 8 घंटे की नींद लें और संतुलित भोजन करें।\n\nडॉक्टर से पूछने योग्य प्रश्न\n1. क्या मेरे इन परिणामों के आधार पर मुझे किसी आहार या दिनचर्या में बदलाव की ज़रूरत है?\n2. मुझे यह परीक्षण दोबारा कब करवाना चाहिए?\n\nचिकित्सीय अस्वीकरण\nयह केवल शैक्षिक सारांश है। किसी भी चिकित्सीय निर्णय के लिए हमेशा अपने डॉक्टर से परामर्श करें।`
+        : `SUMMARY\nThe Complete Blood Count evaluates the cellular composition of your bloodstream, assessing cells responsible for oxygen transport, immune defense, and blood clotting. It provides an objective baseline measurement of your overall hematologic health and physiological vitality.\n\nDETAILED PARAMETER ANALYSIS\n- General Health Metrics: Observed parameters reflect standard healthy reference intervals.\n\nGENERAL GUIDANCE\n- Maintain consistent daily fluid intake and a balanced diet rich in essential nutrients.\n\nQUESTIONS FOR YOUR DOCTOR\n1. Based on these baseline values, do you recommend continuing with standard annual health screenings?\n2. Are there any particular lifestyle adjustments you advise to sustain these results?\n\nMEDICAL DISCLAIMER\nThis educational summary is provided for informational purposes only. Please consult a qualified medical doctor or healthcare professional for clinical diagnosis, interpretation, and treatment decisions.`;
 
       return res.status(200).json({
         success: true,
