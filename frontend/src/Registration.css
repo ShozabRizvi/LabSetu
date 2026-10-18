@@ -5,7 +5,7 @@
   min-height: 100vh;
   background-color: #f8fafc;
   color: #000000;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   margin: 0;
   padding: 1.5rem 1rem;
   box-sizing: border-box;
@@ -158,7 +158,7 @@
 
 .password-input-wrapper input {
   width: 100%;
-  padding: 0.7rem 2.5rem 0.7rem 0.9rem;
+  padding: 0.7rem 4.8rem 0.7rem 0.9rem !important;
   border: 1px solid #cbd5e1;
   border-radius: 8px;
   font-size: 0.95rem;
@@ -174,25 +174,50 @@
   box-shadow: 0 0 0 3px rgba(21, 128, 61, 0.15);
 }
 
-.password-toggle-btn {
+.password-actions {
   position: absolute;
-  right: 0.6rem;
+  right: 0.5rem;
   top: 50%;
   transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  z-index: 5;
+}
+
+.password-action-btn,
+.password-toggle-btn {
   background: none;
   border: none;
   cursor: pointer;
   color: #94a3b8;
-  padding: 0.2rem;
+  padding: 0.25rem;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: 4px;
-  transition: color 0.15s ease;
+  transition: all 0.15s ease;
 }
 
+.password-action-btn:hover,
 .password-toggle-btn:hover {
-  color: #475569;
+  color: #15803d;
+  background-color: #f0fdf4;
+}
+
+.password-copied-badge {
+  position: absolute;
+  top: -24px;
+  right: 1.5rem;
+  background-color: #15803d;
+  color: #ffffff;
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  pointer-events: none;
+  animation: fadeIn 0.15s ease-in-out;
 }
 
 .pw-toggle-icon {
@@ -340,66 +365,6 @@
   border-radius: 8px;
   border: 1px solid #bbf7d0;
   text-align: left;
-}
-
-/* Demo Credentials Box */
-.demo-credentials-box {
-  margin-top: 1rem;
-  padding: 0.85rem;
-  background-color: #f8fafc;
-  border: 1px dashed #cbd5e1;
-  border-radius: 8px;
-  text-align: left;
-}
-
-.demo-credentials-title {
-  font-size: 0.75rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: #64748b;
-  margin-bottom: 0.5rem;
-}
-
-.demo-credentials-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-}
-
-.demo-chip {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.45rem 0.65rem;
-  border-radius: 6px;
-  font-size: 0.8rem;
-  font-weight: 600;
-  border: 1px solid #e2e8f0;
-  background-color: #ffffff;
-  cursor: pointer;
-  text-align: left;
-  transition: all 0.15s ease-in-out;
-}
-
-.demo-chip.authority {
-  color: #0369a1;
-  border-color: #bae6fd;
-}
-
-.demo-chip.authority:hover {
-  background-color: #f0f9ff;
-  border-color: #0284c7;
-}
-
-.demo-chip.citizen {
-  color: #15803d;
-  border-color: #bbf7d0;
-}
-
-.demo-chip.citizen:hover {
-  background-color: #f0fdf4;
-  border-color: #16a34a;
 }
 
 /* Forgot Password Specifics */

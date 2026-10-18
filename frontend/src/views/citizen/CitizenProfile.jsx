@@ -28,6 +28,8 @@ export default function CitizenProfile() {
     e.preventDefault();
     try {
       const updatedUser = { ...currentUser, ...profile };
+      sessionStorage.setItem('labsetu_patient_session', JSON.stringify(updatedUser));
+      localStorage.setItem('labsetu_patient_session', JSON.stringify(updatedUser));
       sessionStorage.setItem('labsetu_auth', JSON.stringify(updatedUser));
       setSavedNotice(true);
       setTimeout(() => setSavedNotice(false), 2500);

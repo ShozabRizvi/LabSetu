@@ -8,7 +8,7 @@ import { useAuth } from '../../context/AuthContext';
  * - If role does not match allowedRoles: redirects to their respective authorized home
  */
 export function ProtectedRoute({ allowedRoles, children }) {
-  const { isAuthenticated, role, loading } = useAuth();
+  const { authorityUser, patientUser, currentUser, loading } = useAuth();
   const location = useLocation();
 
   if (loading) {
@@ -38,13 +38,22 @@ export function ProtectedRoute({ allowedRoles, children }) {
     );
   }
 
-  if (!isAuthenticated) {
-    return <Navigate to="/login" state={{ from: location }} replace />;
+  // Determine the active session user for the requested role boundary
+  let activeUser = currentUser;
+  if (allowedRoles?.includes('authority') && !allowedRoles?.includes('citizen')) {
+    activeUser = authorityUser;
+  } else if (allowedRoles?.includes('citizen') && !allowedRoles?.includes('authority')) {
+    activeUser = patientUser;
   }
 
-  if (allowedRoles && !allowedRoles.includes(role)) {
+  if (!activeUser) {
+    const defaultRole = allowedRoles?.includes('citizen') ? 'citizen' : 'authority';
+    return <Navigate to={`/login?role=${defaultRole}`} state={{ from: location, defaultRole }} replace />;
+  }
+
+  if (allowedRoles && !allowedRoles.includes(activeUser.role)) {
     // Redirect to the appropriate home for their role
-    if (role === 'citizen') {
+    if (activeUser.role === 'citizen') {
       return <Navigate to="/portal/dashboard" replace />;
     }
     return <Navigate to="/app/getting-started" replace />;
@@ -54,20 +63,25 @@ export function ProtectedRoute({ allowedRoles, children }) {
 }
 
 /**
- * Public only route (e.g., login / signup). If already logged in, redirect to respective role dashboard.
+ * Public only route (e.g., login / signup).
  */
 export function PublicOnlyRoute({ children }) {
-  const { isAuthenticated, role, loading } = useAuth();
+  const { authorityUser, patientUser, loading } = useAuth();
+  const location = useLocation();
 
   if (loading) {
     return null;
   }
 
-  if (isAuthenticated) {
-    if (role === 'citizen') {
-      return <Navigate to="/portal/dashboard" replace />;
-    }
+  // If user navigates explicitly to /login or /signup, allow them to view and switch accounts
+  // Only redirect if no query role is specified and user is already at the root
+  const params = new URLSearchParams(location.search);
+  const targetRole = params.get('role');
+  if (targetRole === 'authority' && authorityUser) {
     return <Navigate to="/app/getting-started" replace />;
+  }
+  if (targetRole === 'citizen' && patientUser) {
+    return <Navigate to="/portal/dashboard" replace />;
   }
 
   return children;

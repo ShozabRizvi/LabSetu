@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import './NewBill.css';
-import { QuestionMarkCircleIcon, XMarkIcon, MagnifyingGlassIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
+import { QuestionMarkCircleIcon, XMarkIcon, MagnifyingGlassIcon, CheckCircleIcon, CreditCardIcon } from '@heroicons/react/24/outline';
 import useDemoResource from '../../hooks/useDemoResource';
 import { demoDashboardData } from '../../data/mockLabData';
 
@@ -25,6 +25,14 @@ export default function NewBill() {
       upi: 0,
       card: 0,
       due: 0
+    },
+    cardPayment: {
+      amount: '',
+      cardNumber: '',
+      cardholderName: '',
+      expiry: '',
+      cvv: '',
+      authRefId: ''
     },
     activeCategory: 'All'
   };
@@ -61,6 +69,14 @@ export default function NewBill() {
     updateBillWorkflow(prev => ({
       ...(prev || defaultBillWorkflow),
       paymentBreakdown: typeof val === 'function' ? val((prev || defaultBillWorkflow).paymentBreakdown) : val
+    }));
+  };
+
+  const cardPayment = billWorkflow?.cardPayment || defaultBillWorkflow.cardPayment;
+  const setCardPayment = (val) => {
+    updateBillWorkflow(prev => ({
+      ...(prev || defaultBillWorkflow),
+      cardPayment: typeof val === 'function' ? val((prev || defaultBillWorkflow).cardPayment) : val
     }));
   };
 
@@ -102,9 +118,57 @@ export default function NewBill() {
     setCart(cart.filter(item => item.id !== id));
   };
 
+  const formatCardNumber = (val) => {
+    const digits = val.replace(/\D/g, '').slice(0, 16);
+    return digits.replace(/(\d{4})(?=\d)/g, '$1 ').trim();
+  };
+
+  const formatExpiry = (val) => {
+    const digits = val.replace(/\D/g, '').slice(0, 4);
+    if (digits.length >= 3) {
+      return `${digits.slice(0, 2)}/${digits.slice(2, 4)}`;
+    }
+    return digits;
+  };
+
+  const handleCashChange = (val) => {
+    const num = parseFloat(val) || 0;
+    setPaymentBreakdown(prev => ({ ...prev, cash: num }));
+  };
+
+  const handleUpiChange = (val) => {
+    const num = parseFloat(val) || 0;
+    setPaymentBreakdown(prev => ({ ...prev, upi: num }));
+  };
+
+  const handleCardAmountChange = (val) => {
+    const num = parseFloat(val) || 0;
+    setPaymentBreakdown(prev => ({ ...prev, card: num }));
+    setCardPayment(prev => ({ ...prev, amount: val }));
+  };
+
+  const handleDueChange = (val) => {
+    const num = parseFloat(val) || 0;
+    setPaymentBreakdown(prev => ({ ...prev, due: num }));
+  };
+
   const clearForm = () => {
     setCart([]);
     setDiscount(0);
+    setPaymentBreakdown({
+      cash: 0,
+      upi: 0,
+      card: 0,
+      due: 0
+    });
+    setCardPayment({
+      amount: '',
+      cardNumber: '',
+      cardholderName: '',
+      expiry: '',
+      cvv: '',
+      authRefId: ''
+    });
     setPatientForm({
       mobile: '',
       uhid: '',
@@ -422,19 +486,121 @@ export default function NewBill() {
             <div className="newbill-grid-2">
               <div className="newbill-input-group">
                 <div style={{fontSize:'0.8rem', color:'#6b7280'}}>Cash</div>
-                <input type="number" className="newbill-input" defaultValue={netPayable} />
+                <input 
+                  type="number" 
+                  className="newbill-input" 
+                  value={paymentBreakdown.cash ?? (paymentBreakdown.card || paymentBreakdown.upi || paymentBreakdown.due ? 0 : netPayable)} 
+                  onChange={(e) => handleCashChange(e.target.value)} 
+                />
               </div>
               <div className="newbill-input-group">
                 <div style={{fontSize:'0.8rem', color:'#6b7280'}}>UPI</div>
-                <input type="number" className="newbill-input" defaultValue="0" />
+                <input 
+                  type="number" 
+                  className="newbill-input" 
+                  value={paymentBreakdown.upi ?? 0} 
+                  onChange={(e) => handleUpiChange(e.target.value)} 
+                />
               </div>
               <div className="newbill-input-group">
                 <div style={{fontSize:'0.8rem', color:'#6b7280'}}>Card</div>
-                <input type="number" className="newbill-input" defaultValue="0" />
+                <input 
+                  type="number" 
+                  className="newbill-input" 
+                  value={cardPayment.amount || (paymentBreakdown.card ? paymentBreakdown.card : '')} 
+                  placeholder="0.00"
+                  onChange={(e) => handleCardAmountChange(e.target.value)} 
+                />
               </div>
               <div className="newbill-input-group">
                 <div style={{fontSize:'0.8rem', color:'#6b7280'}}>Due / Credit</div>
-                <input type="number" className="newbill-input" defaultValue="0" />
+                <input 
+                  type="number" 
+                  className="newbill-input" 
+                  value={paymentBreakdown.due ?? 0} 
+                  onChange={(e) => handleDueChange(e.target.value)} 
+                />
+              </div>
+            </div>
+
+            {/* Expand Card Payment Entry with distinct inputs (Amount, Card Number, Cardholder Name, Expiry/CVV, Auth Ref ID) */}
+            <div className="newbill-card-box">
+              <div className="newbill-card-box-header">
+                <CreditCardIcon style={{ width: '18px', height: '18px', color: '#15803d' }} />
+                <span>Card Payment Specification</span>
+              </div>
+              
+              <div className="newbill-card-box-body">
+                <div className="newbill-grid-2">
+                  <div className="newbill-input-group">
+                    <label className="newbill-label">Card Amount (Rs.)</label>
+                    <input 
+                      type="number" 
+                      className="newbill-input card-input" 
+                      placeholder="0.00" 
+                      value={cardPayment.amount}
+                      onChange={(e) => handleCardAmountChange(e.target.value)}
+                    />
+                  </div>
+                  <div className="newbill-input-group">
+                    <label className="newbill-label">Card Number</label>
+                    <input 
+                      type="text" 
+                      className="newbill-input card-input" 
+                      placeholder="4532 •••• •••• 8892" 
+                      maxLength={19}
+                      value={cardPayment.cardNumber}
+                      onChange={(e) => setCardPayment(prev => ({ ...prev, cardNumber: formatCardNumber(e.target.value) }))}
+                    />
+                  </div>
+                </div>
+
+                <div className="newbill-input-group">
+                  <label className="newbill-label">Cardholder Name</label>
+                  <input 
+                    type="text" 
+                    className="newbill-input card-input" 
+                    placeholder="e.g., John Doe" 
+                    value={cardPayment.cardholderName}
+                    onChange={(e) => setCardPayment(prev => ({ ...prev, cardholderName: e.target.value }))}
+                  />
+                </div>
+
+                <div className="newbill-grid-2">
+                  <div className="newbill-input-group">
+                    <label className="newbill-label">Expiry Date</label>
+                    <input 
+                      type="text" 
+                      className="newbill-input card-input" 
+                      placeholder="MM/YY" 
+                      maxLength={5}
+                      value={cardPayment.expiry}
+                      onChange={(e) => setCardPayment(prev => ({ ...prev, expiry: formatExpiry(e.target.value) }))}
+                    />
+                  </div>
+                  <div className="newbill-input-group">
+                    <label className="newbill-label">CVV</label>
+                    <input 
+                      type="password" 
+                      className="newbill-input card-input" 
+                      placeholder="CVV" 
+                      maxLength={4}
+                      value={cardPayment.cvv}
+                      onChange={(e) => setCardPayment(prev => ({ ...prev, cvv: e.target.value.replace(/\D/g, '').slice(0, 4) }))}
+                    />
+                  </div>
+                </div>
+
+                <div className="newbill-input-group" style={{ marginBottom: 0 }}>
+                  <label className="newbill-label">Transaction / Auth Ref ID</label>
+                  <input 
+                    type="text" 
+                    className="newbill-input card-input" 
+                    placeholder="e.g., TXN-984210" 
+                    value={cardPayment.authRefId}
+                    onChange={(e) => setCardPayment(prev => ({ ...prev, authRefId: e.target.value }))}
+                  />
+                </div>
               </div>
             </div>
           </div>

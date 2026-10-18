@@ -11,7 +11,9 @@ import {
   InformationCircleIcon,
   HomeIcon,
   EyeIcon,
-  EyeSlashIcon
+  EyeSlashIcon,
+  ClipboardDocumentIcon,
+  CheckIcon
 } from '@heroicons/react/24/outline';
 
 export default function Registration({ initialMode }) {
@@ -54,6 +56,7 @@ export default function Registration({ initialMode }) {
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [showLoginPassword, setShowLoginPassword] = useState(false);
+  const [copiedPassword, setCopiedPassword] = useState(false);
 
   // Sign up state - expanded
   const [signUpForm, setSignUpForm] = useState({
@@ -70,6 +73,7 @@ export default function Registration({ initialMode }) {
   });
   const [showSignupPassword, setShowSignupPassword] = useState(false);
   const [showSignupConfirm, setShowSignupConfirm] = useState(false);
+  const [copiedSignupPassword, setCopiedSignupPassword] = useState(false);
 
   // Forgot password state
   const [forgotEmail, setForgotEmail] = useState('');
@@ -120,25 +124,66 @@ export default function Registration({ initialMode }) {
     return emailRegex.test(value) || phoneRegex.test(value.replace(/\D/g, ''));
   };
 
+  const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+  const handleCopyPassword = () => {
+    if (!loginPassword) return;
+    try {
+      if (navigator?.clipboard?.writeText) {
+        navigator.clipboard.writeText(loginPassword);
+      } else {
+        const textArea = document.createElement('textarea');
+        textArea.value = loginPassword;
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+      }
+      setCopiedPassword(true);
+      setTimeout(() => setCopiedPassword(false), 2000);
+    } catch {
+      // ignore copy errors
+    }
+  };
+
+  const handleCopySignupPassword = () => {
+    if (!signUpForm.password) return;
+    try {
+      if (navigator?.clipboard?.writeText) {
+        navigator.clipboard.writeText(signUpForm.password);
+      } else {
+        const textArea = document.createElement('textarea');
+        textArea.value = signUpForm.password;
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+      }
+      setCopiedSignupPassword(true);
+      setTimeout(() => setCopiedSignupPassword(false), 2000);
+    } catch {
+      // ignore copy errors
+    }
+  };
+
   // Sign in handler
   const handleSignIn = async (e) => {
     e.preventDefault();
     setError('');
     setSuccessMsg('');
 
-    if (!loginEmail || loginEmail.trim().length < 2) {
-      setError(role === 'authority' 
-        ? 'Please enter your Organisation Name, official email, or phone.' 
-        : 'Please enter your Patient Name, email, or phone.');
+    const trimmedEmail = loginEmail.trim();
+    if (!trimmedEmail || !EMAIL_REGEX.test(trimmedEmail)) {
+      setError('Please enter a valid email address with an @ symbol and domain (e.g. name@domain.com).');
       return;
     }
-    if (!loginPassword) {
-      setError('Please enter your password.');
+    if (!loginPassword || loginPassword.length < 6) {
+      setError('Password must be at least 6 characters long.');
       return;
     }
 
     setIsSubmitting(true);
-    const result = await login(loginEmail, loginPassword, role);
+    const result = await login(trimmedEmail, loginPassword, role);
     setIsSubmitting(false);
 
     if (result.success) {
@@ -155,30 +200,6 @@ export default function Registration({ initialMode }) {
       }
     } else {
       setError(result.error || 'Authentication failed. Please check your credentials.');
-    }
-  };
-
-  // Quick demo credentials login helper
-  const handleQuickDemoLogin = async (targetRole) => {
-    setRole(targetRole);
-    setError('');
-    const fromPath = location.state?.from?.pathname;
-    if (targetRole === 'authority') {
-      setLoginEmail('LabSetu Diagnostics');
-      setLoginPassword('password123');
-      const res = await login('LabSetu Diagnostics', 'password123', 'authority');
-      if (res.success) {
-        if (fromPath && fromPath.startsWith('/app')) navigate(fromPath);
-        else navigate('/app/getting-started');
-      }
-    } else {
-      setLoginEmail('Shozab Rizvi');
-      setLoginPassword('password123');
-      const res = await login('Shozab Rizvi', 'password123', 'citizen');
-      if (res.success) {
-        if (fromPath && fromPath.startsWith('/portal')) navigate(fromPath);
-        else navigate('/portal/dashboard');
-      }
     }
   };
 
@@ -358,22 +379,22 @@ export default function Registration({ initialMode }) {
           <form className="registration-form" onSubmit={handleSignIn}>
             <div className="registration-input-group">
               <label htmlFor="login-email">
-                {role === 'authority' ? 'Organisation Name' : 'Patient Name'}
+                {role === 'authority' ? 'Official Email' : 'Email Address'}
               </label>
               <input
-                type="text"
+                type="email"
                 id="login-email"
-                placeholder={role === 'authority' ? 'e.g. LabSetu Diagnostics (or official email)' : 'e.g. Shozab Rizvi (or registered email/phone)'}
+                placeholder={role === 'authority' ? 'admin@labsetu.com' : 'patient@labsetu.com'}
                 value={loginEmail}
                 onChange={(e) => setLoginEmail(e.target.value)}
-                autoComplete={role === 'authority' ? 'organization' : 'name'}
+                autoComplete="email"
                 required
               />
             </div>
 
             <div className="registration-input-group">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <label htmlFor="login-password">Password</label>
+                <label htmlFor="login-password">Password (min. 6 characters)</label>
                 <button
                   type="button"
                   className="registration-link-btn"
@@ -386,15 +407,39 @@ export default function Registration({ initialMode }) {
                 <input
                   type={showLoginPassword ? 'text' : 'password'}
                   id="login-password"
-                  placeholder="Enter password"
+                  placeholder="Enter password (min. 6 characters)"
                   value={loginPassword}
                   onChange={(e) => setLoginPassword(e.target.value)}
                   autoComplete="current-password"
                   required
                 />
-                <button type="button" className="password-toggle-btn" onClick={() => setShowLoginPassword(!showLoginPassword)} tabIndex={-1} aria-label={showLoginPassword ? 'Hide password' : 'Show password'}>
-                  {showLoginPassword ? <EyeSlashIcon className="pw-toggle-icon" /> : <EyeIcon className="pw-toggle-icon" />}
-                </button>
+                <div className="password-actions">
+                  <button 
+                    type="button" 
+                    className="password-action-btn" 
+                    onClick={handleCopyPassword} 
+                    title={copiedPassword ? "Password copied to clipboard!" : "Copy password to clipboard"}
+                    aria-label="Copy password to clipboard"
+                  >
+                    {copiedPassword ? (
+                      <CheckIcon className="pw-toggle-icon" style={{ color: '#15803d' }} />
+                    ) : (
+                      <ClipboardDocumentIcon className="pw-toggle-icon" />
+                    )}
+                  </button>
+                  <button 
+                    type="button" 
+                    className="password-action-btn" 
+                    onClick={() => setShowLoginPassword(!showLoginPassword)} 
+                    tabIndex={-1} 
+                    aria-label={showLoginPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showLoginPassword ? <EyeSlashIcon className="pw-toggle-icon" /> : <EyeIcon className="pw-toggle-icon" />}
+                  </button>
+                </div>
+                {copiedPassword && (
+                  <span className="password-copied-badge">Copied!</span>
+                )}
               </div>
             </div>
 
@@ -405,29 +450,6 @@ export default function Registration({ initialMode }) {
             >
               {isSubmitting ? 'Signing In...' : `Sign In as ${role === 'authority' ? 'Authority' : 'Patient'}`}
             </button>
-
-            {/* Quick Demo Credentials Helpers */}
-            <div className="demo-credentials-box">
-              <div className="demo-credentials-title">Quick Demo Login:</div>
-              <div className="demo-credentials-actions">
-                <button
-                  type="button"
-                  className="demo-chip authority"
-                  onClick={() => handleQuickDemoLogin('authority')}
-                >
-                  <ShieldCheckIcon style={{ width: '14px' }} />
-                  Demo Authority (LabSetu Diagnostics)
-                </button>
-                <button
-                  type="button"
-                  className="demo-chip citizen"
-                  onClick={() => handleQuickDemoLogin('citizen')}
-                >
-                  <UserIcon style={{ width: '14px' }} />
-                  Demo Patient (Shozab Rizvi)
-                </button>
-              </div>
-            </div>
 
             <div className="registration-footer-text">
               Don't have an account?{' '}
@@ -563,9 +585,33 @@ export default function Registration({ initialMode }) {
                   onChange={(e) => setSignUpForm({ ...signUpForm, password: e.target.value })}
                   required
                 />
-                <button type="button" className="password-toggle-btn" onClick={() => setShowSignupPassword(!showSignupPassword)} tabIndex={-1} aria-label={showSignupPassword ? 'Hide password' : 'Show password'}>
-                  {showSignupPassword ? <EyeSlashIcon className="pw-toggle-icon" /> : <EyeIcon className="pw-toggle-icon" />}
-                </button>
+                <div className="password-actions">
+                  <button 
+                    type="button" 
+                    className="password-action-btn" 
+                    onClick={handleCopySignupPassword} 
+                    title={copiedSignupPassword ? "Password copied to clipboard!" : "Copy password to clipboard"}
+                    aria-label="Copy password to clipboard"
+                  >
+                    {copiedSignupPassword ? (
+                      <CheckIcon className="pw-toggle-icon" style={{ color: '#15803d' }} />
+                    ) : (
+                      <ClipboardDocumentIcon className="pw-toggle-icon" />
+                    )}
+                  </button>
+                  <button 
+                    type="button" 
+                    className="password-action-btn" 
+                    onClick={() => setShowSignupPassword(!showSignupPassword)} 
+                    tabIndex={-1} 
+                    aria-label={showSignupPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showSignupPassword ? <EyeSlashIcon className="pw-toggle-icon" /> : <EyeIcon className="pw-toggle-icon" />}
+                  </button>
+                </div>
+                {copiedSignupPassword && (
+                  <span className="password-copied-badge">Copied!</span>
+                )}
               </div>
               {signUpForm.password && (
                 <div className="password-strength-bar">

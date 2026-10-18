@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import './AiReportViewer.css';
 import { runSimulation, clearCachedResult, TEST_CATALOGUE } from '../../services/aiSimService.js';
 import {
@@ -11,7 +12,9 @@ import {
   ChevronDownIcon,
   ChevronUpIcon,
   ClipboardDocumentCheckIcon,
-  SparklesIcon
+  SparklesIcon,
+  ArrowLeftIcon,
+  UserCircleIcon
 } from '@heroicons/react/24/outline';
 
 // ─── Predefined test panels ───────────────────────────────────────────────────
@@ -136,7 +139,23 @@ function ResultsTable({ results }) {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function AiReportViewer() {
-  const [selectedPanel, setSelectedPanel] = useState(PANELS[0]);
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+
+  const patientQuery = searchParams.get('patient') || '';
+  const caseIdQuery = searchParams.get('id') || '';
+  const panelQuery = searchParams.get('panel') || '';
+
+  const initialPanel = PANELS.find(p => p.id === panelQuery) || PANELS[0];
+  const [selectedPanel, setSelectedPanel] = useState(initialPanel);
+
+  useEffect(() => {
+    if (panelQuery) {
+      const matched = PANELS.find(p => p.id === panelQuery);
+      if (matched) setSelectedPanel(matched);
+    }
+  }, [panelQuery]);
+
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -159,11 +178,15 @@ NON-NEGOTIABLE RULES:
 9. Recalculate abnormal_count and critical_count from the individual result rows before returning JSON.
 10. The backend will independently validate every number and count. Treat backend validation as authoritative.`;
 
+  const activeCaseId = caseIdQuery 
+    ? `550e8400-e29b-41d4-a716-44665544${caseIdQuery.padStart(4, '0').slice(-4)}`
+    : DEMO_CASE_ID;
+
   const runSim = useCallback(async (force = false) => {
     setLoading(true);
     setError(null);
     try {
-      const r = await runSimulation(DEMO_CASE_ID, DEMO_CENTER_ID, selectedPanel.testIds, force);
+      const r = await runSimulation(activeCaseId, DEMO_CENTER_ID, selectedPanel.testIds, force);
       setResult(r);
       setSource(r._source);
     } catch (e) {
@@ -171,18 +194,63 @@ NON-NEGOTIABLE RULES:
     } finally {
       setLoading(false);
     }
-  }, [selectedPanel]);
+  }, [selectedPanel, activeCaseId]);
 
   // Auto-run on panel change
   useEffect(() => { runSim(false); }, [runSim]);
 
   const handleRefresh = async () => {
-    clearCachedResult(DEMO_CASE_ID);
+    clearCachedResult(activeCaseId);
     await runSim(true);
   };
 
   return (
     <div className="airv-container">
+      {/* Navigation & Patient Banner */}
+      {patientQuery && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          background: '#f0fdf4',
+          border: '1px solid #bbf7d0',
+          padding: '0.75rem 1rem',
+          borderRadius: '8px',
+          marginBottom: '1.25rem'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+            <UserCircleIcon style={{ width: 24, color: '#15803d' }} />
+            <div>
+              <div style={{ fontWeight: '700', color: '#15803d', fontSize: '0.95rem' }}>
+                Clinical Report: {patientQuery} {caseIdQuery && `(Case #${caseIdQuery})`}
+              </div>
+              <div style={{ fontSize: '0.8rem', color: '#166534' }}>
+                Active investigation: {selectedPanel.label} • Real-time AI tabular parameter generator
+              </div>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => navigate('/app/lab/todays-reports')}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.35rem',
+              padding: '0.45rem 0.85rem',
+              borderRadius: '6px',
+              border: '1px solid #cbd5e1',
+              background: '#ffffff',
+              fontSize: '0.825rem',
+              fontWeight: '600',
+              color: '#334155',
+              cursor: 'pointer'
+            }}
+          >
+            <ArrowLeftIcon style={{ width: 14 }} /> Today's Reports
+          </button>
+        </div>
+      )}
+
       {/* Header */}
       <div className="airv-header">
         <div>

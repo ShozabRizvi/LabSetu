@@ -292,3 +292,50 @@
   0% { opacity: 0; transform: translateX(-10px); }
   100% { opacity: 1; transform: translateX(0); }
 }
+
+/* Card Payment Box Specification */
+.newbill-card-box {
+  margin-top: 1rem;
+  background-color: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  overflow: hidden;
+  transition: all 0.2s ease-in-out;
+}
+
+.newbill-card-box:focus-within {
+  border-color: #86efac;
+  box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.1);
+}
+
+.newbill-card-box-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.65rem 0.85rem;
+  background-color: #f1f5f9;
+  border-bottom: 1px solid #e2e8f0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #334155;
+  text-transform: uppercase;
+  letter-spacing: 0.025em;
+}
+
+.newbill-card-box-body {
+  padding: 0.85rem;
+}
+
+.newbill-card-input,
+.card-input {
+  background-color: #ffffff;
+  font-size: 0.85rem;
+  padding: 0.45rem 0.65rem;
+}
+
+.newbill-card-input::placeholder,
+.newbill-input::placeholder,
+.card-input::placeholder {
+  color: #9ca3af !important;
+  opacity: 1;
+}

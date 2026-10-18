@@ -42,7 +42,7 @@ function seededRng(caseId, testId) {
 const FLAG = { N: 'N', L: 'L', H: 'H', CL: 'C-L', CH: 'C-H', NA: 'NA' };
 const STATUS = { NORMAL: 'NORMAL', ABNORMAL: 'ABNORMAL', CRITICAL: 'CRITICAL', UNAVAILABLE: 'UNAVAILABLE' };
 
-function computeFlag(value, ref) {
+export function computeFlag(value, ref) {
   if (ref.min == null || ref.max == null) return { flag: FLAG.NA, status: STATUS.UNAVAILABLE };
   const critLow  = ref.criticalLow  ?? ref.min * 0.6;
   const critHigh = ref.criticalHigh ?? ref.max * 1.5;

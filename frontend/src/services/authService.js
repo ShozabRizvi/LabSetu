@@ -172,7 +172,9 @@ export const authService = {
   async getCurrentUser() {
     const fallbackFn = async () => {
       try {
-        const saved = sessionStorage.getItem('labsetu_auth');
+        const path = typeof window !== 'undefined' ? window.location.pathname : '';
+        const key = path.startsWith('/portal') ? 'labsetu_patient_session' : (path.startsWith('/app') ? 'labsetu_authority_session' : 'labsetu_auth');
+        const saved = sessionStorage.getItem(key) || localStorage.getItem(key) || sessionStorage.getItem('labsetu_auth') || localStorage.getItem('labsetu_auth');
         return saved ? { success: true, user: JSON.parse(saved) } : { success: false, user: null };
       } catch {
         return { success: false, user: null };

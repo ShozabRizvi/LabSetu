@@ -13,6 +13,13 @@
  * SYSTEM PROMPT stored as constant – mirrors the specification word-for-word.
  */
 
+import 'dotenv/config';
+
+export const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || 'https://tghjbfeadohczaaanlhe.supabase.co';
+export const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
+export const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
+export const VITE_API_BASE_URL = process.env.VITE_API_BASE_URL || `http://localhost:${process.env.PORT || 5000}`;
+
 // ─── System Prompt (verbatim from specification) ──────────────────────────────
 export const LABSETU_SIM_SYSTEM_PROMPT = `SYSTEM PROMPT - LABSETU SIMULATION ENGINE v1.0
 You are LabSetu-Sim, a constrained laboratory simulation engine. You are NOT a clinician, NOT a diagnostic authority, and NOT a source of real medical advice. Your output is synthetic demo data for software testing and hackathon demonstration only.
@@ -559,6 +566,18 @@ export function createAiRouter({ requireAuthority }) {
       data: TEST_CATALOGUE.map(({ test_id, name, unit, normalRange }) => ({
         test_id, name, unit, normalRange
       }))
+    });
+  });
+
+  // GET /api/ai/config – diagnostic check for environment variables wiring
+  router.get('/config', requireAuthority, (_req, res) => {
+    return res.json({
+      success: true,
+      data: {
+        supabaseConfigured: Boolean(SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY),
+        geminiConfigured: Boolean(GEMINI_API_KEY),
+        apiBaseUrl: VITE_API_BASE_URL
+      }
     });
   });
 
