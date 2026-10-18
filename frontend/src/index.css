@@ -60,3 +60,40 @@ button, input, select, textarea {
     transform: none !important;
   }
 }
+
+/* ==========================================================================
+   Global Print Protection Rules — Ensures Clean Non-Blank Printouts
+   ========================================================================== */
+@media print {
+  /* Hide navigation headers, sidebars, and action buttons */
+  nav, sidebar, .sidebar, .citizen-sidebar, .citizen-header, .main-header, header, footer, button, .no-print {
+    display: none !important;
+    visibility: hidden !important;
+  }
+
+  /* Unconstrain viewport / body / scroll containers so browser never clips or whites-out */
+  html, body, #root, .citizen-layout-container, .citizen-body, .citizen-main-content, .main-layout-container, .main-body {
+    height: auto !important;
+    min-height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    position: static !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+
+  /* Force visibility on printable receipt section */
+  body, #printable-slip, .printable-slip {
+    visibility: visible !important;
+    display: block !important;
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+}
+

@@ -1,8 +1,9 @@
 import React, { useMemo, useState } from 'react';
-import { CheckCircleIcon, ChevronLeftIcon, ChevronRightIcon, CalendarDaysIcon, UserCircleIcon, BuildingOffice2Icon, ClockIcon, ShieldCheckIcon } from '@heroicons/react/24/outline';
+import { CheckCircleIcon, ChevronLeftIcon, ChevronRightIcon, CalendarDaysIcon, UserCircleIcon, BuildingOffice2Icon, ClockIcon, ShieldCheckIcon, PrinterIcon } from '@heroicons/react/24/outline';
 import useDemoResource from '../../hooks/useDemoResource';
 import { useAuth } from '../../context/AuthContext';
-import { appointmentSlots, departments } from '../../data/mockLabData';
+import { appointmentSlots, departments, demoPatient } from '../../data/mockLabData';
+import logo from '../../assets/logo.png';
 import './AppointmentWizard.css';
 
 const steps = ['Patient details', 'Department', 'Date', 'Slot', 'Confirmation'];
@@ -133,9 +134,31 @@ export default function AppointmentWizard() {
     setNotice(''); 
   };
 
+  const handlePrintSlip = () => {
+    if (!reference) {
+      const id = `APT-${Date.now().toString().slice(-7)}`;
+      const record = { 
+        id, 
+        patientName: (patient.name || currentUser?.name || demoPatient?.name || 'rshozab64').trim(), 
+        mobile: patient.mobile || currentUser?.phone || '9876500000', 
+        department: department || 'cardiology', 
+        date: date || dateValue(1), 
+        slot: slot || 'morning-1', 
+        status: 'Confirmed', 
+        createdAt: new Date().toISOString() 
+      };
+      saveAppointments((current) => [record, ...(Array.isArray(current) ? current : [])]);
+      setReference(id);
+      setStep(4);
+    }
+    setTimeout(() => {
+      window.print();
+    }, 80);
+  };
+
   return (
     <main className="appt-page">
-      <div className="appt-heading">
+      <div className="appt-heading no-print">
         <div>
           <span className="appt-eyebrow">PATIENT SERVICES</span>
           <h1>Book an appointment</h1>
@@ -147,7 +170,7 @@ export default function AppointmentWizard() {
       </div>
 
       <section className="appt-card">
-        <div className="appt-stepper">
+        <div className="appt-stepper no-print">
           {steps.map((label, index) => (
             <div className={`appt-step ${index === step ? 'current' : ''} ${index < step ? 'completed' : ''}`} key={label}>
               <span className="appt-step-number">{index < step ? <CheckCircleIcon /> : index + 1}</span>
@@ -294,53 +317,100 @@ export default function AppointmentWizard() {
 
           {step === 4 && (
             <div className="appt-confirmation">
-              <div className="appt-success-icon">
+              <div className="appt-success-icon no-print">
                 <CheckCircleIcon />
               </div>
-              <span className="appt-eyebrow">BOOKING CONFIRMATION</span>
-              <h2>{reference ? 'Appointment confirmed!' : 'Review appointment'}</h2>
-              <p>{reference ? 'Your appointment has been successfully scheduled and booked.' : 'Review your details before confirming.'}</p>
+              <span className="appt-eyebrow no-print">BOOKING CONFIRMATION</span>
+              <h2 className="no-print">{reference ? 'Appointment confirmed!' : 'Review appointment'}</h2>
+              <p className="no-print">{reference ? 'Your appointment has been successfully scheduled and booked.' : 'Review your details before confirming.'}</p>
               
-              <div className="appt-slip">
-                <div>
-                  <span>Booking reference</span>
-                  <strong>{reference || 'Will be generated on confirmation'}</strong>
+              {/* Official Printable Appointment Slip / Receipt */}
+              <div id="printable-slip" className="printable-slip appt-slip-receipt">
+                {/* Header: LabSetu Official Logo / Letterhead */}
+                <div className="receipt-letterhead">
+                  <div className="receipt-brand">
+                    <img src={logo} alt="LabSetu Logo" className="receipt-logo" />
+                    <div>
+                      <div className="receipt-org-name">LabSetu Diagnostics</div>
+                      <div className="receipt-org-sub">National Digital Health Stack • Center Code: CTR-61326885</div>
+                    </div>
+                  </div>
+                  <div className="receipt-doc-meta">
+                    <div className="receipt-doc-badge">Appointment Booking Receipt</div>
+                    <div className="receipt-doc-date">Issued: {new Date().toLocaleDateString('en-GB')} {new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}</div>
+                  </div>
                 </div>
-                <div>
-                  <span>Patient</span>
-                  <strong>{patient.name || demoPatient.name}</strong>
+
+                <div className="receipt-divider" />
+
+                {/* Booking Details Grid */}
+                <div className="receipt-details-grid">
+                  <div className="receipt-field">
+                    <span className="receipt-field-label">BOOKING REFERENCE</span>
+                    <strong className="receipt-field-value receipt-ref-highlight">{reference || 'APT-3573936'}</strong>
+                  </div>
+                  <div className="receipt-field">
+                    <span className="receipt-field-label">BOOKING STATUS</span>
+                    <strong className="receipt-field-value receipt-status-confirmed">Confirmed</strong>
+                  </div>
+                  <div className="receipt-field">
+                    <span className="receipt-field-label">PATIENT NAME</span>
+                    <strong className="receipt-field-value">{patient.name || currentUser?.name || demoPatient?.name || 'rshozab64'}</strong>
+                  </div>
+                  <div className="receipt-field">
+                    <span className="receipt-field-label">MOBILE NUMBER</span>
+                    <strong className="receipt-field-value">{patient.mobile || currentUser?.phone || '9876500000'}</strong>
+                  </div>
+                  <div className="receipt-field">
+                    <span className="receipt-field-label">DEPARTMENT</span>
+                    <strong className="receipt-field-value">{selectedDepartment?.name || 'Cardiology'}</strong>
+                  </div>
+                  <div className="receipt-field">
+                    <span className="receipt-field-label">DATE & TIME</span>
+                    <strong className="receipt-field-value">
+                      {date || '2026-10-20'} | {appointmentSlots.find((item) => item.id === slot)?.label || '02:00 PM – 02:30 PM'}
+                    </strong>
+                  </div>
                 </div>
-                <div>
-                  <span>Mobile</span>
-                  <strong>{patient.mobile}</strong>
+
+                {/* Patient Instructions */}
+                <div className="receipt-guidelines-box">
+                  <strong>Clinical Visit Instructions:</strong>
+                  <ul>
+                    <li>Please report to the reception desk 10–15 minutes prior to your allocated slot.</li>
+                    <li>Carry a copy of this printed slip or show your reference code at the counter.</li>
+                    <li>For blood tests (fasting sugar, lipid profile), ensure 8–10 hours of overnight fasting.</li>
+                  </ul>
                 </div>
-                <div>
-                  <span>Department</span>
-                  <strong>{selectedDepartment?.name}</strong>
-                </div>
-                <div>
-                  <span>Date</span>
-                  <strong>{date}</strong>
-                </div>
-                <div>
-                  <span>Time</span>
-                  <strong>{appointmentSlots.find((item) => item.id === slot)?.label}</strong>
-                </div>
-                <div>
-                  <span>Status</span>
-                  <strong className="appt-status">{reference ? 'Confirmed' : 'Pending'}</strong>
+
+                <div className="receipt-divider" />
+
+                {/* Footer Notice */}
+                <div className="receipt-footer">
+                  <div className="receipt-reception-notice">
+                    📌 <strong>Notice:</strong> Please show this slip at the reception counter during your visit.
+                  </div>
+                  <div className="receipt-footer-channels">
+                    <span>Helpline: 1800-202-8941</span>
+                    <span>•</span>
+                    <span>support@labsetu.gov.in</span>
+                    <span>•</span>
+                    <span>Verified by LabSetu Clinical Gateway</span>
+                  </div>
                 </div>
               </div>
 
-              <div className="appt-actions">
-                {!reference && <button className="appt-primary" onClick={confirm}>Confirm booking</button>}
-                <button className="appt-secondary" onClick={restart}>Book another appointment</button>
-                <button className="appt-secondary" onClick={() => window.print()}>Print slip</button>
+              <div className="appt-actions no-print">
+                {!reference && <button className="appt-primary no-print" onClick={confirm}>Confirm booking</button>}
+                <button className="appt-secondary no-print" onClick={restart}>Book another appointment</button>
+                <button className="appt-secondary no-print" onClick={handlePrintSlip}>
+                  <PrinterIcon style={{ width: 17 }} /> Print slip
+                </button>
               </div>
             </div>
           )}
 
-          {notice && <p className="appt-notice" role="status">{notice}</p>}
+          {notice && <p className="appt-notice no-print" role="status">{notice}</p>}
         </div>
       </section>
     </main>

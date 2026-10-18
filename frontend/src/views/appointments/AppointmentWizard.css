@@ -1,1 +1,291 @@
 .appt-page{max-width:1180px;margin:0 auto;padding:30px 28px 42px;color:#172033}.appt-heading{display:flex;justify-content:space-between;align-items:center;gap:18px;margin-bottom:24px}.appt-eyebrow{font-size:11px;letter-spacing:1.5px;font-weight:800;color:#16834a}.appt-heading h1{font-size:28px;margin:7px 0 5px;font-weight:750}.appt-heading p,.appt-section-title p{margin:0;color:#697386;font-size:14px}.appt-secure{display:flex;align-items:center;gap:8px;border:1px solid #dce9e1;background:#f5fbf7;border-radius:30px;padding:10px 14px;color:#21764a;font-size:13px;font-weight:650;white-space:nowrap}.appt-secure svg{width:19px}.appt-card{background:#fff;border:1px solid #e5eaf0;border-radius:14px;box-shadow:0 8px 30px #17203308;overflow:hidden}.appt-stepper{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));padding:22px 25px;border-bottom:1px solid #e8edf2;background:#fbfcfd;gap:8px}.appt-step{display:flex;align-items:center;gap:9px;color:#818a99;font-size:12px;font-weight:600}.appt-step-number{width:30px;height:30px;border-radius:50%;border:1px solid #d8dee7;display:grid;place-items:center;flex-shrink:0;background:#fff}.appt-step-number svg{width:19px}.appt-step.current{color:#176d40}.appt-step.current .appt-step-number{border-color:#16834a;background:#16834a;color:#fff}.appt-step.completed .appt-step-number{border-color:#b6e0c6;color:#16834a;background:#effaf3}.appt-content{padding:30px;min-height:350px}.appt-section-title{display:flex;align-items:flex-start;gap:12px;margin-bottom:25px}.appt-section-title>svg{width:25px;height:25px;color:#16834a;margin-top:2px}.appt-section-title h2,.appt-confirmation h2{margin:0 0 6px;font-size:20px;color:#172033}.appt-form-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}.appt-form-grid label,.appt-date-field{display:flex;flex-direction:column;gap:8px;font-size:13px;font-weight:650;color:#374151}.appt-form-grid input,.appt-date-field input{border:1px solid #d8dee7;border-radius:7px;padding:12px 13px;font:inherit;font-weight:400;color:#172033;outline:none;background:#fff}.appt-form-grid input:focus,.appt-date-field input:focus{border-color:#16834a;box-shadow:0 0 0 3px #16834a18}.appt-full{grid-column:1/-1}.appt-hint,.appt-demo-note{font-size:12px;color:#737e8e;margin-top:14px}.appt-actions{display:flex;justify-content:flex-end;align-items:center;gap:10px;margin-top:30px;flex-wrap:wrap}.appt-primary,.appt-secondary{display:inline-flex;align-items:center;justify-content:center;gap:8px;border-radius:7px;padding:11px 16px;font-size:13px;font-weight:700;cursor:pointer;border:1px solid transparent}.appt-primary{background:#16834a;color:#fff}.appt-primary:hover{background:#116b3b}.appt-primary:disabled{opacity:.45;cursor:not-allowed}.appt-primary svg,.appt-secondary svg{width:17px}.appt-secondary{background:#fff;border-color:#d9e0e8;color:#374151}.appt-secondary:hover{background:#f7f9fb}.appt-departments{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.appt-department{display:grid;grid-template-columns:20px 1fr;column-gap:10px;text-align:left;padding:16px;border:1px solid #dfe5ec;border-radius:9px;background:#fff;cursor:pointer;color:#172033}.appt-department strong{font-size:14px}.appt-department small{grid-column:2;color:#707b8b;font-size:12px;line-height:1.5;margin-top:5px}.appt-department.selected,.appt-slot.selected{border-color:#16834a;background:#f2fbf5;box-shadow:0 0 0 1px #16834a}.appt-radio{width:16px;height:16px;border:1px solid #c5ccd6;border-radius:50%;margin-top:1px}.appt-department.selected .appt-radio{border:5px solid #16834a}.appt-date-field{max-width:400px}.appt-slots{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.appt-slot{padding:14px 10px;border:1px solid #dfe5ec;border-radius:8px;background:#fff;color:#374151;font-size:13px;cursor:pointer}.appt-confirmation{text-align:center;max-width:650px;margin:0 auto}.appt-success-icon{width:58px;height:58px;margin:0 auto 15px;border-radius:50%;display:grid;place-items:center;background:#eaf8ef;color:#16834a}.appt-success-icon svg{width:32px}.appt-confirmation>p{font-size:13px;color:#737e8e}.appt-slip{margin-top:24px;border:1px solid #e2e8ef;border-radius:10px;text-align:left;display:grid;grid-template-columns:1fr 1fr;overflow:hidden}.appt-slip div{padding:14px 16px;border-bottom:1px solid #edf0f4}.appt-slip div:nth-child(odd){border-right:1px solid #edf0f4}.appt-slip span,.appt-slip strong{display:block}.appt-slip span{font-size:11px;color:#7b8493;margin-bottom:5px}.appt-slip strong{font-size:13px;color:#273244}.appt-slip .appt-status{color:#16834a}.appt-notice{background:#f0f9f3;border:1px solid #ccebd6;color:#226b40;padding:10px 12px;border-radius:7px;font-size:13px;margin:20px 0 0}.appt-demo-note{line-height:1.6;margin-bottom:0}@media(max-width:760px){.appt-page{padding:20px 14px}.appt-heading{align-items:flex-start;flex-direction:column}.appt-heading h1{font-size:24px}.appt-stepper{padding:16px 12px;gap:4px}.appt-step{flex-direction:column;text-align:center;gap:5px;font-size:10px}.appt-step-number{width:27px;height:27px}.appt-content{padding:20px 16px}.appt-form-grid,.appt-departments{grid-template-columns:1fr}.appt-full{grid-column:auto}.appt-slots{grid-template-columns:1fr 1fr}.appt-slip{grid-template-columns:1fr}.appt-slip div:nth-child(odd){border-right:0}}@media print{.appt-heading,.appt-stepper,.appt-demo-note,.appt-actions,.appt-notice{display:none!important}.appt-page{padding:0}.appt-card{box-shadow:none;border:0}.appt-content{padding:0}}
+
+/* ==========================================================================
+   LabSetu Official Appointment Receipt Styling (Screen & Print)
+   ========================================================================== */
+
+.appt-slip-receipt {
+  margin-top: 24px;
+  border: 1px solid #dce4ed;
+  border-radius: 12px;
+  background: #ffffff;
+  padding: 24px;
+  text-align: left;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.05);
+}
+
+.receipt-letterhead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.receipt-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.receipt-logo {
+  height: 38px;
+  width: auto;
+  object-fit: contain;
+}
+
+.receipt-org-name {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: #0f172a;
+  letter-spacing: -0.01em;
+}
+
+.receipt-org-sub {
+  font-size: 0.78rem;
+  color: #64748b;
+  margin-top: 2px;
+}
+
+.receipt-doc-meta {
+  text-align: right;
+}
+
+.receipt-doc-badge {
+  display: inline-block;
+  background: #ecfdf5;
+  color: #15803d;
+  border: 1px solid #a7f3d0;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 3px 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.receipt-doc-date {
+  font-size: 0.75rem;
+  color: #94a3b8;
+  margin-top: 4px;
+}
+
+.receipt-divider {
+  height: 1px;
+  background: #e2e8f0;
+  margin: 16px 0;
+}
+
+.receipt-details-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 14px 20px;
+}
+
+@media (max-width: 600px) {
+  .receipt-details-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.receipt-field {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 10px 14px;
+}
+
+.receipt-field-label {
+  display: block;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #64748b;
+  letter-spacing: 0.05em;
+  margin-bottom: 3px;
+}
+
+.receipt-field-value {
+  display: block;
+  font-size: 0.95rem;
+  color: #0f172a;
+  font-weight: 600;
+}
+
+.receipt-ref-highlight {
+  font-family: monospace;
+  font-size: 1.1rem;
+  color: #15803d;
+  font-weight: 800;
+}
+
+.receipt-status-confirmed {
+  color: #15803d;
+  font-weight: 700;
+}
+
+.receipt-guidelines-box {
+  background: #fafaf9;
+  border: 1px dashed #d6d3d1;
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-top: 16px;
+  font-size: 0.8rem;
+  color: #44403c;
+  line-height: 1.5;
+}
+
+.receipt-guidelines-box strong {
+  color: #1c1917;
+  display: block;
+  margin-bottom: 6px;
+}
+
+.receipt-guidelines-box ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.receipt-guidelines-box li {
+  margin-bottom: 3px;
+}
+
+.receipt-footer {
+  margin-top: 14px;
+}
+
+.receipt-reception-notice {
+  font-size: 0.85rem;
+  color: #854d0e;
+  background: #fef9c3;
+  border: 1px solid #fef08a;
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin-bottom: 10px;
+}
+
+.receipt-footer-channels {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  font-size: 0.72rem;
+  color: #94a3b8;
+  flex-wrap: wrap;
+}
+
+/* ==========================================================================
+   Strict Print Optimization Rules - Eliminates Blank PDF Output
+   ========================================================================== */
+@media print {
+  /* 1. Hide navigation headers, sidebars, action buttons, and chrome */
+  nav,
+  sidebar,
+  .sidebar,
+  .citizen-sidebar,
+  .citizen-header,
+  .main-header,
+  .sidebar-nav,
+  header,
+  footer,
+  button,
+  .no-print,
+  .appt-heading,
+  .appt-stepper,
+  .appt-demo-note,
+  .appt-actions,
+  .appt-notice,
+  .appt-success-icon,
+  .citizen-page-header,
+  .citizen-search-wrapper,
+  .citizen-header-right,
+  .citizen-mobile-menu-btn,
+  .support-card,
+  .citizen-logout-sidebar {
+    display: none !important;
+    visibility: hidden !important;
+  }
+
+  /* 2. Unconstrain all container heights & overflows */
+  html,
+  body,
+  #root,
+  .citizen-layout-container,
+  .citizen-body,
+  .citizen-main-content,
+  .main-layout-container,
+  .main-body,
+  .appt-page,
+  .appt-card,
+  .appt-content,
+  .appt-confirmation {
+    height: auto !important;
+    min-height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    position: static !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    box-shadow: none !important;
+    border: none !important;
+    width: 100% !important;
+  }
+
+  /* 3. Force visibility on printable receipt section */
+  body,
+  #printable-slip,
+  .printable-slip {
+    visibility: visible !important;
+    display: block !important;
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 24px 32px !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    box-sizing: border-box !important;
+    border: 1.5px solid #000000 !important;
+    border-radius: 8px !important;
+  }
+
+  #printable-slip *,
+  .printable-slip * {
+    visibility: visible !important;
+    color: #000000 !important;
+  }
+
+  .receipt-field {
+    border: 1px solid #333333 !important;
+    background: #ffffff !important;
+  }
+
+  .receipt-reception-notice {
+    background: #f4f4f4 !important;
+    border: 1px solid #333333 !important;
+    color: #000000 !important;
+  }
+
+  .receipt-guidelines-box {
+    border: 1px dashed #666666 !important;
+    background: #ffffff !important;
+  }
+
+  .receipt-divider {
+    background: #000000 !important;
+    height: 1px !important;
+  }
+
+  .receipt-logo {
+    display: inline-block !important;
+    height: 38px !important;
+  }
+
+  @page {
+    size: A4 portrait;
+    margin: 10mm 15mm;
+  }
+}
+
