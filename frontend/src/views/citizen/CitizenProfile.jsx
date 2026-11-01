@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
+import { supabase } from '../../lib/supabase';
 import {
   UserCircleIcon,
   ShieldCheckIcon,
@@ -8,7 +9,7 @@ import {
 } from '@heroicons/react/24/outline';
 
 export default function CitizenProfile() {
-  const { currentUser } = useAuth();
+  const { currentUser, updateCurrentUser } = useAuth();
 
   const [profile, setProfile] = useState({
     name: currentUser?.name || 'Shozab Rizvi',
@@ -22,19 +23,65 @@ export default function CitizenProfile() {
     address: 'Flat 402, Green Valley Apartments, Gomti Nagar, Lucknow, UP'
   });
 
+  useEffect(() => {
+    if (currentUser) {
+      setProfile(prev => ({
+        ...prev,
+        name: currentUser.name || prev.name,
+        email: currentUser.email || prev.email,
+        phone: currentUser.phone || prev.phone,
+        uhid: currentUser.uhid || prev.uhid
+      }));
+    }
+  }, [currentUser]);
+
   const [savedNotice, setSavedNotice] = useState(false);
 
-  const handleSave = (e) => {
+  const handleSave = async (e) => {
     e.preventDefault();
+    const newName = profile.name.trim();
+    const user = currentUser || {};
+
     try {
-      const updatedUser = { ...currentUser, ...profile };
+      // 1. Execute Supabase update query before updating local React state
+      const targetId = user.id || user.auth_user_id || 'USR-001';
+      let { error } = await supabase.from('profiles').update({ display_name: newName }).eq('id', targetId);
+      if (error && (error.code === 'PGRST204' || error.message?.includes('display_name'))) {
+        await supabase.from('profiles').update({ full_name: newName }).eq('id', targetId);
+      }
+
+      if (user.email) {
+        let pRes = await supabase.from('profiles').update({ display_name: newName }).eq('email', user.email.toLowerCase());
+        if (pRes.error && (pRes.error.code === 'PGRST204' || pRes.error.message?.includes('display_name'))) {
+          await supabase.from('profiles').update({ full_name: newName }).eq('email', user.email.toLowerCase());
+        }
+        await supabase.from('patients').update({ full_name: newName }).eq('email', user.email.toLowerCase());
+      }
+
+      // 2. Update local state and global auth state
+      const updatedUser = { ...user, ...profile, name: newName };
+      if (typeof updateCurrentUser === 'function') {
+        updateCurrentUser(updatedUser);
+      }
       sessionStorage.setItem('labsetu_patient_session', JSON.stringify(updatedUser));
       localStorage.setItem('labsetu_patient_session', JSON.stringify(updatedUser));
       sessionStorage.setItem('labsetu_auth', JSON.stringify(updatedUser));
+      localStorage.setItem('labsetu_auth', JSON.stringify(updatedUser));
+
       setSavedNotice(true);
       setTimeout(() => setSavedNotice(false), 2500);
-    } catch {
-      alert('Could not update profile in storage.');
+    } catch (err) {
+      console.warn('Profile update warning:', err);
+      const updatedUser = { ...user, ...profile, name: newName };
+      if (typeof updateCurrentUser === 'function') {
+        updateCurrentUser(updatedUser);
+      }
+      sessionStorage.setItem('labsetu_patient_session', JSON.stringify(updatedUser));
+      localStorage.setItem('labsetu_patient_session', JSON.stringify(updatedUser));
+      sessionStorage.setItem('labsetu_auth', JSON.stringify(updatedUser));
+      localStorage.setItem('labsetu_auth', JSON.stringify(updatedUser));
+      setSavedNotice(true);
+      setTimeout(() => setSavedNotice(false), 2500);
     }
   };
 

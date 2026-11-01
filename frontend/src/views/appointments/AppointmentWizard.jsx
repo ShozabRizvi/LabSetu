@@ -114,15 +114,33 @@ export default function AppointmentWizard() {
     const id = `APT-${Date.now().toString().slice(-7)}`;
     const record = { 
       id, 
+      aptId: id,
       patientName: patient.name.trim(), 
       mobile: patient.mobile, 
       department, 
       date, 
       slot, 
       status: 'Confirmed', 
-      createdAt: new Date().toISOString() 
+      stage: 1,
+      createdAt: new Date().toISOString(),
+      prep: '10 hours overnight fasting recommended. Plain water allowed.'
     };
     saveAppointments((current) => [record, ...current]);
+    try {
+      const stored = typeof window !== 'undefined' && window.localStorage ? window.localStorage.getItem('labsetu_user_bookings') : null;
+      let currentBookings = [];
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed)) currentBookings = parsed;
+      }
+      const filtered = currentBookings.filter(item => !item?.isMock);
+      const updatedBookings = [record, ...filtered];
+      if (window.localStorage) {
+        window.localStorage.setItem('labsetu_user_bookings', JSON.stringify(updatedBookings));
+      }
+    } catch {
+      // Safe fallback for restricted storage
+    }
     setReference(id); 
     setStep(4); 
     setNotice('Appointment confirmed and saved successfully.');
@@ -139,15 +157,33 @@ export default function AppointmentWizard() {
       const id = `APT-${Date.now().toString().slice(-7)}`;
       const record = { 
         id, 
+        aptId: id,
         patientName: (patient.name || currentUser?.name || demoPatient?.name || 'rshozab64').trim(), 
         mobile: patient.mobile || currentUser?.phone || '9876500000', 
         department: department || 'cardiology', 
         date: date || dateValue(1), 
         slot: slot || 'morning-1', 
         status: 'Confirmed', 
-        createdAt: new Date().toISOString() 
+        stage: 1,
+        createdAt: new Date().toISOString(),
+        prep: '10 hours overnight fasting recommended. Plain water allowed.'
       };
       saveAppointments((current) => [record, ...(Array.isArray(current) ? current : [])]);
+      try {
+        const stored = typeof window !== 'undefined' && window.localStorage ? window.localStorage.getItem('labsetu_user_bookings') : null;
+        let currentBookings = [];
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed)) currentBookings = parsed;
+        }
+        const filtered = currentBookings.filter(item => !item?.isMock);
+        const updatedBookings = [record, ...filtered];
+        if (window.localStorage) {
+          window.localStorage.setItem('labsetu_user_bookings', JSON.stringify(updatedBookings));
+        }
+      } catch {
+        // Safe fallback for restricted storage
+      }
       setReference(id);
       setStep(4);
     }

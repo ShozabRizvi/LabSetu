@@ -12,6 +12,21 @@
  */
 
 import express from 'express';
+import { createClient } from '@supabase/supabase-js';
+
+let _supabase = null;
+function getSupabase() {
+  if (_supabase) return _supabase;
+  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+  if (!url || !key) return null;
+  try {
+    _supabase = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
+    return _supabase;
+  } catch {
+    return null;
+  }
+}
 
 const DEFAULT_USERS = [
   {
@@ -80,7 +95,7 @@ export function createAuthRouter() {
             role,
             phone: isCitizen ? '9876500000' : '9876543210',
             labId: isCitizen ? undefined : '61326885',
-            uhid: isCitizen ? `UHID-2026-${Math.floor(1000 + Math.random() * 9000)}` : undefined,
+            uhid: isCitizen ? 'UHID-2026-8901' : undefined,
             centerName: 'LabSetu Diagnostics'
           },
           token
@@ -98,15 +113,48 @@ export function createAuthRouter() {
   });
 
   // POST /register
-  router.post('/register', (req, res) => {
+  router.post('/register', async (req, res) => {
     try {
       const userData = req.body || {};
       const token = `labsetu-session-${Date.now()}`;
+      // Database-Driven UHID: Generated exactly once during signup/registration
+      const uhid = userData.role === 'citizen'
+        ? (userData.uhid || `UHID-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`)
+        : undefined;
+
+      // Persist to Supabase database so database is single source of truth
+      try {
+        const sb = getSupabase();
+        if (sb) {
+          if (userData.role === 'citizen') {
+            await sb.from('patients').insert({
+              patient_code: uhid,
+              full_name: userData.name,
+              phone: userData.phone || null,
+              email: userData.email?.toLowerCase(),
+              center_id: 'cb17e71d-cb76-49e6-a202-4a82c94de5d8',
+              is_active: true
+            });
+          } else {
+            await sb.from('profiles').insert({
+              full_name: userData.name,
+              email: userData.email?.toLowerCase(),
+              phone: userData.phone || null,
+              role: 'employee',
+              center_id: 'cb17e71d-cb76-49e6-a202-4a82c94de5d8',
+              is_active: true
+            });
+          }
+        }
+      } catch (dbErr) {
+        console.warn('[Auth /register] Supabase persist notice:', dbErr.message);
+      }
+
       return res.status(200).json({
         success: true,
         user: {
           ...userData,
-          uhid: userData.role === 'citizen' ? `UHID-2026-${Math.floor(1000 + Math.random() * 9000)}` : undefined,
+          uhid,
           labId: userData.role === 'authority' ? '61326885' : undefined
         },
         token

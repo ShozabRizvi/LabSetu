@@ -1,7 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useLanguage } from '../../context/LanguageContext';
-import useDemoResource from '../../hooks/useDemoResource';
 import { departments, appointmentSlots } from '../../data/mockLabData';
 import {
   CalendarDaysIcon,
@@ -15,12 +14,13 @@ import {
   XMarkIcon
 } from '@heroicons/react/24/outline';
 
-export default function CitizenAppointments({ lang: propLang }) {
+export default function CitizenAppointments({ lang: propLang, addNewBooking, onAddNewBooking }) {
   const { lang: contextLang } = useLanguage();
   const lang = propLang || contextLang || 'en';
   const initialDemoAppointments = [
     {
       id: 'APT-10824',
+      aptId: 'APT-10824',
       patientName: 'Ramesh Sharma',
       mobile: '9876543210',
       department: 'dept-pathology',
@@ -29,10 +29,12 @@ export default function CitizenAppointments({ lang: propLang }) {
       status: 'Confirmed',
       stage: 1, // 1: Confirmed, 2: Sample Collected, 3: Processing, 4: Report Ready
       createdAt: '2026-10-16T10:00:00Z',
-      prep: '10 hours overnight fasting recommended. Plain water allowed.'
+      prep: '10 hours overnight fasting recommended. Plain water allowed.',
+      isMock: true
     },
     {
       id: 'APT-10790',
+      aptId: 'APT-10790',
       patientName: 'Ramesh Sharma',
       mobile: '9876543210',
       department: 'dept-biochemistry',
@@ -41,10 +43,12 @@ export default function CitizenAppointments({ lang: propLang }) {
       status: 'Sample Collected',
       stage: 2,
       createdAt: '2026-10-15T14:30:00Z',
-      prep: 'Sample drawn at Gurugram Hub. Sent for automated analysis.'
+      prep: 'Sample drawn at Gurugram Hub. Sent for automated analysis.',
+      isMock: true
     },
     {
       id: 'APT-10650',
+      aptId: 'APT-10650',
       patientName: 'Ramesh Sharma',
       mobile: '9876543210',
       department: 'dept-radiology',
@@ -53,11 +57,97 @@ export default function CitizenAppointments({ lang: propLang }) {
       status: 'Report Ready',
       stage: 4,
       createdAt: '2026-10-10T09:15:00Z',
-      prep: 'Digital X-Ray Chest PA report published and verified.'
+      prep: 'Digital X-Ray Chest PA report published and verified.',
+      isMock: true
     }
   ];
 
-  const { data: appointments, update: setAppointments } = useDemoResource('appointments', initialDemoAppointments);
+  // Smart Lazy Initialization: synchronously load from localStorage or fall back to mock data
+  const [bookings, setBookings] = useState(() => {
+    try {
+      const stored = typeof window !== 'undefined' && window.localStorage
+        ? window.localStorage.getItem('labsetu_user_bookings')
+        : null;
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      }
+    } catch {
+      // Graceful Hydration: Silently fallback to mock data on error/restricted storage
+    }
+    return initialDemoAppointments;
+  });
+
+  const appointments = bookings;
+  const setAppointments = (nextVal) => {
+    setBookings((prev) => {
+      const updated = typeof nextVal === 'function' ? nextVal(prev) : nextVal;
+      try {
+        if (typeof window !== 'undefined' && window.localStorage) {
+          window.localStorage.setItem('labsetu_user_bookings', JSON.stringify(updated));
+        }
+      } catch {
+        // Safe failover
+      }
+      return updated;
+    });
+  };
+
+  // Safe State Updater: instantly purge any object where isMock === true and prepend new appointment
+  const handleAddNewBooking = (newAppointment) => {
+    if (!newAppointment) return;
+    setBookings((prev) => {
+      const prevArray = Array.isArray(prev) ? prev : [];
+      const filtered = prevArray.filter((item) => !item?.isMock);
+
+      const aptId = newAppointment.aptId || newAppointment.id || `APT-${Date.now().toString().slice(-7)}`;
+      const formattedAppt = {
+        id: aptId,
+        aptId: aptId,
+        patientName: newAppointment.patientName || '',
+        mobile: newAppointment.mobile || '',
+        department: newAppointment.department || 'dept-pathology',
+        date: newAppointment.date || '',
+        slot: newAppointment.slot || 'slot-10am',
+        status: newAppointment.status || 'Confirmed',
+        stage: newAppointment.stage !== undefined ? newAppointment.stage : 1,
+        createdAt: newAppointment.createdAt || new Date().toISOString(),
+        prep: newAppointment.prep || 'Standard laboratory visit.',
+        ...newAppointment
+      };
+      formattedAppt.id = formattedAppt.id || aptId;
+      formattedAppt.aptId = formattedAppt.aptId || formattedAppt.id;
+      delete formattedAppt.isMock;
+
+      const updatedBookings = [formattedAppt, ...filtered];
+      try {
+        if (typeof window !== 'undefined' && window.localStorage) {
+          window.localStorage.setItem('labsetu_user_bookings', JSON.stringify(updatedBookings));
+        }
+      } catch {
+        // Safe failover for quota/incognito mode
+      }
+      return updatedBookings;
+    });
+  };
+
+  useEffect(() => {
+    if (typeof onAddNewBooking === 'function') {
+      onAddNewBooking(handleAddNewBooking);
+    }
+    if (typeof addNewBooking === 'function') {
+      addNewBooking(handleAddNewBooking);
+    }
+    const handleCustomAdd = (e) => {
+      if (e?.detail) handleAddNewBooking(e.detail);
+    };
+    window.addEventListener('labsetu:addNewBooking', handleCustomAdd);
+    return () => {
+      window.removeEventListener('labsetu:addNewBooking', handleCustomAdd);
+    };
+  }, [onAddNewBooking, addNewBooking]);
   const [filter, setFilter] = useState('all');
   const [rescheduleItem, setRescheduleItem] = useState(null);
   const [newDate, setNewDate] = useState('');

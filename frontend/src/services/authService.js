@@ -10,6 +10,7 @@
  */
 
 import apiClient from './apiClient';
+import { supabase } from '../lib/supabase';
 
 const DEFAULT_USERS = [
   {
@@ -80,12 +81,32 @@ export const authService = {
         };
       }
 
+      // Database-Driven Identity: Read profile & uhid directly from Supabase / static records
+      let dbName = existing.name;
+      let dbUhid = existing.uhid;
+
+      try {
+        const { data: dbProfile } = await supabase.from('profiles').select('*').eq('email', existing.email.toLowerCase()).maybeSingle();
+        const { data: dbPatient } = await supabase.from('patients').select('*').eq('email', existing.email.toLowerCase()).maybeSingle();
+        if (dbProfile) {
+          dbName = dbProfile.display_name || dbProfile.full_name || dbName;
+          if (dbProfile.uhid) dbUhid = dbProfile.uhid;
+        }
+        if (dbPatient) {
+          dbName = dbPatient.full_name || dbName;
+          if (dbPatient.patient_code) dbUhid = dbPatient.patient_code;
+        }
+      } catch (err) {
+        console.warn('[authService.login] DB sync notice:', err);
+      }
+
       const user = {
+        id: existing.id || (existing.role === 'citizen' ? 'USR-002' : 'USR-001'),
         email: existing.email,
-        name: existing.name,
+        name: dbName,
         role: existing.role,
         phone: existing.phone || '',
-        uhid: existing.uhid || (existing.role === 'citizen' ? 'UHID-2026-8901' : undefined),
+        uhid: existing.role === 'citizen' ? (dbUhid || 'UHID-2026-8901') : undefined,
         labId: existing.labId || '61326885',
         centerName: existing.centerName || 'LabSetu Diagnostics',
         dob: existing.dob || '',
@@ -138,7 +159,13 @@ export const authService = {
         return { success: false, error: 'An account with this phone number already exists. Please sign in.' };
       }
 
+      // Database-Driven UHID: Generated exactly once during signup/registration
+      const assignedUhid = userData.role === 'citizen'
+        ? (userData.uhid || `UHID-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`)
+        : undefined;
+
       const newUser = {
+        id: `USR-${Math.floor(1000 + Math.random() * 9000)}`,
         email: cleanEmail,
         password: userData.password,
         name: userData.name.trim(),
@@ -148,10 +175,35 @@ export const authService = {
         gender: userData.gender || '',
         address: userData.address || '',
         designation: userData.designation || '',
-        uhid: userData.role === 'citizen' ? `UHID-${Math.floor(1000 + Math.random() * 9000)}` : undefined,
-        labId: userData.role === 'authority' ? `${Math.floor(10000000 + Math.random() * 90000000)}` : undefined,
-        centerName: userData.centerName || ''
+        uhid: assignedUhid,
+        labId: userData.role === 'authority' ? '61326885' : undefined,
+        centerName: userData.centerName || 'LabSetu Diagnostics'
       };
+
+      // Persist to Supabase database so database is single source of truth
+      try {
+        if (userData.role === 'citizen') {
+          await supabase.from('patients').insert({
+            patient_code: assignedUhid,
+            full_name: newUser.name,
+            phone: cleanPhone,
+            email: cleanEmail,
+            center_id: 'cb17e71d-cb76-49e6-a202-4a82c94de5d8',
+            is_active: true
+          });
+        } else {
+          await supabase.from('profiles').insert({
+            full_name: newUser.name,
+            email: cleanEmail,
+            phone: cleanPhone,
+            role: 'employee',
+            center_id: 'cb17e71d-cb76-49e6-a202-4a82c94de5d8',
+            is_active: true
+          });
+        }
+      } catch (dbErr) {
+        console.warn('[authService.register] Supabase persist warning:', dbErr);
+      }
 
       users.push(newUser);
       localStorage.setItem('labsetu_users', JSON.stringify(users));
