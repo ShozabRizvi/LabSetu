@@ -131,8 +131,29 @@ export default function CitizenPrivacy({ lang: propLang }) {
         </div>
         <button
           onClick={handleExportData}
-          className="btn-primary"
-          style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '0.4rem',
+            backgroundColor: '#ffffff',
+            color: '#15803d',
+            border: '1.5px solid #15803d',
+            padding: '0.55rem 1rem',
+            borderRadius: '8px',
+            fontWeight: '600',
+            fontSize: '0.875rem',
+            cursor: 'pointer',
+            transition: 'all 0.2s ease',
+            boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.backgroundColor = '#f0fdf4';
+            e.currentTarget.style.boxShadow = '0 2px 6px rgba(21, 128, 61, 0.15)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.backgroundColor = '#ffffff';
+            e.currentTarget.style.boxShadow = '0 1px 2px rgba(0,0,0,0.05)';
+          }}
         >
           <ArrowDownTrayIcon style={{ width: '18px' }} />
           {lang === 'hi' ? 'हेल्थ रिकॉर्ड एक्सपोर्ट करें' : 'Export Selected Health Records'}

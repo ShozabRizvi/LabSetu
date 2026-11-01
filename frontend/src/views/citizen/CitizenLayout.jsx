@@ -198,9 +198,9 @@ export default function CitizenLayout() {
           <button 
             type="button" 
             className="citizen-header-link" 
-            onClick={() => setIsHelpModalOpen(true)}
+            onClick={() => navigate('/portal/support')}
           >
-            <QuestionMarkCircleIcon className="citizen-icon" /> {lang === 'hi' ? 'मदद' : 'Help & Support'}
+            <QuestionMarkCircleIcon className="citizen-icon" /> {lang === 'hi' ? 'मदद एवं शिकायतें' : 'Help & Support'}
           </button>
 
           {/* Notifications Dropdown */}
@@ -408,15 +408,6 @@ export default function CitizenLayout() {
             </NavLink>
 
             <NavLink 
-              to="/portal/support" 
-              className={({ isActive }) => `citizen-nav-item ${isActive ? 'active' : ''}`}
-              onClick={() => setIsMobileMenuOpen(false)}
-            >
-              <QuestionMarkCircleIcon className="citizen-nav-icon" />
-              {lang === 'hi' ? 'मदद एवं शिकायतें' : 'Support & Tickets'}
-            </NavLink>
-
-            <NavLink 
               to="/portal/privacy" 
               className={({ isActive }) => `citizen-nav-item ${isActive ? 'active' : ''}`}
               onClick={() => setIsMobileMenuOpen(false)}
@@ -500,6 +491,51 @@ export default function CitizenLayout() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Profile Incomplete Banner */}
+      {(!currentUser?.name || !currentUser?.phone || !currentUser?.address) && location.pathname !== '/portal/profile' && (
+        <div
+          style={{
+            position: 'fixed',
+            bottom: '1.25rem',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            background: '#fffbeb',
+            border: '1.5px solid #fde68a',
+            borderRadius: '10px',
+            padding: '0.75rem 1.25rem',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.75rem',
+            fontSize: '0.85rem',
+            color: '#92400e',
+            boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
+            zIndex: 900,
+            maxWidth: '540px',
+            width: 'calc(100% - 2rem)',
+          }}
+        >
+          <span>Your details are still in progress. Complete your profile by pressing this button.</span>
+          <button
+            type="button"
+            onClick={() => navigate('/portal/profile')}
+            style={{
+              background: '#15803d',
+              color: 'white',
+              border: 'none',
+              padding: '0.35rem 0.85rem',
+              borderRadius: '6px',
+              fontSize: '0.8rem',
+              fontWeight: '600',
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
+            }}
+          >
+            Complete Profile
+          </button>
         </div>
       )}
     </div>

@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useLanguage } from '../../context/LanguageContext';
 import useDemoResource from '../../hooks/useDemoResource';
+import { supabase } from '../../lib/supabase';
 import {
   HomeModernIcon,
   ClockIcon,
@@ -49,6 +50,46 @@ export default function CitizenHomeCollection({ lang: propLang }) {
   const [selectedBooking, setSelectedBooking] = useState(null);
   const [notice, setNotice] = useState('');
 
+  const mapStatusToStage = (status) => {
+    const s = (status || '').toLowerCase();
+    if (s.includes('completed') || s.includes('processed') || s.includes('ready')) return 4;
+    if (s.includes('lab') || s.includes('processing')) return 3;
+    if (s.includes('pick') || s.includes('out') || s.includes('collected')) return 2;
+    if (s.includes('assigned') || s.includes('dispatch')) return 1;
+    return 0;
+  };
+
+  useEffect(() => {
+    const channel = supabase.channel('home-collection-live')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments' }, (payload) => {
+        if (payload.new) {
+          const updatedRow = payload.new;
+          setBookings((prev) => {
+            const list = Array.isArray(prev) ? prev : [];
+            const index = list.findIndex(b => b.id === updatedRow.id || (updatedRow.notes && updatedRow.notes.includes(b.id)));
+            if (index !== -1) {
+              const current = list[index];
+              const newStage = mapStatusToStage(updatedRow.status);
+              const updated = {
+                ...current,
+                status: updatedRow.status || current.status,
+                stage: newStage
+              };
+              const copy = [...list];
+              copy[index] = updated;
+              return copy;
+            }
+            return list;
+          });
+        }
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
   const [form, setForm] = useState({
     tests: 'Complete Blood Count (CBC)',
     date: new Date(Date.now() + 86400000).toISOString().slice(0, 10),
@@ -72,6 +113,21 @@ export default function CitizenHomeCollection({ lang: propLang }) {
       prep: 'Overnight fasting required for fasting tests. Please keep ID proof ready.'
     };
     setBookings([created, ...(bookings || [])]);
+
+    try {
+      supabase.from('appointments').insert({
+        appointment_date: form.date,
+        visit_type: 'home_collection',
+        status: 'Assigned',
+        purpose: form.tests,
+        notes: `Ref: ${created.id}, Address: ${form.address}, Slot: ${form.timeSlot}`
+      }).then(({ error }) => {
+        if (error) console.warn('Supabase home collection insert error:', error);
+      });
+    } catch (dbErr) {
+      console.warn('Supabase insert fallback:', dbErr);
+    }
+
     setIsModalOpen(false);
     setNotice(lang === 'hi' 
       ? `घर से सैंपल कलेक्शन सफलतापूर्वक बुक किया गया: ${created.id}`
@@ -100,8 +156,23 @@ export default function CitizenHomeCollection({ lang: propLang }) {
         </div>
         <button
           onClick={() => setIsModalOpen(true)}
-          className="btn-primary"
-          style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '0.4rem',
+            backgroundColor: '#059669',
+            color: '#ffffff',
+            fontWeight: '600',
+            padding: '0.625rem 1rem',
+            borderRadius: '8px',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+            transition: 'background-color 0.2s ease',
+            border: 'none',
+            cursor: 'pointer',
+            fontSize: '0.875rem',
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#047857'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = '#059669'; }}
         >
           <PlusIcon style={{ width: '18px' }} />
           {lang === 'hi' ? 'नया कलेक्शन बुक करें' : 'Schedule Doorstep Collection'}

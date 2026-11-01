@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
 import useDemoResource from '../../hooks/useDemoResource';
+import { supabase } from '../../lib/supabase';
 import { demoCitizenReports, demoCitizenBills, appointmentSlots, departments } from '../../data/mockLabData';
 import './CitizenDashboard.css';
 import {
@@ -37,6 +38,45 @@ export default function CitizenDashboard({ lang: propLang }) {
   const readyReports = demoCitizenReports.filter(r => r.status === 'Ready');
   const safeAppts = Array.isArray(appointments) ? appointments : [];
   const upcomingAppts = safeAppts.filter(a => a.status === 'Confirmed');
+
+  const [dbMetrics, setDbMetrics] = useState({
+    publishedReports: null,
+    upcomingAppointments: null,
+    outstandingInvoices: null,
+  });
+
+  const fetchMetrics = async () => {
+    try {
+      const [reportsRes, apptsRes, billsRes] = await Promise.all([
+        supabase.from('reports').select('*', { count: 'exact', head: true }).eq('status', 'signed'),
+        supabase.from('appointments').select('*', { count: 'exact', head: true }).neq('status', 'Cancelled'),
+        supabase.from('bills').select('due_amount').eq('payment_status', 'due'),
+      ]);
+
+      const totalDues = (billsRes.data || []).reduce((acc, curr) => acc + (Number(curr.due_amount) || 0), 0);
+
+      setDbMetrics({
+        publishedReports: reportsRes.count !== null ? reportsRes.count : readyReports.length,
+        upcomingAppointments: apptsRes.count !== null ? apptsRes.count : upcomingAppts.length,
+        outstandingInvoices: billsRes.data && billsRes.data.length > 0 ? `₹${totalDues}` : (billsRes.count !== null && billsRes.count === 0 ? '₹0' : '₹550'),
+      });
+    } catch (err) {
+      console.warn('Metrics query fallback:', err);
+    }
+  };
+
+  useEffect(() => {
+    fetchMetrics();
+    const channel = supabase.channel('dashboard-metrics-sync')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'reports' }, () => fetchMetrics())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments' }, () => fetchMetrics())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'bills' }, () => fetchMetrics())
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
 
   const cancelAppointment = (id) => {
     if (window.confirm('Are you sure you want to cancel this appointment?')) {
@@ -105,7 +145,7 @@ export default function CitizenDashboard({ lang: propLang }) {
             <DocumentChartBarIcon className="stat-icon" />
           </div>
           <div>
-            <div className="stat-value">{readyReports.length}</div>
+            <div className="stat-value">{dbMetrics.publishedReports !== null ? dbMetrics.publishedReports : readyReports.length}</div>
             <div className="stat-label">Published Reports</div>
           </div>
         </div>
@@ -115,7 +155,7 @@ export default function CitizenDashboard({ lang: propLang }) {
             <CalendarDaysIcon className="stat-icon" />
           </div>
           <div>
-            <div className="stat-value">{upcomingAppts.length}</div>
+            <div className="stat-value">{dbMetrics.upcomingAppointments !== null ? dbMetrics.upcomingAppointments : upcomingAppts.length}</div>
             <div className="stat-label">Upcoming Appointments</div>
           </div>
         </div>
@@ -125,7 +165,7 @@ export default function CitizenDashboard({ lang: propLang }) {
             <CreditCardIcon className="stat-icon" />
           </div>
           <div>
-            <div className="stat-value">₹550</div>
+            <div className="stat-value">{dbMetrics.outstandingInvoices !== null ? dbMetrics.outstandingInvoices : '₹550'}</div>
             <div className="stat-label">Outstanding Invoices</div>
           </div>
         </div>

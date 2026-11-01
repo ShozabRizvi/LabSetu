@@ -94,8 +94,23 @@ export default function CitizenReminders({ lang: propLang }) {
         </div>
         <button
           onClick={() => setIsModalOpen(true)}
-          className="btn-primary"
-          style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '0.4rem',
+            backgroundColor: '#059669',
+            color: '#ffffff',
+            fontWeight: '600',
+            padding: '0.625rem 1rem',
+            borderRadius: '8px',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+            transition: 'background-color 0.2s ease',
+            border: 'none',
+            cursor: 'pointer',
+            fontSize: '0.875rem',
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#047857'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = '#059669'; }}
         >
           <PlusIcon style={{ width: '18px' }} />
           {lang === 'hi' ? 'नया रिमाइंडर जोड़ें' : 'Add Health Reminder'}

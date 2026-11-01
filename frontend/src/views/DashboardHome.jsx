@@ -15,6 +15,7 @@ import './DashboardHome.css';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import useDemoResource from '../hooks/useDemoResource';
+import { supabase } from '../lib/supabase';
 import { demoDashboardData, demoActivitiesData } from '../data/mockLabData';
 import { ensureArray } from '../utils/arrayUtils';
 
@@ -23,10 +24,89 @@ export default function DashboardHome() {
   const { data } = useDemoResource('dashboard', demoDashboardData);
   const { data: activities } = useDemoResource('labsetu_activities', demoActivitiesData);
   const [legalModal, setLegalModal] = useState(null); // 'terms' | 'privacy' | 'refund'
+  const [liveAppointments, setLiveAppointments] = useState([]);
+  const [updatingId, setUpdatingId] = useState(null);
+  const [dbDues, setDbDues] = useState(null);
+
+  const fetchLiveAppointments = async () => {
+    try {
+      const [{ data: dbAppts }, { data: dbBills }] = await Promise.all([
+        supabase.from('appointments').select('*').order('created_at', { ascending: false }).limit(6),
+        supabase.from('bills').select('due_amount').eq('payment_status', 'due')
+      ]);
+
+      if (dbAppts && dbAppts.length > 0) {
+        setLiveAppointments(dbAppts);
+      } else {
+        setLiveAppointments([
+          {
+            id: 'APT-10824',
+            notes: 'Patient: Ramesh Sharma, Phone: 9876543210, Type: Home Sample Collection',
+            appointment_date: '2026-10-18',
+            purpose: 'dept-pathology',
+            status: 'Confirmed',
+            visit_type: 'home_collection'
+          },
+          {
+            id: 'APT-10790',
+            notes: 'Patient: Ramesh Sharma, Phone: 9876543210, Type: Manual Lab Visit',
+            appointment_date: '2026-10-17',
+            purpose: 'dept-biochemistry',
+            status: 'Sample Collected',
+            visit_type: 'lab_visit'
+          }
+        ]);
+      }
+
+      if (dbBills && dbBills.length > 0) {
+        const sum = dbBills.reduce((acc, b) => acc + (Number(b.due_amount) || 0), 0);
+        setDbDues(sum);
+      }
+    } catch (e) {
+      console.warn('Live appointments fallback:', e);
+    }
+  };
 
   useEffect(() => {
     document.title = 'LabSetu - Authority Dashboard';
+    fetchLiveAppointments();
+
+    const channel = supabase.channel('authority-appointments-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments' }, () => {
+        fetchLiveAppointments();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
+
+  const handleUpdateStatus = async (apptId, nextStatus) => {
+    try {
+      setUpdatingId(apptId);
+      await supabase
+        .from('appointments')
+        .update({ status: nextStatus, updated_at: new Date().toISOString() })
+        .eq('id', apptId);
+
+      setLiveAppointments(prev =>
+        prev.map(a => a.id === apptId ? { ...a, status: nextStatus } : a)
+      );
+
+      if (nextStatus === 'Report Signed') {
+        await supabase.from('reports').insert({
+          title: 'Complete Blood Count & Comprehensive Metabolic Profile',
+          status: 'signed',
+          generated_at: new Date().toISOString()
+        });
+      }
+    } catch (err) {
+      console.warn('Status update error:', err);
+    } finally {
+      setUpdatingId(null);
+    }
+  };
 
   const money = (value) =>
     new Intl.NumberFormat('en-IN', {
@@ -107,6 +187,100 @@ export default function DashboardHome() {
 
           </div>
 
+          {/* Real-Time Patient Bookings & Phlebotomy Queue */}
+          <div className="dashboard-home-card" style={{ marginBottom: '1.25rem' }}>
+            <div className="dashboard-home-card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <span style={{ display: 'inline-block', width: '9px', height: '9px', borderRadius: '50%', backgroundColor: '#22c55e', boxShadow: '0 0 0 3px rgba(34, 197, 94, 0.2)' }} />
+                <h3 className="dashboard-home-card-title" style={{ margin: 0 }}>
+                  Live Patient Bookings &amp; Collection Queue
+                </h3>
+              </div>
+              <span style={{ fontSize: '0.75rem', background: '#dcfce7', color: '#15803d', fontWeight: '700', padding: '0.2rem 0.55rem', borderRadius: '12px' }}>
+                REALTIME SYNC ACTIVE
+              </span>
+            </div>
+
+            <div className="dashboard-home-card-body" style={{ padding: '0.75rem 1rem' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                {liveAppointments.map((appt) => (
+                  <div
+                    key={appt.id}
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      padding: '0.75rem 1rem',
+                      background: '#f8fafc',
+                      borderRadius: '8px',
+                      border: '1px solid #e2e8f0',
+                      flexWrap: 'wrap',
+                      gap: '0.75rem'
+                    }}
+                  >
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <strong style={{ fontSize: '0.9rem', color: '#0f172a' }}>{appt.id}</strong>
+                        <span style={{
+                          fontSize: '0.72rem',
+                          fontWeight: '600',
+                          padding: '0.15rem 0.45rem',
+                          borderRadius: '4px',
+                          background: appt.visit_type === 'home_collection' ? '#e0f2fe' : '#f1f5f9',
+                          color: appt.visit_type === 'home_collection' ? '#0369a1' : '#475569'
+                        }}>
+                          {appt.visit_type === 'home_collection' ? '🏠 Home Collection' : '🏥 Lab Visit'}
+                        </span>
+                      </div>
+                      <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '2px' }}>
+                        {appt.notes || `${appt.purpose || 'General Diagnostics'} · ${appt.appointment_date || 'Today'}`}
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                      <span style={{
+                        fontSize: '0.75rem',
+                        fontWeight: '700',
+                        padding: '0.25rem 0.55rem',
+                        borderRadius: '20px',
+                        background: appt.status === 'Report Signed' ? '#dcfce7' : (appt.status === 'Assigned' ? '#fef3c7' : '#e0e7ff'),
+                        color: appt.status === 'Report Signed' ? '#15803d' : (appt.status === 'Assigned' ? '#92400e' : '#3730a3')
+                      }}>
+                        {appt.status || 'Confirmed'}
+                      </span>
+
+                      {appt.status !== 'Report Signed' && (
+                        <button
+                          type="button"
+                          disabled={updatingId === appt.id}
+                          onClick={() => {
+                            const next = appt.status === 'Confirmed' || appt.status === 'scheduled'
+                              ? 'Assigned'
+                              : (appt.status === 'Assigned' ? 'Sample Collected' : 'Report Signed');
+                            handleUpdateStatus(appt.id, next);
+                          }}
+                          style={{
+                            fontSize: '0.75rem',
+                            fontWeight: '600',
+                            padding: '0.3rem 0.65rem',
+                            borderRadius: '6px',
+                            border: '1px solid #cbd5e1',
+                            background: '#ffffff',
+                            color: '#15803d',
+                            cursor: 'pointer',
+                            transition: 'all 0.15s ease'
+                          }}
+                        >
+                          {appt.status === 'Confirmed' || appt.status === 'scheduled' ? '→ Assign Phlebotomist' : (appt.status === 'Assigned' ? '→ Mark Sample Picked' : '✓ Sign & Release Report')}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
           {/* Payments and Recent Transactions */}
           <div className="dashboard-home-status-row">
 
@@ -140,7 +314,7 @@ export default function DashboardHome() {
                 </div>
 
                 <p className="dashboard-home-status-text">
-                  {money(data?.paymentsDue)}
+                  {money(dbDues !== null ? dbDues : data?.paymentsDue)}
                 </p>
 
                 <p className="dashboard-home-status-subtext">

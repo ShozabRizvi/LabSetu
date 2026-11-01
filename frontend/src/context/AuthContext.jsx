@@ -149,7 +149,13 @@ export function AuthProvider({ children }) {
               ...basePatient,
               id: profileRow?.id || patientRow?.id || basePatient.id,
               name: resolvedName || basePatient.name,
-              uhid: dbUhid || basePatient.uhid
+              uhid: dbUhid || basePatient.uhid,
+              phone: profileRow?.phone || patientRow?.phone || basePatient.phone,
+              address: patientRow?.address || basePatient.address,
+              bloodGroup: patientRow?.blood_group || basePatient.bloodGroup,
+              gender: patientRow?.sex ? (patientRow.sex.charAt(0).toUpperCase() + patientRow.sex.slice(1)) : basePatient.gender,
+              age: patientRow?.age_years !== undefined && patientRow?.age_years !== null ? patientRow.age_years : basePatient.age,
+              emergencyContact: patientRow?.emergency_contact || basePatient.emergencyContact
             };
             if (isMounted) setPatientUser(updatedPatient);
             sessionStorage.setItem('labsetu_patient_session', JSON.stringify(updatedPatient));

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
 import {
@@ -12,16 +12,25 @@ export default function CitizenProfile() {
   const { currentUser, updateCurrentUser } = useAuth();
 
   const [profile, setProfile] = useState({
-    name: currentUser?.name || 'Shozab Rizvi',
-    email: currentUser?.email || 'patient@labsetu.com',
-    phone: currentUser?.phone || '9876501234',
-    uhid: currentUser?.uhid || 'UHID-2026-8901',
-    age: '28',
-    gender: 'Male',
-    bloodGroup: 'B+',
-    emergencyContact: 'Mr. R. K. Sharma (Father) - 9876500000',
-    address: 'Flat 402, Green Valley Apartments, Gomti Nagar, Lucknow, UP'
+    name: currentUser?.name || '',
+    email: currentUser?.email || '',
+    phone: currentUser?.phone || '',
+    uhid: currentUser?.uhid || '',
+    age: currentUser?.age || '',
+    gender: currentUser?.gender || '',
+    bloodGroup: currentUser?.bloodGroup || '',
+    emergencyContact: currentUser?.emergencyContact || '',
+    address: currentUser?.address || ''
   });
+
+  const isProfileIncomplete = !profile.name?.trim() || !profile.phone?.trim() || !profile.address?.trim();
+
+  const saveButtonRef = useRef(null);
+
+  const scrollToSave = () => {
+    saveButtonRef.current?.scrollIntoView({ behavior: 'smooth' });
+    saveButtonRef.current?.focus();
+  };
 
   useEffect(() => {
     if (currentUser) {
@@ -30,7 +39,12 @@ export default function CitizenProfile() {
         name: currentUser.name || prev.name,
         email: currentUser.email || prev.email,
         phone: currentUser.phone || prev.phone,
-        uhid: currentUser.uhid || prev.uhid
+        uhid: currentUser.uhid || prev.uhid,
+        age: currentUser.age !== undefined && currentUser.age !== null ? currentUser.age : prev.age,
+        gender: currentUser.gender || prev.gender,
+        bloodGroup: currentUser.bloodGroup || prev.bloodGroup,
+        emergencyContact: currentUser.emergencyContact || prev.emergencyContact,
+        address: currentUser.address || prev.address
       }));
     }
   }, [currentUser]);
@@ -45,17 +59,33 @@ export default function CitizenProfile() {
     try {
       // 1. Execute Supabase update query before updating local React state
       const targetId = user.id || user.auth_user_id || 'USR-001';
-      let { error } = await supabase.from('profiles').update({ display_name: newName }).eq('id', targetId);
+      
+      const updateDataProfiles = {
+        full_name: newName,
+        phone: profile.phone || null
+      };
+
+      let { error } = await supabase.from('profiles').update({ display_name: newName, phone: profile.phone || null }).eq('id', targetId);
       if (error && (error.code === 'PGRST204' || error.message?.includes('display_name'))) {
-        await supabase.from('profiles').update({ full_name: newName }).eq('id', targetId);
+        await supabase.from('profiles').update(updateDataProfiles).eq('id', targetId);
       }
 
       if (user.email) {
-        let pRes = await supabase.from('profiles').update({ display_name: newName }).eq('email', user.email.toLowerCase());
+        let pRes = await supabase.from('profiles').update({ display_name: newName, phone: profile.phone || null }).eq('email', user.email.toLowerCase());
         if (pRes.error && (pRes.error.code === 'PGRST204' || pRes.error.message?.includes('display_name'))) {
-          await supabase.from('profiles').update({ full_name: newName }).eq('email', user.email.toLowerCase());
+          await supabase.from('profiles').update(updateDataProfiles).eq('email', user.email.toLowerCase());
         }
-        await supabase.from('patients').update({ full_name: newName }).eq('email', user.email.toLowerCase());
+
+        const patientUpdate = {
+          full_name: newName,
+          phone: profile.phone || null,
+          address: profile.address || null,
+          blood_group: profile.bloodGroup || null,
+          emergency_contact: profile.emergencyContact || null,
+          age_years: profile.age ? parseInt(profile.age, 10) : null,
+          sex: profile.gender ? profile.gender.toLowerCase() : null
+        };
+        await supabase.from('patients').update(patientUpdate).eq('email', user.email.toLowerCase());
       }
 
       // 2. Update local state and global auth state
@@ -112,9 +142,9 @@ export default function CitizenProfile() {
         }}>
           <UserCircleIcon style={{ width: '64px', height: '64px', color: '#15803d' }} />
           <div>
-            <h3 style={{ margin: '0 0 0.2rem 0', fontSize: '1.2rem', color: '#0f172a' }}>{profile.name}</h3>
+            <h3 style={{ margin: '0 0 0.2rem 0', fontSize: '1.2rem', color: '#0f172a' }}>{profile.name || 'New Patient Profile'}</h3>
             <div style={{ display: 'flex', gap: '0.75rem', fontSize: '0.85rem', color: '#64748b' }}>
-              <span>UHID: <strong style={{ color: '#15803d' }}>{profile.uhid}</strong></span>
+              <span>UHID: <strong style={{ color: '#15803d' }}>{profile.uhid || 'Not Assigned Yet'}</strong></span>
               <span>·</span>
               <span>Role: <strong>Patient / Citizen</strong></span>
             </div>
@@ -201,6 +231,7 @@ export default function CitizenProfile() {
                 onChange={(e) => setProfile({ ...profile, gender: e.target.value })}
                 style={{ width: '100%', padding: '0.65rem 0.85rem', borderRadius: '6px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }}
               >
+                <option value="">Select Gender</option>
                 <option>Female</option>
                 <option>Male</option>
                 <option>Other</option>
@@ -216,6 +247,7 @@ export default function CitizenProfile() {
                 onChange={(e) => setProfile({ ...profile, bloodGroup: e.target.value })}
                 style={{ width: '100%', padding: '0.65rem 0.85rem', borderRadius: '6px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }}
               >
+                <option value="">Select Blood Group</option>
                 <option>A+</option>
                 <option>A-</option>
                 <option>B+</option>
@@ -254,6 +286,7 @@ export default function CitizenProfile() {
 
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
             <button
+              ref={saveButtonRef}
               type="submit"
               style={{
                 backgroundColor: '#15803d',
@@ -271,6 +304,51 @@ export default function CitizenProfile() {
           </div>
         </form>
       </div>
+
+      {/* Profile Incomplete Banner */}
+      {isProfileIncomplete && (
+        <div
+          style={{
+            position: 'fixed',
+            bottom: '1.5rem',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            background: '#fffbeb',
+            border: '1.5px solid #fde68a',
+            borderRadius: '10px',
+            padding: '0.85rem 1.25rem',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.75rem',
+            fontSize: '0.88rem',
+            color: '#92400e',
+            boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
+            zIndex: 900,
+            maxWidth: '500px',
+            width: 'calc(100% - 2rem)',
+          }}
+        >
+          <span>Your details are still in progress. Complete your profile by pressing this button.</span>
+          <button
+            type="button"
+            onClick={scrollToSave}
+            style={{
+              background: '#15803d',
+              color: 'white',
+              border: 'none',
+              padding: '0.4rem 0.9rem',
+              borderRadius: '6px',
+              fontSize: '0.82rem',
+              fontWeight: '600',
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
+            }}
+          >
+            Complete Profile
+          </button>
+        </div>
+      )}
     </div>
   );
 }

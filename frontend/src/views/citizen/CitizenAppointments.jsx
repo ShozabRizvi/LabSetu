@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useLanguage } from '../../context/LanguageContext';
+import { supabase } from '../../lib/supabase';
 import { departments, appointmentSlots } from '../../data/mockLabData';
 import {
   CalendarDaysIcon,
@@ -144,8 +145,56 @@ export default function CitizenAppointments({ lang: propLang, addNewBooking, onA
       if (e?.detail) handleAddNewBooking(e.detail);
     };
     window.addEventListener('labsetu:addNewBooking', handleCustomAdd);
+
+    // Live Supabase Realtime synchronization for authority updates
+    const channel = supabase.channel('patient-tracker-live')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments' }, (payload) => {
+        if (payload.new) {
+          const updatedRow = payload.new;
+          setBookings((prev) => {
+            const list = Array.isArray(prev) ? prev : [];
+            const index = list.findIndex(b => b.id === updatedRow.id || (updatedRow.notes && updatedRow.notes.includes(b.id)));
+            if (index !== -1) {
+              const current = list[index];
+              const s = (updatedRow.status || '').toLowerCase();
+              let newStage = current.stage;
+              let newStatus = current.status;
+              if (s.includes('ready') || s.includes('signed') || s.includes('completed')) {
+                newStage = 4;
+                newStatus = 'Report Ready';
+              } else if (s.includes('processing')) {
+                newStage = 3;
+                newStatus = 'In Lab Processing';
+              } else if (s.includes('collected') || s.includes('sample') || s.includes('assigned')) {
+                newStage = 2;
+                newStatus = 'Sample Collected';
+              } else if (s.includes('confirmed') || s.includes('scheduled')) {
+                newStage = 1;
+                newStatus = 'Confirmed';
+              }
+              const updated = {
+                ...current,
+                status: newStatus,
+                stage: newStage
+              };
+              const copy = [...list];
+              copy[index] = updated;
+              try {
+                if (window.localStorage) {
+                  window.localStorage.setItem('labsetu_user_bookings', JSON.stringify(copy));
+                }
+              } catch {}
+              return copy;
+            }
+            return list;
+          });
+        }
+      })
+      .subscribe();
+
     return () => {
       window.removeEventListener('labsetu:addNewBooking', handleCustomAdd);
+      supabase.removeChannel(channel);
     };
   }, [onAddNewBooking, addNewBooking]);
   const [filter, setFilter] = useState('all');

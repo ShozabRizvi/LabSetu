@@ -18,37 +18,30 @@ import {
 } from '@heroicons/react/24/outline';
 import './CitizenDashboard.css';
 
-/* ─── Medical Disclaimer Banner ─────────────────────────────────────────────── */
-function MedicalDisclaimer({ lang }) {
-  const isHi = lang === 'hi';
+/* ─── Medical Disclaimer Banner (shown only after AI responds, inside chat) ──── */
+function MedicalDisclaimer() {
   return (
     <div
       style={{
         background: '#fffbeb',
         border: '1.5px solid #fde68a',
         borderRadius: '10px',
-        padding: '0.9rem 1.1rem',
+        padding: '0.75rem 1rem',
         display: 'flex',
-        gap: '0.75rem',
+        gap: '0.65rem',
         alignItems: 'flex-start',
-        fontSize: '0.82rem',
+        fontSize: '0.79rem',
         color: '#92400e',
-        lineHeight: 1.55,
+        lineHeight: 1.5,
+        marginTop: '0.4rem',
       }}
     >
       <ExclamationTriangleIcon
-        style={{ width: '20px', flexShrink: 0, marginTop: '2px', color: '#b45309' }}
+        style={{ width: '16px', flexShrink: 0, marginTop: '2px', color: '#b45309' }}
       />
-      <div>
-        <strong style={{ display: 'block', marginBottom: '0.2rem' }}>
-          {isHi
-            ? '⚕️ महत्वपूर्ण चिकित्सकीय अस्वीकरण (Medical Disclaimer):'
-            : '⚕️ Medical Disclaimer:'}
-        </strong>
-        {isHi
-          ? 'यह एआई सारांश केवल स्वास्थ्य जागरूकता और शैक्षिक उद्देश्य के लिए है। यह किसी भी प्रकार की चिकित्सीय सलाह, रोग निदान या दवा की पर्ची नहीं है। किसी भी स्वास्थ्य निर्णय से पहले हमेशा अपने योग्य चिकित्सक से परामर्श करें।'
-          : 'This AI summary is provided for informational and educational overview purposes only. Please do not rely on this automated breakdown for direct diagnosis or treatment. Always consult a qualified medical doctor or healthcare professional for personalized medical advice.'}
-      </div>
+      <span>
+        This is for informational purposes only. For medical advice or diagnosis, consult a professional. AI responses may include mistakes.
+      </span>
     </div>
   );
 }
@@ -129,10 +122,10 @@ function ChatBubble({ msg, lang }) {
           {msg.content}
         </div>
 
-        {/* AI response disclaimer */}
-        {!isUser && msg.content && (
+        {/* AI response disclaimer - hidden by default, rendered only after actual report is explained */}
+        {!isUser && msg.content && msg.isExplanation && (
           <div style={{ marginTop: '0.5rem' }}>
-            <MedicalDisclaimer lang={lang} />
+            <MedicalDisclaimer />
           </div>
         )}
 
@@ -241,6 +234,7 @@ export default function CitizenReportExplainer({ lang: propLang }) {
   const { lang: contextLang } = useLanguage();
   const effectiveLang = propLang || contextLang || 'en';
   const [activeLang, setActiveLang] = useState(effectiveLang);
+  const [inputFocused, setInputFocused] = useState(false);
 
   useEffect(() => {
     setActiveLang(effectiveLang);
@@ -257,6 +251,7 @@ export default function CitizenReportExplainer({ lang: propLang }) {
         : 'Hello! 👋 I\'m the LabSetu AI Health Assistant.\n\nYou can upload your lab report (PDF or image) or type your question directly. For example: "Explain my CBC report" or "Is my HbA1c of 6.8% high?"',
       time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
       file: null,
+      isExplanation: false,
     },
   ]);
   const [inputText, setInputText] = useState('');
@@ -393,6 +388,7 @@ export default function CitizenReportExplainer({ lang: propLang }) {
           content: aiText,
           time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
           file: null,
+          isExplanation: true,
         },
       ]);
     } catch (err) {
@@ -405,6 +401,7 @@ export default function CitizenReportExplainer({ lang: propLang }) {
             : 'Sorry, the AI service is temporarily unavailable. Please try again in a moment.',
           time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
           file: null,
+          isExplanation: true,
         },
       ]);
     } finally {
@@ -451,6 +448,7 @@ export default function CitizenReportExplainer({ lang: propLang }) {
           : 'Hello! 👋 I\'m the LabSetu AI Health Assistant. Type your question or upload a lab report.',
         time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
         file: null,
+        isExplanation: false,
       },
     ]);
   };
@@ -467,7 +465,7 @@ export default function CitizenReportExplainer({ lang: propLang }) {
             style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
           >
             <SparklesIcon style={{ width: '28px', color: '#15803d' }} />
-            {isHi ? 'AI हेल्थ असिस्टेंट — रिपोर्ट एक्सप्लेनर' : 'AI Health Assistant — Report Explainer'}
+            {isHi ? 'AI हेल्थ असिस्टेंट' : 'AI Health Assistant'}
           </h1>
           <p className="citizen-page-subtitle">
             {isHi
@@ -477,39 +475,6 @@ export default function CitizenReportExplainer({ lang: propLang }) {
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
-          {/* Language Switcher */}
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.4rem',
-              background: '#ffffff',
-              padding: '0.3rem 0.65rem',
-              borderRadius: '8px',
-              border: '1px solid #cbd5e1',
-            }}
-          >
-            <LanguageIcon style={{ width: '17px', color: '#15803d' }} />
-            {['en', 'hi'].map((l) => (
-              <button
-                key={l}
-                onClick={() => setActiveLang(l)}
-                style={{
-                  border: 'none',
-                  background: activeLang === l ? '#15803d' : 'transparent',
-                  color: activeLang === l ? 'white' : '#475569',
-                  padding: '0.2rem 0.55rem',
-                  borderRadius: '4px',
-                  fontWeight: '600',
-                  cursor: 'pointer',
-                  fontSize: '0.82rem',
-                }}
-              >
-                {l === 'en' ? 'English' : 'हिंदी'}
-              </button>
-            ))}
-          </div>
-
           {/* Clear Chat */}
           <button
             onClick={handleClearChat}
@@ -531,49 +496,6 @@ export default function CitizenReportExplainer({ lang: propLang }) {
           </button>
         </div>
       </div>
-
-      {/* ── Top Disclaimer ──────────────────────────────────────────── */}
-      <div style={{ marginBottom: '1rem' }}>
-        <MedicalDisclaimer lang={activeLang} />
-      </div>
-
-      {/* ── Quick Prompt Chips ───────────────────────────────────────── */}
-      {messages.length <= 1 && (
-        <div style={{ marginBottom: '1rem' }}>
-          <div style={{ fontSize: '0.78rem', fontWeight: '600', color: '#64748b', marginBottom: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-            {isHi ? 'त्वरित प्रश्न' : 'Quick Questions'}
-          </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
-            {quickPrompts.map((prompt) => (
-              <button
-                key={prompt}
-                onClick={() => handleQuickPrompt(prompt)}
-                style={{
-                  padding: '0.4rem 0.9rem',
-                  borderRadius: '20px',
-                  border: '1.5px solid #bbf7d0',
-                  background: '#f0fdf4',
-                  color: '#15803d',
-                  fontSize: '0.82rem',
-                  cursor: 'pointer',
-                  fontWeight: '500',
-                  transition: 'all 0.15s',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = '#15803d';
-                  e.currentTarget.style.color = 'white';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = '#f0fdf4';
-                  e.currentTarget.style.color = '#15803d';
-                }}
-              >
-                {prompt}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* ── Chat Window ─────────────────────────────────────────────── */}
       <div
@@ -635,18 +557,60 @@ export default function CitizenReportExplainer({ lang: propLang }) {
         </div>
       )}
 
+      {/* ── Quick Prompt Chips (directly above input bar) ────────────── */}
+      {messages.length <= 1 && (
+        <div style={{ marginTop: '0.75rem', marginBottom: '0.5rem' }}>
+          <div style={{ fontSize: '0.75rem', fontWeight: '600', color: '#64748b', marginBottom: '0.4rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            {isHi ? 'त्वरित प्रश्न' : 'Quick Questions'}
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+            {quickPrompts.map((prompt) => (
+              <button
+                key={prompt}
+                onClick={() => handleQuickPrompt(prompt)}
+                style={{
+                  padding: '0.35rem 0.8rem',
+                  borderRadius: '20px',
+                  border: '1.5px solid #bbf7d0',
+                  background: '#f0fdf4',
+                  color: '#15803d',
+                  fontSize: '0.79rem',
+                  cursor: 'pointer',
+                  fontWeight: '500',
+                  transition: 'all 0.15s',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = '#15803d';
+                  e.currentTarget.style.color = 'white';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = '#f0fdf4';
+                  e.currentTarget.style.color = '#15803d';
+                }}
+              >
+                {prompt}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* ── Input Bar ───────────────────────────────────────────────── */}
       <div
         style={{
-          background: 'white',
-          border: '2px solid #e2e8f0',
+          background: inputFocused ? 'rgba(236, 253, 245, 0.75)' : '#ffffff',
+          border: inputFocused ? '2px solid #059669' : '2px solid #e2e8f0',
           borderRadius: attachedFile ? '0 0 14px 14px' : '14px',
           padding: '0.75rem 1rem',
           display: 'flex',
           alignItems: 'flex-end',
           gap: '0.6rem',
-          boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+          boxShadow: inputFocused
+            ? '0 8px 24px -4px rgba(5, 150, 105, 0.18), 0 0 0 3px rgba(16, 185, 129, 0.22)'
+            : '0 2px 8px rgba(0,0,0,0.06)',
+          transform: inputFocused ? 'translateY(-1px) scale(1.004)' : 'translateY(0) scale(1)',
           marginTop: 0,
+          transition: 'all 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
         }}
       >
         {/* Attachment button */}
@@ -694,6 +658,8 @@ export default function CitizenReportExplainer({ lang: propLang }) {
           value={inputText}
           onChange={handleTextInput}
           onKeyDown={handleKeyDown}
+          onFocus={() => setInputFocused(true)}
+          onBlur={() => setInputFocused(false)}
           placeholder={
             isHi
               ? 'यहाँ अपना प्रश्न टाइप करें… (जैसे: "HbA1c 6.8% का क्या अर्थ है?")'
@@ -714,6 +680,39 @@ export default function CitizenReportExplainer({ lang: propLang }) {
             maxHeight: 140,
           }}
         />
+
+        {/* Language Toggle (inside input bar, before Send) */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.2rem',
+            flexShrink: 0,
+            borderLeft: '1px solid #e2e8f0',
+            paddingLeft: '0.5rem',
+          }}
+        >
+          {['en', 'hi'].map((l) => (
+            <button
+              key={l}
+              type="button"
+              onClick={() => setActiveLang(l)}
+              style={{
+                border: 'none',
+                background: activeLang === l ? '#15803d' : 'transparent',
+                color: activeLang === l ? 'white' : '#94a3b8',
+                padding: '0.2rem 0.4rem',
+                borderRadius: '4px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                fontSize: '0.75rem',
+                transition: 'all 0.15s',
+              }}
+            >
+              {l === 'en' ? 'EN' : 'हिं'}
+            </button>
+          ))}
+        </div>
 
         {/* Send button */}
         <button

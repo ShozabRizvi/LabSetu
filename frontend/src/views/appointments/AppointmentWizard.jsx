@@ -1,7 +1,8 @@
 import React, { useMemo, useState } from 'react';
-import { CheckCircleIcon, ChevronLeftIcon, ChevronRightIcon, CalendarDaysIcon, UserCircleIcon, BuildingOffice2Icon, ClockIcon, ShieldCheckIcon, PrinterIcon } from '@heroicons/react/24/outline';
+import { CheckCircleIcon, ChevronLeftIcon, ChevronRightIcon, CalendarDaysIcon, UserCircleIcon, BuildingOffice2Icon, ClockIcon, ShieldCheckIcon, PrinterIcon, HomeModernIcon } from '@heroicons/react/24/outline';
 import useDemoResource from '../../hooks/useDemoResource';
 import { useAuth } from '../../context/AuthContext';
+import { supabase } from '../../lib/supabase';
 import { appointmentSlots, departments, demoPatient } from '../../data/mockLabData';
 import logo from '../../assets/logo.png';
 import './AppointmentWizard.css';
@@ -20,6 +21,8 @@ export default function AppointmentWizard() {
 
   const defaultDraft = {
     step: 0,
+    visitType: 'lab',
+    homeAddress: '',
     patient: {
       name: currentUser?.name || '',
       mobile: currentUser?.phone || ''
@@ -31,6 +34,22 @@ export default function AppointmentWizard() {
   };
 
   const { data: apptDraft, update: updateApptDraft } = useDemoResource('active_appointment_draft', defaultDraft);
+
+  const visitType = apptDraft?.visitType || 'lab';
+  const setVisitType = (val) => {
+    updateApptDraft(prev => ({
+      ...(prev || defaultDraft),
+      visitType: typeof val === 'function' ? val((prev || defaultDraft).visitType || 'lab') : val
+    }));
+  };
+
+  const homeAddress = apptDraft?.homeAddress || '';
+  const setHomeAddress = (val) => {
+    updateApptDraft(prev => ({
+      ...(prev || defaultDraft),
+      homeAddress: typeof val === 'function' ? val((prev || defaultDraft).homeAddress || '') : val
+    }));
+  };
 
   const step = apptDraft?.step ?? 0;
   const setStep = (val) => {
@@ -88,6 +107,10 @@ export default function AppointmentWizard() {
 
   const savePatientDetails = (event) => {
     event.preventDefault();
+    if (visitType === 'home' && !homeAddress.trim()) {
+      setNotice('Please provide your residential address for doorstep sample collection.');
+      return;
+    }
     if (!patient.name.trim()) { 
       setNotice('Please enter the patient full name.'); 
       return; 
@@ -118,12 +141,16 @@ export default function AppointmentWizard() {
       patientName: patient.name.trim(), 
       mobile: patient.mobile, 
       department, 
+      visitType,
+      homeAddress: visitType === 'home' ? homeAddress : undefined,
       date, 
       slot, 
       status: 'Confirmed', 
       stage: 1,
       createdAt: new Date().toISOString(),
-      prep: '10 hours overnight fasting recommended. Plain water allowed.'
+      prep: visitType === 'home'
+        ? 'Doorstep sample pickup scheduled. Keep ID proof ready.'
+        : '10 hours overnight fasting recommended. Plain water allowed.'
     };
     saveAppointments((current) => [record, ...current]);
     try {
@@ -141,6 +168,25 @@ export default function AppointmentWizard() {
     } catch {
       // Safe fallback for restricted storage
     }
+
+    try {
+      supabase.from('appointments').insert({
+        appointment_date: date,
+        visit_type: visitType === 'home' ? 'home_collection' : 'lab_visit',
+        status: 'Confirmed',
+        purpose: department,
+        notes: `Patient: ${patient.name.trim()}, Phone: ${patient.mobile}, Slot: ${slot}, Type: ${visitType === 'home' ? 'Home Sample Collection' : 'Manual Lab Visit'}${visitType === 'home' && homeAddress ? ', Address: ' + homeAddress : ''}`
+      }).then(({ error }) => {
+        if (error) console.warn('Supabase appointment insert error:', error);
+      });
+    } catch (e) {
+      console.warn('Supabase insert warning:', e);
+    }
+
+    try {
+      window.dispatchEvent(new CustomEvent('labsetu:addNewBooking', { detail: record }));
+    } catch {}
+
     setReference(id); 
     setStep(4); 
     setNotice('Appointment confirmed and saved successfully.');
@@ -161,12 +207,16 @@ export default function AppointmentWizard() {
         patientName: (patient.name || currentUser?.name || demoPatient?.name || 'rshozab64').trim(), 
         mobile: patient.mobile || currentUser?.phone || '9876500000', 
         department: department || 'cardiology', 
+        visitType,
+        homeAddress: visitType === 'home' ? homeAddress : undefined,
         date: date || dateValue(1), 
         slot: slot || 'morning-1', 
         status: 'Confirmed', 
         stage: 1,
         createdAt: new Date().toISOString(),
-        prep: '10 hours overnight fasting recommended. Plain water allowed.'
+        prep: visitType === 'home'
+          ? 'Doorstep sample pickup scheduled. Keep ID proof ready.'
+          : '10 hours overnight fasting recommended. Plain water allowed.'
       };
       saveAppointments((current) => [record, ...(Array.isArray(current) ? current : [])]);
       try {
@@ -184,6 +234,25 @@ export default function AppointmentWizard() {
       } catch {
         // Safe fallback for restricted storage
       }
+
+      try {
+        supabase.from('appointments').insert({
+          appointment_date: date || dateValue(1),
+          visit_type: visitType === 'home' ? 'home_collection' : 'lab_visit',
+          status: 'Confirmed',
+          purpose: department || 'cardiology',
+          notes: `Patient: ${record.patientName}, Phone: ${record.mobile}, Type: ${visitType === 'home' ? 'Home Sample Collection' : 'Manual Lab Visit'}`
+        }).then(({ error }) => {
+          if (error) console.warn('Supabase appointment insert error:', error);
+        });
+      } catch (e) {
+        console.warn('Supabase insert warning:', e);
+      }
+
+      try {
+        window.dispatchEvent(new CustomEvent('labsetu:addNewBooking', { detail: record }));
+      } catch {}
+
       setReference(id);
       setStep(4);
     }
@@ -218,6 +287,86 @@ export default function AppointmentWizard() {
         <div className="appt-content">
           {step === 0 && (
             <form onSubmit={savePatientDetails}>
+              {/* Visit Type Card-Selection */}
+              <div style={{ marginBottom: '1.5rem', background: '#f8fafc', padding: '1.25rem', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+                <span style={{ display: 'block', fontSize: '0.85rem', fontWeight: '700', color: '#1e293b', marginBottom: '0.6rem' }}>
+                  Select Visit or Collection Mode:
+                </span>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '12px' }}>
+                  <button
+                    type="button"
+                    onClick={() => setVisitType('lab')}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      gap: '12px',
+                      padding: '14px',
+                      borderRadius: '10px',
+                      border: visitType === 'lab' ? '2px solid #16834a' : '1px solid #cbd5e1',
+                      background: visitType === 'lab' ? '#f0fdf4' : '#ffffff',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      transition: 'all 0.2s ease',
+                      boxShadow: visitType === 'lab' ? '0 2px 8px rgba(22, 131, 74, 0.12)' : 'none'
+                    }}
+                  >
+                    <BuildingOffice2Icon style={{ width: '26px', color: visitType === 'lab' ? '#16834a' : '#64748b', flexShrink: 0, marginTop: '2px' }} />
+                    <div>
+                      <div style={{ fontWeight: '700', fontSize: '0.95rem', color: visitType === 'lab' ? '#16834a' : '#0f172a' }}>
+                        Manual Lab Visit
+                      </div>
+                      <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '2px', lineHeight: 1.4 }}>
+                        Visit our certified diagnostic center in-person for tests &amp; scans
+                      </div>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setVisitType('home')}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      gap: '12px',
+                      padding: '14px',
+                      borderRadius: '10px',
+                      border: visitType === 'home' ? '2px solid #16834a' : '1px solid #cbd5e1',
+                      background: visitType === 'home' ? '#f0fdf4' : '#ffffff',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      transition: 'all 0.2s ease',
+                      boxShadow: visitType === 'home' ? '0 2px 8px rgba(22, 131, 74, 0.12)' : 'none'
+                    }}
+                  >
+                    <HomeModernIcon style={{ width: '26px', color: visitType === 'home' ? '#16834a' : '#64748b', flexShrink: 0, marginTop: '2px' }} />
+                    <div>
+                      <div style={{ fontWeight: '700', fontSize: '0.95rem', color: visitType === 'home' ? '#16834a' : '#0f172a' }}>
+                        Home Sample Collection
+                      </div>
+                      <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '2px', lineHeight: 1.4 }}>
+                        NABL-certified phlebotomist visits your doorstep at scheduled time
+                      </div>
+                    </div>
+                  </button>
+                </div>
+
+                {visitType === 'home' && (
+                  <div style={{ marginTop: '1rem' }}>
+                    <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', color: '#374151', marginBottom: '0.35rem' }}>
+                      Doorstep Pickup Address &amp; Landmark
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Flat 402, Green Valley Apts, Sector 14, Gurugram"
+                      value={homeAddress}
+                      onChange={(e) => setHomeAddress(e.target.value)}
+                      style={{ width: '100%', padding: '10px 12px', border: '1px solid #cbd5e1', borderRadius: '7px', fontSize: '0.88rem', boxSizing: 'border-box' }}
+                      required={visitType === 'home'}
+                    />
+                  </div>
+                )}
+              </div>
+
               <div className="appt-section-title">
                 <UserCircleIcon />
                 <div>
@@ -405,6 +554,12 @@ export default function AppointmentWizard() {
                     <span className="receipt-field-label">DATE & TIME</span>
                     <strong className="receipt-field-value">
                       {date || '2026-10-20'} | {appointmentSlots.find((item) => item.id === slot)?.label || '02:00 PM – 02:30 PM'}
+                    </strong>
+                  </div>
+                  <div className="receipt-field">
+                    <span className="receipt-field-label">COLLECTION / VISIT MODE</span>
+                    <strong className="receipt-field-value" style={{ color: '#16834a' }}>
+                      {visitType === 'home' ? '🏠 Home Sample Collection' : '🏥 Manual Lab Visit'}
                     </strong>
                   </div>
                 </div>
