@@ -80,39 +80,27 @@ export default function DashboardHome() {
     document.title = 'LabSetu - Authority Dashboard';
     fetchLiveAppointments();
 
-    // CORRECTED: Chain .on() BEFORE .subscribe()
-    const channel = supabase.channel('authority-appointments-realtime')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'appointments' },
-        (payload) => {
-          console.log('[Realtime] Appointment change detected:', payload);
-          fetchLiveAppointments();
-        }
-      )
-      .subscribe((status) => {
-        console.log('[Realtime] Subscription status:', status);
-      });
+    const channelName = `authority-appointments-realtime-${Date.now()}`;
+    const channel = supabase.channel(channelName);
+
+    // Chain .on() BEFORE .subscribe()
+    channel.on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'appointments' },
+      (payload) => {
+        console.log('[Realtime] Appointment change detected:', payload);
+        fetchLiveAppointments();
+      }
+    );
+
+    channel.subscribe((status) => {
+      console.log('[Realtime] Subscription status:', status);
+    });
 
     return () => {
       supabase.removeChannel(channel);
     };
   }, [currentUser?.centerId]);
-
-  useEffect(() => {
-    document.title = 'LabSetu - Authority Dashboard';
-    fetchLiveAppointments();
-
-    const channel = supabase.channel('authority-appointments-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments' }, () => {
-        fetchLiveAppointments();
-      })
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, []);
 
   const handleUpdateStatus = async (apptId, nextStatus) => {
     try {
