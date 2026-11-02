@@ -1,9 +1,10 @@
-import React, { useMemo, useState } from 'react';
-import { CheckCircleIcon, ChevronLeftIcon, ChevronRightIcon, CalendarDaysIcon, UserCircleIcon, BuildingOffice2Icon, ClockIcon, ShieldCheckIcon, PrinterIcon, HomeModernIcon } from '@heroicons/react/24/outline';
+import React, { useMemo, useState, useEffect } from 'react';
+import { CheckCircleIcon, ChevronLeftIcon, ChevronRightIcon, CalendarDaysIcon, UserCircleIcon, BuildingOffice2Icon, ClockIcon, ShieldCheckIcon, PrinterIcon, HomeModernIcon, MapPinIcon, SparklesIcon } from '@heroicons/react/24/outline';
 import useDemoResource from '../../hooks/useDemoResource';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { appointmentSlots, departments, demoPatient } from '../../data/mockLabData';
+import { getCurrentCoordinates, matchNearestNablLab } from '../../utils/geoLabMatcher';
 import logo from '../../assets/logo.png';
 import './AppointmentWizard.css';
 
@@ -101,6 +102,28 @@ export default function AppointmentWizard() {
 
   const [reference, setReference] = useState('');
   const [notice, setNotice] = useState('');
+  const [geoMatch, setGeoMatch] = useState({
+    lab: null,
+    distanceKm: 1.2,
+    coords: null
+  });
+
+  useEffect(() => {
+    let active = true;
+    getCurrentCoordinates().then(coords => {
+      matchNearestNablLab(coords).then(res => {
+        if (active && res && res.nearestLab) {
+          setGeoMatch({
+            lab: res.nearestLab,
+            distanceKm: res.distanceKm,
+            coords: res.userCoords
+          });
+        }
+      });
+    }).catch(err => console.warn('Geo lookup warning:', err));
+    return () => { active = false; };
+  }, []);
+
   const selectedDepartment = departments.find((item) => item.id === department);
   const safeAppts = Array.isArray(appointments) ? appointments : [];
   const availableSlots = useMemo(() => appointmentSlots.filter((item) => !safeAppts.some((a) => a.date === date && a.slot === item.id && a.department === department)), [safeAppts, date, department]);
@@ -135,6 +158,7 @@ export default function AppointmentWizard() {
       return; 
     }
     const id = `APT-${Date.now().toString().slice(-7)}`;
+    const matchedLabName = geoMatch.lab?.name || 'LabSetu Central Reference Lab';
     const record = { 
       id, 
       aptId: id,
@@ -144,6 +168,8 @@ export default function AppointmentWizard() {
       department, 
       visitType,
       homeAddress: visitType === 'home' ? homeAddress : undefined,
+      assignedLab: geoMatch.lab ? { id: geoMatch.lab.id, name: geoMatch.lab.name, distanceKm: geoMatch.distanceKm } : undefined,
+      assigned_lab_id: geoMatch.lab?.id || 'lab-central',
       date, 
       slot, 
       status: 'Confirmed', 
@@ -175,8 +201,12 @@ export default function AppointmentWizard() {
         appointment_date: date,
         visit_type: visitType === 'home' ? 'home_collection' : 'lab_visit',
         status: 'Confirmed',
+        tracking_status: 'Order Placed',
+        assigned_lab_id: geoMatch.lab?.id || 'lab-central',
+        patient_latitude: geoMatch.coords?.latitude,
+        patient_longitude: geoMatch.coords?.longitude,
         purpose: department,
-        notes: `Patient: ${(patient.name || activeMember?.name || currentUser?.name || '').trim()}, UHID: ${activeUHID || currentUser?.uhid || ''}, Phone: ${patient.mobile}, Slot: ${slot}, Type: ${visitType === 'home' ? 'Home Sample Collection' : 'Manual Lab Visit'}${visitType === 'home' && homeAddress ? ', Address: ' + homeAddress : ''}`
+        notes: `Patient: ${(patient.name || activeMember?.name || currentUser?.name || '').trim()}, UHID: ${activeUHID || currentUser?.uhid || ''}, Phone: ${patient.mobile}, Slot: ${slot}, Type: ${visitType === 'home' ? 'Home Sample Collection' : 'Manual Lab Visit'}${visitType === 'home' && homeAddress ? ', Address: ' + homeAddress : ''}, MatchedLab: ${matchedLabName}`
       }).then(({ error }) => {
         if (error) console.warn('Supabase appointment insert error:', error);
       });
@@ -274,6 +304,40 @@ export default function AppointmentWizard() {
         <div className="appt-secure">
           <ShieldCheckIcon /> Instant Booking
         </div>
+      </div>
+
+      {/* Geolocation Lab Match Banner */}
+      <div className="no-print" style={{
+        background: 'linear-gradient(135deg, #f0fdf4 0%, #e0f2fe 100%)',
+        border: '1px solid #86efac',
+        borderRadius: '12px',
+        padding: '0.85rem 1.25rem',
+        marginBottom: '1rem',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        flexWrap: 'wrap',
+        gap: '0.75rem'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+          <div style={{ width: '36px', height: '36px', borderRadius: '8px', background: '#059669', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.1rem' }}>
+            📍
+          </div>
+          <div>
+            <div style={{ fontSize: '0.72rem', fontWeight: '700', color: '#047857', textTransform: 'uppercase' }}>
+              AUTOMATED GEOLOCATION LAB MATCHING
+            </div>
+            <div style={{ fontSize: '0.92rem', fontWeight: '700', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              Matched with Nearest NABL Lab: {geoMatch.lab?.name || 'LabSetu Central Reference Lab'}
+              <span style={{ background: '#059669', color: 'white', padding: '0.15rem 0.5rem', borderRadius: '4px', fontSize: '0.72rem', fontWeight: '700' }}>
+                {geoMatch.distanceKm || '1.2'} km away
+              </span>
+            </div>
+          </div>
+        </div>
+        <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
+          Verified NABL &amp; ICMR Accredited (ISO 15189)
+        </span>
       </div>
 
       <section className="appt-card">

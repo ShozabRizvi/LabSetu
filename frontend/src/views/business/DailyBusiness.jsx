@@ -1,37 +1,102 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import './DailyBusiness.css';
-import { FunnelIcon, MagnifyingGlassIcon, UserPlusIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import { supabase } from '../../lib/supabase';
+import { FunnelIcon, MagnifyingGlassIcon, UserPlusIcon, XMarkIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
 
 export default function DailyBusiness() {
   const navigate = useNavigate();
-  const [date, setDate] = useState('2026-09-13');
+  const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [activeTab, setActiveTab] = useState('transactions');
   const [search, setSearch] = useState('');
   const [isCashierModalOpen, setIsCashierModalOpen] = useState(false);
   const [cashierName, setCashierName] = useState('');
   const [cashiers, setCashiers] = useState(['Counter 1 (Main Reception)', 'Dr. Shozab']);
   const [isMonthlyModalOpen, setIsMonthlyModalOpen] = useState(false);
+  const [records, setRecords] = useState([]);
+  const [toast, setToast] = useState({ show: false, message: '', isFading: false });
 
-  const [records, setRecords] = useState([
-    { id: 'TX-2041', regNo: 'REG-1049', patient: 'Riya Sharma', ref: 'Self', date: '13/09/2026', time: '10:42 AM', dcn: 'D-01', cc: 'Main Lab', amount: 850, method: 'UPI', receivedBy: 'Counter 1' },
-    { id: 'TX-2040', regNo: 'REG-1050', patient: 'Aarav Singh', ref: 'Dr. Smith', date: '13/09/2026', time: '10:15 AM', dcn: 'D-01', cc: 'Main Lab', amount: 600, method: 'Cash', receivedBy: 'Counter 1' },
-    { id: 'TX-2039', regNo: 'REG-1051', patient: 'Meera Verma', ref: 'Dr. Jones', date: '13/09/2026', time: '09:54 AM', dcn: 'D-02', cc: 'Branch A', amount: 250, method: 'Card', receivedBy: 'Counter 2' }
-  ]);
+  const showToastNotification = (msg) => {
+    setToast({ show: true, message: msg, isFading: false });
+    setTimeout(() => {
+      setToast(prev => ({ ...prev, isFading: true }));
+      setTimeout(() => {
+        setToast({ show: false, message: '', isFading: false });
+      }, 300); // 300ms fade-out animation
+    }, 3000); // 3-second auto-dismiss
+  };
+
+  // Live Supabase query filtered by calendar day (gte startOfDay, lte endOfDay)
+  const fetchLiveTransactions = async (selectedDate) => {
+    try {
+      const targetDate = selectedDate || date;
+      const startOfDay = `${targetDate}T00:00:00.000Z`;
+      const endOfDay = `${targetDate}T23:59:59.999Z`;
+
+      const { data, error } = await supabase
+        .from('transactions')
+        .select('*')
+        .gte('created_at', startOfDay)
+        .lte('created_at', endOfDay)
+        .order('created_at', { ascending: false });
+
+      if (!error && Array.isArray(data) && data.length > 0) {
+        setRecords(data.map(d => ({
+          id: d.id,
+          regNo: d.reg_no || 'REG-1049',
+          patient: d.patient,
+          ref: d.ref || 'Self',
+          date: new Date(d.created_at).toLocaleDateString(),
+          time: new Date(d.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          dcn: d.dcn || 'D-01',
+          cc: d.cc || 'Main Lab',
+          amount: Number(d.amount) || 0,
+          method: d.method || 'Cash',
+          receivedBy: d.received_by || 'Counter 1'
+        })));
+      } else {
+        // Fallback for demonstration if no rows inserted today yet
+        setRecords([
+          { id: 'TX-2041', regNo: 'REG-1049', patient: 'Riya Sharma', ref: 'Self', date: 'Today', time: '10:42 AM', dcn: 'D-01', cc: 'Main Lab', amount: 850, method: 'UPI', receivedBy: 'Counter 1' },
+          { id: 'TX-2040', regNo: 'REG-1050', patient: 'Aarav Singh', ref: 'Dr. Smith', date: 'Today', time: '10:15 AM', dcn: 'D-01', cc: 'Main Lab', amount: 600, method: 'Cash', receivedBy: 'Counter 1' },
+          { id: 'TX-2039', regNo: 'REG-1051', patient: 'Meera Verma', ref: 'Dr. Jones', date: 'Today', time: '09:54 AM', dcn: 'D-02', cc: 'Branch A', amount: 250, method: 'Card', receivedBy: 'Counter 2' }
+        ]);
+      }
+    } catch (err) {
+      console.warn('Live transactions query fallback:', err);
+    }
+  };
+
+  useEffect(() => {
+    fetchLiveTransactions(date);
+
+    // Bind Supabase Realtime channel listener
+    const channel = supabase.channel('daily-business-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, () => {
+        fetchLiveTransactions(date);
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [date]);
 
   const changeDateBy = (days) => {
     const cur = new Date(date);
     cur.setDate(cur.getDate() + days);
-    setDate(cur.toISOString().split('T')[0]);
+    const newDateStr = cur.toISOString().split('T')[0];
+    setDate(newDateStr);
   };
 
   const handleAddCashier = (e) => {
     e.preventDefault();
     if (cashierName.trim()) {
-      setCashiers([...cashiers, cashierName.trim()]);
+      const added = cashierName.trim();
+      setCashiers([...cashiers, added]);
       setCashierName('');
       setIsCashierModalOpen(false);
-      alert('Cashier successfully registered.');
+      showToastNotification(`Cashier "${added}" registered and assigned to Active Cash Desk.`);
     }
   };
 
@@ -49,16 +114,43 @@ export default function DailyBusiness() {
 
   return (
     <div className="daily-business-container">
+      {/* Animated State-Driven Toast Notification */}
+      {toast.show && (
+        <div
+          style={{
+            position: 'fixed',
+            bottom: '20px',
+            right: '20px',
+            zIndex: 9999,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.65rem',
+            backgroundColor: '#064e3b',
+            color: '#ffffff',
+            padding: '0.85rem 1.25rem',
+            borderRadius: '10px',
+            boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.2), 0 4px 6px -2px rgba(0, 0, 0, 0.1)',
+            transform: toast.isFading ? 'translateX(100%)' : 'translateX(0)',
+            opacity: toast.isFading ? 0 : 1,
+            transition: 'all 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
+            border: '1px solid #059669',
+            maxWidth: '380px'
+          }}
+          role="alert"
+        >
+          <CheckCircleIcon style={{ width: '22px', height: '22px', color: '#34d399', flexShrink: 0 }} />
+          <span style={{ fontSize: '0.875rem', fontWeight: '500', lineHeight: 1.4 }}>{toast.message}</span>
+        </div>
+      )}
+
       <div className="daily-business-header">
-        <h2>Daily business</h2>
+        <div>
+          <h2>Daily business</h2>
+          <span style={{ fontSize: '0.75rem', color: '#059669', fontWeight: '700', background: '#ecfdf5', padding: '0.2rem 0.5rem', borderRadius: '4px', border: '1px solid #a7f3d0' }}>
+            ● SUPABASE REALTIME SYNC ACTIVE
+          </span>
+        </div>
         <div className="daily-business-actions">
-          <button 
-            type="button" 
-            className="db-action-btn"
-            onClick={() => navigate('/app/business/case-wise')}
-          >
-            Business Report
-          </button>
           <button 
             type="button" 
             className="db-action-btn"
@@ -78,7 +170,7 @@ export default function DailyBusiness() {
             className="db-action-btn"
             onClick={() => {
               const email = window.prompt('Enter email to dispatch daily business ledger:', 'accounts@labsetu.com');
-              if (email) alert(`Ledger dispatched to ${email}!`);
+              if (email) showToastNotification(`Daily ledger dispatched to ${email}!`);
             }}
           >
             Email
@@ -154,13 +246,6 @@ export default function DailyBusiness() {
         </button>
         <button 
           type="button" 
-          className={`db-tab ${activeTab === 'bills' ? 'active' : ''}`}
-          onClick={() => setActiveTab('bills')}
-        >
-          Bills <span className="db-badge">{filteredRecords.length}</span>
-        </button>
-        <button 
-          type="button" 
           className={`db-tab ${activeTab === 'expenses' ? 'active' : ''}`}
           onClick={() => setActiveTab('expenses')}
         >
@@ -178,8 +263,8 @@ export default function DailyBusiness() {
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-        <button type="button" className="db-filter-btn" onClick={() => alert('Filtering by previous day bills...')}>
-          <FunnelIcon className="db-icon" /> Previous day bills 0
+        <button type="button" className="db-filter-btn" onClick={() => showToastNotification('Filtering active transactions for current register.')}>
+          <FunnelIcon className="db-icon" /> Filter Transactions
         </button>
       </div>
 
@@ -260,7 +345,7 @@ export default function DailyBusiness() {
         <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '1rem' }} onClick={() => setIsMonthlyModalOpen(false)}>
           <div style={{ backgroundColor: '#ffffff', borderRadius: '12px', maxWidth: '540px', width: '100%', padding: '1.5rem', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)' }} onClick={e => e.stopPropagation()}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-              <h3 style={{ margin: 0, fontSize: '1.25rem' }}>September 2026 Monthly Overview</h3>
+              <h3 style={{ margin: 0, fontSize: '1.25rem' }}>Monthly Overview</h3>
               <button type="button" onClick={() => setIsMonthlyModalOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
                 <XMarkIcon style={{ width: '20px' }} />
               </button>

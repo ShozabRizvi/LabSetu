@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useTranslation } from '../../context/LanguageContext';
 import { supabase } from '../../lib/supabase';
+import { PRESET_SECURITY_QUESTIONS } from '../../services/authService';
 import {
   UserCircleIcon,
   ShieldCheckIcon,
@@ -24,7 +25,9 @@ export default function CitizenProfile() {
     gender: '',
     bloodGroup: '',
     emergencyContact: '',
-    address: ''
+    address: '',
+    securityQuestion: 'What is your childhood nickname?',
+    securityAnswer: ''
   });
   const [loading, setLoading] = useState(true);
 
@@ -86,6 +89,8 @@ export default function CitizenProfile() {
           const loadedGender = patientRow?.sex ? (patientRow.sex.charAt(0).toUpperCase() + patientRow.sex.slice(1)) : (currentUser?.gender || '');
           const loadedAge = patientRow?.age_years !== null && patientRow?.age_years !== undefined ? String(patientRow.age_years) : (currentUser?.age ? String(currentUser.age) : '');
           const loadedEmergency = patientRow?.emergency_contact || currentUser?.emergencyContact || '';
+          const loadedSq = profileRow?.security_question || profileRow?.security_question_1 || patientRow?.security_question || 'What is your childhood nickname?';
+          const loadedSa = profileRow?.security_answer || profileRow?.security_answer_1 || patientRow?.security_answer || '';
 
           setProfile({
             name: loadedName,
@@ -96,7 +101,9 @@ export default function CitizenProfile() {
             gender: loadedGender,
             bloodGroup: loadedBloodGroup,
             emergencyContact: loadedEmergency,
-            address: loadedAddress
+            address: loadedAddress,
+            securityQuestion: loadedSq,
+            securityAnswer: loadedSa
           });
 
           if (typeof updateCurrentUser === 'function' && (loadedName || loadedUhid || loadedPhone)) {
@@ -137,9 +144,14 @@ export default function CitizenProfile() {
       const currentUserId = sessionData?.session?.user?.id || user.id;
 
       // 1. MUST execute Supabase update on profiles table
+      const cleanAnswer = (profile.securityAnswer || '').trim().toLowerCase();
       const profileUpdates = {
         full_name: newName,
         phone: newPhone || null,
+        security_question: profile.securityQuestion,
+        security_answer: cleanAnswer || null,
+        security_question_1: profile.securityQuestion,
+        security_answer_1: cleanAnswer || null,
         updated_at: new Date().toISOString()
       };
 
@@ -155,6 +167,8 @@ export default function CitizenProfile() {
         emergency_contact: profile.emergencyContact || null,
         age_years: profile.age ? parseInt(profile.age, 10) : null,
         sex: profile.gender ? profile.gender.toLowerCase() : null,
+        security_question: profile.securityQuestion,
+        security_answer: cleanAnswer || null,
         updated_at: new Date().toISOString()
       };
       if (currentUserId && typeof currentUserId === 'string' && currentUserId.includes('-')) {
@@ -414,6 +428,46 @@ export default function CitizenProfile() {
               onChange={(e) => setProfile({ ...profile, address: e.target.value })}
               style={{ width: '100%', padding: '0.65rem 0.85rem', borderRadius: '6px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }}
             />
+          </div>
+
+          {/* Security Question for Password Recovery */}
+          <div style={{ backgroundColor: '#f8fafc', padding: '1rem', borderRadius: '8px', border: '1px solid #e2e8f0', marginTop: '0.5rem' }}>
+            <div style={{ fontSize: '0.9rem', fontWeight: '600', color: '#0f172a', marginBottom: '0.35rem' }}>
+              Password Recovery Security Question
+            </div>
+            <p style={{ fontSize: '0.8rem', color: '#64748b', margin: '0 0 0.85rem 0' }}>
+              Used to reset your password without needing an email verification link or OTP.
+            </p>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem' }}>
+              <div>
+                <label style={{ display: 'block', marginBottom: '0.4rem', fontSize: '0.85rem', fontWeight: '500', color: '#334155' }}>
+                  Pre-set Security Question
+                </label>
+                <select
+                  value={profile.securityQuestion}
+                  onChange={(e) => setProfile({ ...profile, securityQuestion: e.target.value })}
+                  style={{ width: '100%', padding: '0.65rem 0.85rem', borderRadius: '6px', border: '1px solid #cbd5e1', backgroundColor: '#fff', boxSizing: 'border-box' }}
+                >
+                  {PRESET_SECURITY_QUESTIONS.map(q => (
+                    <option key={q} value={q}>{q}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', marginBottom: '0.4rem', fontSize: '0.85rem', fontWeight: '500', color: '#334155' }}>
+                  Security Answer
+                </label>
+                <input
+                  type="text"
+                  placeholder="Enter your confidential answer"
+                  value={profile.securityAnswer}
+                  onChange={(e) => setProfile({ ...profile, securityAnswer: e.target.value })}
+                  style={{ width: '100%', padding: '0.65rem 0.85rem', borderRadius: '6px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }}
+                />
+              </div>
+            </div>
           </div>
 
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.5rem' }}>

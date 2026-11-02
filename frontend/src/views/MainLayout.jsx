@@ -3,6 +3,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import logo from '../assets/logo.png';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
+import { PRESET_SECURITY_QUESTIONS } from '../services/authService';
 import LabSetuVideoPlayer from '../components/common/LabSetuVideoPlayer';
 import './MainLayout.css';
 import { 
@@ -76,6 +77,8 @@ export default function MainLayout() {
   const [isVideoOpen, setIsVideoOpen] = useState(false);
   const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
   const [accountName, setAccountName] = useState(currentUser?.name || '');
+  const [accountSecurityQuestion, setAccountSecurityQuestion] = useState('What is your childhood nickname?');
+  const [accountSecurityAnswer, setAccountSecurityAnswer] = useState('');
   const [isSavingAccount, setIsSavingAccount] = useState(false);
   const [accountNotice, setAccountNotice] = useState('');
   const [legalModal, setLegalModal] = useState(null);
@@ -89,6 +92,26 @@ export default function MainLayout() {
     if (isAccountModalOpen && currentUser) {
       setAccountName(currentUser.name || '');
       setAccountNotice('');
+
+      const fetchAccountSecurity = async () => {
+        try {
+          const targetId = currentUser.id || '6296e1a6-8a20-4fa7-b26a-883b53800335';
+          const { data } = await supabase
+            .from('profiles')
+            .select('security_question, security_question_1, security_answer, security_answer_1')
+            .eq('id', targetId)
+            .maybeSingle();
+          if (data) {
+            if (data.security_question || data.security_question_1) {
+              setAccountSecurityQuestion(data.security_question || data.security_question_1);
+            }
+            if (data.security_answer || data.security_answer_1) {
+              setAccountSecurityAnswer(data.security_answer || data.security_answer_1);
+            }
+          }
+        } catch {}
+      };
+      fetchAccountSecurity();
     }
   }, [isAccountModalOpen, currentUser]);
 
@@ -101,18 +124,30 @@ export default function MainLayout() {
       setAccountNotice('');
       const newName = accountName.trim();
       const targetUserId = currentUser?.id || '6296e1a6-8a20-4fa7-b26a-883b53800335';
+      const cleanAnswer = (accountSecurityAnswer || '').trim().toLowerCase();
 
       // 1. Commit update to Supabase database
       try {
         let updateRes = await supabase
           .from('profiles')
-          .update({ full_name: newName, display_name: newName })
+          .update({
+            full_name: newName,
+            display_name: newName,
+            security_question: accountSecurityQuestion,
+            security_answer: cleanAnswer || null,
+            security_question_1: accountSecurityQuestion,
+            security_answer_1: cleanAnswer || null
+          })
           .eq('id', targetUserId);
 
-        if (updateRes.error && updateRes.error.message?.includes('display_name')) {
-          updateRes = await supabase
+        if (updateRes.error) {
+          await supabase
             .from('profiles')
-            .update({ full_name: newName })
+            .update({
+              full_name: newName,
+              security_question: accountSecurityQuestion,
+              security_answer: cleanAnswer || null
+            })
             .eq('id', targetUserId);
         }
       } catch (dbErr) {
@@ -472,7 +507,6 @@ export default function MainLayout() {
                   <NavLink to="/app/business/due-reports" onClick={() => setIsMobileNavOpen(false)} className={({isActive}) => `layout-submenu-item ${isActive ? 'layout-nav-active' : ''}`}><DocumentDuplicateIcon/> Due reports</NavLink>
                   <NavLink to="/app/business/activities" onClick={() => setIsMobileNavOpen(false)} className={({isActive}) => `layout-submenu-item ${isActive ? 'layout-nav-active' : ''}`}><BellIcon/> Activities</NavLink>
                   <NavLink to="/app/business/referral" onClick={() => setIsMobileNavOpen(false)} className={({isActive}) => `layout-submenu-item ${isActive ? 'layout-nav-active' : ''}`}><UsersIcon/> Referral business</NavLink>
-                  <NavLink to="/app/business/case-wise" onClick={() => setIsMobileNavOpen(false)} className={({isActive}) => `layout-submenu-item ${isActive ? 'layout-nav-active' : ''}`}><DocumentTextIcon/> Case wise report</NavLink>
                   <NavLink to="/app/business/analysis" onClick={() => setIsMobileNavOpen(false)} className={({isActive}) => `layout-submenu-item ${isActive ? 'layout-nav-active' : ''}`}><ChartBarIcon/> Business analysis</NavLink>
                   <NavLink to="/app/business/data-export" onClick={() => setIsMobileNavOpen(false)} className={({isActive}) => `layout-submenu-item ${isActive ? 'layout-nav-active' : ''}`}><ArrowDownTrayIcon/> Data export</NavLink>
                 </div>
@@ -494,7 +528,6 @@ export default function MainLayout() {
               
               <div className={`layout-submenu-wrapper ${isCasesExpanded ? 'expanded' : ''}`}>
                 <div className="layout-submenu">
-                  <NavLink to="/app/business/daily" onClick={() => setIsMobileNavOpen(false)} className={({isActive}) => `layout-submenu-item ${isActive ? 'layout-nav-active' : ''}`}><ReceiptRefundIcon/> Bills</NavLink>
                   <NavLink to="/app/cases/outsource" onClick={() => setIsMobileNavOpen(false)} className={({isActive}) => `layout-submenu-item ${isActive ? 'layout-nav-active' : ''}`}><GlobeAltIcon/> Outsource cases</NavLink>
                   <NavLink to="/app/cases/ctscan" onClick={() => setIsMobileNavOpen(false)} className={({isActive}) => `layout-submenu-item ${isActive ? 'layout-nav-active' : ''}`}><FilmIcon/> Ct scan cases</NavLink>
                   <NavLink to="/app/cases/patients" onClick={() => setIsMobileNavOpen(false)} className={({isActive}) => `layout-submenu-item ${isActive ? 'layout-nav-active' : ''}`}><UserGroupIcon/> Patients</NavLink>
@@ -625,15 +658,39 @@ export default function MainLayout() {
             <Outlet />
           </div>
 
-          <footer className="w-full text-center text-sm text-gray-500 mt-10 pb-6">
-            <div className="flex justify-center gap-6 mb-1">
-              <a href="/terms" onClick={(e) => { e.preventDefault(); setLegalModal('terms'); }} className="hover:text-emerald-600">Terms &amp; Conditions</a>
-              <a href="/privacy" onClick={(e) => { e.preventDefault(); setLegalModal('privacy'); }} className="hover:text-emerald-600">Privacy Policy</a>
+          <footer className="w-full mt-auto pt-8 pb-6 flex flex-col items-center justify-center text-center text-sm text-gray-500 border-t border-gray-100">
+            {/* Row 1: Terms & Conditions and Privacy Policy */}
+            <div className="flex items-center justify-center gap-6 mb-2">
+              <a 
+                href="/terms" 
+                onClick={(e) => { e.preventDefault(); setLegalModal('terms'); }} 
+                className="hover:text-emerald-600 transition-colors font-medium text-gray-600"
+              >
+                Terms &amp; Conditions
+              </a>
+              <span className="text-gray-300">•</span>
+              <a 
+                href="/privacy" 
+                onClick={(e) => { e.preventDefault(); setLegalModal('privacy'); }} 
+                className="hover:text-emerald-600 transition-colors font-medium text-gray-600"
+              >
+                Privacy Policy
+              </a>
             </div>
-            <div className="mb-4">
-              <a href="/refund" onClick={(e) => { e.preventDefault(); setLegalModal('refund'); }} className="hover:text-emerald-600">Refund Policy</a>
+            {/* Row 2: Refund Policy centered underneath */}
+            <div className="flex items-center justify-center mb-3">
+              <a 
+                href="/refund" 
+                onClick={(e) => { e.preventDefault(); setLegalModal('refund'); }} 
+                className="hover:text-emerald-600 transition-colors font-medium text-gray-600"
+              >
+                Refund Policy
+              </a>
             </div>
-            <p>&copy; 2026 LabSetu LIMS. All rights reserved.</p>
+            {/* Row 3: Copyright notice */}
+            <p className="text-xs text-gray-400 m-0">
+              &copy; 2026 LabSetu Healthcare Systems. All rights reserved.
+            </p>
           </footer>
         </main>
       </div>
@@ -735,6 +792,39 @@ export default function MainLayout() {
                 <div><span style={{ color: '#64748b' }}>Registered Email:</span> <strong>{currentUser?.email || 'admin@labsetu.com'}</strong></div>
                 <div><span style={{ color: '#64748b' }}>Associated Center:</span> <strong>{currentUser?.centerName || 'LabSetu Diagnostics'}</strong></div>
                 <div><span style={{ color: '#64748b' }}>Lab ID #:</span> <strong>{currentUser?.labId || '61326885'}</strong></div>
+              </div>
+
+              {/* Password Recovery Security Question for Staff */}
+              <div style={{ backgroundColor: '#f8fafc', padding: '0.85rem', borderRadius: '8px', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                <div style={{ fontSize: '0.85rem', fontWeight: '700', color: '#0f172a' }}>
+                  Password Recovery Security Question
+                </div>
+                <div>
+                  <label style={{ display: 'block', marginBottom: '0.3rem', fontSize: '0.8rem', fontWeight: '500', color: '#334155' }}>
+                    Select Question
+                  </label>
+                  <select
+                    value={accountSecurityQuestion}
+                    onChange={(e) => setAccountSecurityQuestion(e.target.value)}
+                    style={{ width: '100%', padding: '0.55rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.85rem', backgroundColor: '#fff', boxSizing: 'border-box' }}
+                  >
+                    {PRESET_SECURITY_QUESTIONS.map(q => (
+                      <option key={q} value={q}>{q}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label style={{ display: 'block', marginBottom: '0.3rem', fontSize: '0.8rem', fontWeight: '500', color: '#334155' }}>
+                    Security Answer
+                  </label>
+                  <input
+                    type="text"
+                    value={accountSecurityAnswer}
+                    onChange={(e) => setAccountSecurityAnswer(e.target.value)}
+                    placeholder="Enter confidential answer"
+                    style={{ width: '100%', padding: '0.55rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.85rem', boxSizing: 'border-box' }}
+                  />
+                </div>
               </div>
 
               {accountNotice && (

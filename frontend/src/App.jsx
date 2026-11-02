@@ -19,7 +19,7 @@ import Expenses from './views/business/Expenses';
 import DueReports from './views/business/DueReports';
 import Activities from './views/business/Activities';
 import ReferralBusiness from './views/business/ReferralBusiness';
-import CaseWiseReport from './views/business/CaseWiseReport';
+
 import BusinessAnalysis from './views/business/BusinessAnalysis';
 import DataExport from './views/business/DataExport';
 
@@ -192,7 +192,7 @@ function App() {
             <Route path="business/due-reports" element={<DueReports />} />
             <Route path="business/activities" element={<Activities />} />
             <Route path="business/referral" element={<ReferralBusiness />} />
-            <Route path="business/case-wise" element={<CaseWiseReport />} />
+
             <Route path="business/analysis" element={<BusinessAnalysis />} />
             <Route path="business/data-export" element={<DataExport />} />
             

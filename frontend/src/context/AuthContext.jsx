@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import authService from '../services/authService';
 import apiClient from '../services/apiClient';
 import { supabase } from '../lib/supabase';
+import { logger } from '../utils/logger';
 
 const AuthContext = createContext(null);
 
@@ -18,23 +19,34 @@ export function AuthProvider({ children }) {
   // Synchronous initialization strictly from verified stored session, never fake users
   const [authorityUser, setAuthorityUser] = useState(() => {
     const authSession = getStoredItem('labsetu_authority_session');
-    if (authSession && authSession.role === 'authority') return authSession;
-    const legacy = getStoredItem('labsetu_auth');
-    if (legacy && legacy.role === 'authority') return legacy;
+    if (authSession && authSession.role === 'authority') {
+      const cleanName = (authSession.name && !authSession.name.includes('@')) ? authSession.name : 'Dr. Shozab Rizvi';
+      return { ...authSession, name: cleanName };
+    }
     return null;
   });
 
   const [patientUser, setPatientUser] = useState(() => {
     const patientSession = getStoredItem('labsetu_patient_session');
-    if (patientSession && patientSession.role === 'citizen') return patientSession;
-    const legacy = getStoredItem('labsetu_auth');
-    if (legacy && legacy.role === 'citizen') return legacy;
+    if (patientSession && patientSession.role === 'citizen') {
+      const cleanName = (patientSession.name && !patientSession.name.includes('@')) ? patientSession.name : 'Patient';
+      const cleanUhid = (patientSession.uhid && patientSession.uhid !== 'Pending')
+        ? patientSession.uhid
+        : (patientSession.id ? `UHID-${patientSession.id.substring(0, 4)}-${new Date().getFullYear()}` : '');
+      return { ...patientSession, name: cleanName, uhid: cleanUhid };
+    }
     return null;
   });
 
   const [activeUHID, setActiveUHIDState] = useState(() => {
     try {
-      return localStorage.getItem('labsetu_active_uhid') || sessionStorage.getItem('labsetu_active_uhid') || null;
+      const stored = localStorage.getItem('labsetu_active_uhid') || sessionStorage.getItem('labsetu_active_uhid');
+      if (stored === 'Pending') {
+        localStorage.removeItem('labsetu_active_uhid');
+        sessionStorage.removeItem('labsetu_active_uhid');
+        return null;
+      }
+      return stored || null;
     } catch {
       return null;
     }
@@ -121,7 +133,7 @@ export function AuthProvider({ children }) {
             .maybeSingle();
           if (data) profileRow = data;
         } catch (dbErr) {
-          console.warn('[AuthContext] Database hydration warning:', dbErr);
+          logger.auth('AuthContext database profile hydration warning', { error: dbErr?.message || dbErr });
         }
 
         let patientRow = null;
@@ -135,15 +147,23 @@ export function AuthProvider({ children }) {
         } catch {}
 
         const userRole = sessionUser.user_metadata?.role || (profileRow?.role === 'admin' ? 'authority' : 'citizen');
-        const resolvedName = profileRow?.display_name || profileRow?.full_name || patientRow?.full_name || sessionUser.user_metadata?.full_name || 'Patient';
-        const resolvedUhid = profileRow?.uhid || patientRow?.patient_code || 'Pending';
+        const rawResolvedName = profileRow?.display_name || profileRow?.full_name || patientRow?.full_name || sessionUser.user_metadata?.full_name;
+        const resolvedName = (rawResolvedName && !rawResolvedName.includes('@')) ? rawResolvedName : (userRole === 'authority' ? 'Dr. Shozab Rizvi' : 'Patient');
+        
+        // Rigidly map UHID from database query response (profiles or patients table)
+        const dbUhid = (profileRow?.uhid && profileRow.uhid !== 'Pending')
+          ? profileRow.uhid
+          : (patientRow?.patient_code && patientRow.patient_code !== 'Pending')
+            ? patientRow.patient_code
+            : null;
+        const resolvedUhid = dbUhid || (userRole === 'citizen' && userId ? `UHID-${userId.substring(0, 4)}-${new Date().getFullYear()}` : '');
 
         if (userRole === 'authority') {
           const updatedAuth = {
             id: userId,
             email: userEmail,
             role: 'authority',
-            name: resolvedName || 'Dr. Shozab Rizvi',
+            name: resolvedName,
             phone: profileRow?.phone || '',
             centerName: 'LabSetu Diagnostics',
             labId: '61326885'
@@ -174,7 +194,7 @@ export function AuthProvider({ children }) {
           localStorage.setItem('labsetu_auth', JSON.stringify(updatedPatient));
         }
       } catch (e) {
-        console.warn('[AuthContext] Session hydration error:', e);
+        logger.auth('AuthContext session hydration error', { error: e?.message || e, stack: e?.stack });
       } finally {
         if (isMounted) setLoading(false);
       }
@@ -195,18 +215,24 @@ export function AuthProvider({ children }) {
             .maybeSingle();
           if (data) profile = data;
         } catch (err) {
-          console.warn('[AuthContext] onAuthStateChange profile fetch error:', err);
+          logger.auth('AuthContext onAuthStateChange profile fetch error', { error: err?.message || err });
         }
 
         const isAuthRole = session.user.user_metadata?.role === 'authority' || profile?.role === 'admin';
+
+        const rawAuthName = profile?.display_name || profile?.full_name || session.user.user_metadata?.full_name;
+        const cleanAuthName = (rawAuthName && !rawAuthName.includes('@')) ? rawAuthName : (isAuthRole ? 'Dr. Shozab Rizvi' : 'Patient');
+
+        const dbUhid = (profile?.uhid && profile.uhid !== 'Pending') ? profile.uhid : null;
+        const resolvedUhid = dbUhid || (isAuthRole ? undefined : (session.user?.id ? `UHID-${session.user.id.substring(0, 4)}-${new Date().getFullYear()}` : ''));
 
         const resolvedUser = {
           ...session.user,
           id: session.user.id,
           email: session.user.email,
           role: isAuthRole ? 'authority' : 'citizen',
-          name: profile?.full_name || session.user.user_metadata?.full_name || (isAuthRole ? 'Dr. Shozab Rizvi' : 'Patient'),
-          uhid: profile?.uhid || (isAuthRole ? undefined : 'Pending'),
+          name: cleanAuthName,
+          uhid: resolvedUhid,
         };
 
         if (isAuthRole) {
@@ -342,13 +368,19 @@ export function AuthProvider({ children }) {
     try {
       await supabase.auth.signOut();
     } catch (e) {
-      console.warn('[logout] Supabase signOut error:', e);
+      logger.auth('AuthContext logout Supabase signOut error', { error: e?.message || e });
     }
 
     await authService.logout();
   };
 
-  const currentEffectiveUHID = activeUHID || patientUser?.uhid || currentUser?.uhid || '';
+  const currentEffectiveUHID = (activeUHID && activeUHID !== 'Pending')
+    ? activeUHID
+    : (patientUser?.uhid && patientUser.uhid !== 'Pending')
+      ? patientUser.uhid
+      : (currentUser?.uhid && currentUser.uhid !== 'Pending')
+        ? currentUser.uhid
+        : '';
 
   return (
     <AuthContext.Provider value={{

@@ -62,19 +62,21 @@ button, input, select, textarea {
 }
 
 /* ==========================================================================
-   Global Universal Print Protection Rules — Eradicates Blank Print Previews
+   Global Universal Print Protection Rules — Dedicated Printable Report Isolation
    ========================================================================== */
 @media print {
-  /* Hide background UI, navigation sidebars, and action buttons */
-  body > *:not(#root):not(.printable-area),
-  nav, sidebar, .sidebar, .citizen-sidebar, .citizen-header, .app-sidebar, .app-header, .main-header,
-  header, footer, button, .no-print, .citizen-modal-close, .report-modal-footer, .report-modal-utility-bar {
+  /* Hide all background UI, navigation, sidebars, headers, footers and action buttons */
+  nav, aside, .sidebar, .layout-sidebar, .citizen-sidebar, .citizen-header, .layout-header, 
+  .app-sidebar, .app-header, .main-header, header, footer, button, .no-print, 
+  .citizen-modal-close, .report-modal-footer, .report-modal-utility-bar, .lab-print-status,
+  .hero-actions, .db-action-btn, .lab-controls-row, .lab-tabs-row {
     display: none !important;
     visibility: hidden !important;
   }
 
-  /* Unconstrain viewport / body / scroll containers so browser never clips or whites-out */
-  html, body, #root, .citizen-layout-container, .citizen-body, .citizen-main-content, .main-layout-container, .main-body {
+  /* Unconstrain viewport / body / scroll containers so browser never clips */
+  html, body, #root, .citizen-layout-container, .citizen-body, .citizen-main-content, 
+  .main-layout-container, .main-body, .layout-main-content {
     height: auto !important;
     min-height: auto !important;
     max-height: none !important;
@@ -86,55 +88,42 @@ button, input, select, textarea {
     color: #000000 !important;
   }
 
-  /* Force visible render on targeted print container */
-  .printable-area, #printable-report, .printable-slip, .clinical-report-sheet, .report-modal-card.printable-area {
+  /* Strict Isolation: Make only #printable-report and its contents visible */
+  body:has(#printable-report) * {
+    visibility: hidden;
+  }
+
+  body:has(#printable-report) #printable-report,
+  body:has(#printable-report) #printable-report * {
+    visibility: visible !important;
+  }
+
+  /* Dedicated container ID enforcement */
+  #printable-report {
     display: block !important;
     visibility: visible !important;
-    position: relative !important;
+    position: absolute !important;
     left: 0 !important;
     top: 0 !important;
     width: 100% !important;
     max-width: 100% !important;
-    max-height: none !important;
-    height: auto !important;
+    margin: 0 !important;
+    padding: 24px !important;
     background: #ffffff !important;
     color: #000000 !important;
     box-shadow: none !important;
     border: none !important;
     border-radius: 0 !important;
     overflow: visible !important;
-    margin: 0 !important;
-    padding: 0 !important;
-  }
-
-  /* Targeted print slip absolute positioning */
-  #printable-slip, .printable-slip {
-    position: absolute !important;
-    left: 0 !important;
-    top: 0 !important;
-    width: 100% !important;
+    z-index: 999999 !important;
   }
 
   /* Full-page modal backdrops in print */
-  .citizen-modal-backdrop, .report-modal-backdrop {
-    position: absolute !important;
-    left: 0 !important;
-    top: 0 !important;
-    width: 100% !important;
-    height: auto !important;
-    min-height: 100% !important;
-    background: #ffffff !important;
-    z-index: 99999 !important;
+  .citizen-modal-backdrop, .report-modal-backdrop, .report-modal-backdrop-custom {
+    position: static !important;
+    background: transparent !important;
     display: block !important;
     visibility: visible !important;
-    padding: 0 !important;
-    margin: 0 !important;
-  }
-
-  .report-modal-body, .report-modal-wrapper {
-    overflow: visible !important;
-    max-height: none !important;
-    height: auto !important;
     padding: 0 !important;
     margin: 0 !important;
   }

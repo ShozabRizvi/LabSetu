@@ -313,10 +313,6 @@ export default function TodaysReports() {
             <ChevronRightIcon className="lab-small-icon" />
           </button>
         </div>
-        
-        <button type="button" className="lab-btn lab-btn-outline" onClick={() => alert(`Today's summary: ${reports.length} total samples, ${reports.filter(r => r.status === 'Final' || r.status === 'Signed off').length} signed off/final.`)}>
-          <ChartBarIcon className="lab-btn-icon" /> Stats
-        </button>
       </div>
 
       <div className="lab-tabs-row">
