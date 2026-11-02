@@ -28,10 +28,32 @@ export default function DashboardHome() {
 
   const fetchLiveAppointments = async () => {
     try {
+      // 1. Resolve current center ID from user session or context if applicable
+      const centerId = currentUser?.centerId || currentUser?.center_id;
+
+      let apptsQuery = supabase
+        .from('appointments')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(6);
+
+      // Apply center filter if your schema uses center_id partitioning
+      if (centerId) {
+        apptsQuery = apptsQuery.eq('center_id', centerId);
+      }
+
       const [apptsRes, billsRes] = await Promise.all([
-        supabase.from('appointments').select('*').order('created_at', { ascending: false }).limit(6).then(r => r).catch(() => ({ data: null })),
-        supabase.from('bills').select('due_amount').eq('payment_status', 'due').then(r => r).catch(() => ({ data: null }))
+        apptsQuery,
+        supabase.from('bills').select('due_amount').eq('payment_status', 'due')
       ]);
+
+      if (apptsRes.error) {
+        console.error('[DashboardHome] Appointments fetch error:', apptsRes.error.message);
+      }
+
+      if (billsRes.error) {
+        console.error('[DashboardHome] Bills fetch error:', billsRes.error.message);
+      }
 
       const dbAppts = apptsRes?.data;
       const dbBills = billsRes?.data;
@@ -45,12 +67,36 @@ export default function DashboardHome() {
       if (dbBills && dbBills.length > 0) {
         const sum = dbBills.reduce((acc, b) => acc + (Number(b.due_amount) || 0), 0);
         setDbDues(sum);
+      } else {
+        setDbDues(0);
       }
     } catch (e) {
-      console.warn('Live appointments error:', e);
+      console.warn('Live appointments exception:', e);
       setLiveAppointments([]);
     }
   };
+
+  useEffect(() => {
+    document.title = 'LabSetu - Authority Dashboard';
+    fetchLiveAppointments();
+
+    const channel = supabase.channel('authority-appointments-realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'appointments' },
+        (payload) => {
+          console.log('[Realtime] Appointment change detected:', payload);
+          fetchLiveAppointments();
+        }
+      )
+      .subscribe((status) => {
+        console.log('[Realtime] Subscription status:', status);
+      });
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [currentUser?.centerId]);
 
   useEffect(() => {
     document.title = 'LabSetu - Authority Dashboard';
