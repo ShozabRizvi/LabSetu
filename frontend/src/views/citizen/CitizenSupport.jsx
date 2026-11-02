@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { useLanguage } from '../../context/LanguageContext';
+import React, { useState, useEffect } from 'react';
+import { useTranslation } from '../../context/LanguageContext';
 import useDemoResource from '../../hooks/useDemoResource';
 import {
   ChatBubbleLeftRightIcon,
@@ -15,7 +15,7 @@ import {
 import './CitizenDashboard.css';
 
 export default function CitizenSupport({ lang: propLang }) {
-  const { lang: contextLang } = useLanguage();
+  const { lang: contextLang, t } = useTranslation();
   const lang = propLang || contextLang || 'en';
   const defaultTickets = [
     {
@@ -46,22 +46,47 @@ export default function CitizenSupport({ lang: propLang }) {
     description: ''
   });
 
+  // Modal Scrolling Lock: Prevent background scrolling when modal is open
+  useEffect(() => {
+    if (isModalOpen) {
+      const originalOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = originalOverflow || '';
+      };
+    }
+  }, [isModalOpen]);
+
+  const handleOpenModal = () => {
+    setIsModalOpen(true);
+  };
+
+  // State Reset on Close: Clear form state whenever modal is dismissed
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+    setForm({
+      category: 'Report Status',
+      subject: '',
+      description: ''
+    });
+  };
+
   const faqs = [
     {
-      q: 'How soon are test reports published after sample collection?',
-      a: 'Routine investigations such as Complete Blood Count (CBC), Urine Analysis, and Blood Sugar are typically released within 3 to 6 hours. Specialized panels like Vitamin D, HbA1c, and Thyroid are published within 12 to 24 hours.'
+      q: lang === 'hi' ? 'सैंपल लेने के कितनी देर बाद जांच रिपोर्ट मिलती है?' : 'How soon are test reports published after sample collection?',
+      a: lang === 'hi' ? 'सीबीसी, यूरिन और ब्लड शुगर जैसी सामान्य जांच रिपोर्ट 3 से 6 घंटे में जारी हो जाती हैं। विटामिन डी, एचबीए1सी और थायरॉइड जैसी विशेष जांचों में 12 से 24 घंटे लगते हैं।' : 'Routine investigations such as Complete Blood Count (CBC), Urine Analysis, and Blood Sugar are typically released within 3 to 6 hours. Specialized panels like Vitamin D, HbA1c, and Thyroid are published within 12 to 24 hours.'
     },
     {
-      q: 'How do I download or share my certified digital report?',
-      a: 'Navigate to "My Reports" from the left menu. Click "View Report" or "Download PDF" to save an authenticated digital copy with QR code verification.'
+      q: lang === 'hi' ? 'मैं अपनी डिजिटल प्रमाणित रिपोर्ट कैसे डाउनलोड या शेयर कर सकता हूँ?' : 'How do I download or share my certified digital report?',
+      a: lang === 'hi' ? 'बाएं मेनू से "मेरी रिपोर्ट्स" पर जाएं। क्यूआर कोड से प्रमाणित प्रतिलिपि सुरक्षित करने के लिए "रिपोर्ट देखें" या "डाउनलोड पीडीएफ" पर क्लिक करें।' : 'Navigate to "My Reports" from the left menu. Click "View Report" or "Download PDF" to save an authenticated digital copy with QR code verification.'
     },
     {
-      q: 'Can I cancel or reschedule my appointment or home pickup?',
-      a: 'Yes. Appointments and doorstep collection can be rescheduled or cancelled with full refund up to 2 hours before the scheduled time slot from "My Bookings" or "Home Collection".'
+      q: lang === 'hi' ? 'क्या मैं अपनी अपॉइंटमेंट या होम कलेक्शन का समय बदल सकता हूँ?' : 'Can I cancel or reschedule my appointment or home pickup?',
+      a: lang === 'hi' ? 'हाँ, निर्धारित समय से 2 घंटे पहले तक "मेरी बुकिंग्स" या "होम कलेक्शन" से पूरा रिफंड या समय में बदलाव किया जा सकता है।' : 'Yes. Appointments and doorstep collection can be rescheduled or cancelled with full refund up to 2 hours before the scheduled time slot from "My Bookings" or "Home Collection".'
     },
     {
-      q: 'Are the test rates verified and standardized?',
-      a: 'Yes. All participating diagnostic laboratories adhere to the transparent maximum rate ceiling published in LabSetu without hidden phlebotomy surcharges.'
+      q: lang === 'hi' ? 'क्या टेस्ट की दरें मानकीकृत और पारदर्शी हैं?' : 'Are the test rates verified and standardized?',
+      a: lang === 'hi' ? 'हाँ, सभी मान्यता प्राप्त प्रयोगशालाएं लैबसेतु के निर्धारित अधिकतम दर नियमों का पालन करती हैं, बिना किसी अतिरिक्त शुल्क के।' : 'Yes. All participating diagnostic laboratories adhere to the transparent maximum rate ceiling published in LabSetu without hidden phlebotomy surcharges.'
     }
   ];
 
@@ -77,33 +102,46 @@ export default function CitizenSupport({ lang: propLang }) {
       response: 'Ticket logged. A support coordinator will examine your query within 30 minutes.'
     };
     setTickets([created, ...(tickets || [])]);
-    setIsModalOpen(false);
-    setForm({ category: 'Report Status', subject: '', description: '' });
-    setNotice(lang === 'hi' ? `शिकायत / टिकट दर्ज की गई: ${created.id}` : `Support ticket registered: ${created.id}`);
+    handleCloseModal();
+    setNotice(lang === 'hi' ? `${t('support.ticketLogged')}${created.id}` : `Support ticket registered: ${created.id}`);
     setTimeout(() => setNotice(''), 4000);
   };
 
   return (
     <div className="citizen-page">
-      <div className="citizen-page-header">
+      <div className="citizen-page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem', marginBottom: '1.5rem' }}>
         <div>
           <h1 className="citizen-page-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <ChatBubbleLeftRightIcon style={{ width: '26px', color: '#15803d' }} />
-            {lang === 'hi' ? 'मदद एवं शिकायत निवारण (सपोर्ट)' : 'Patient Help & Grievance Support'}
+            {t('support.pageTitle')}
           </h1>
           <p className="citizen-page-subtitle">
-            {lang === 'hi'
-              ? 'रिपोर्ट में देरी, बिलिंग या होम कलेक्शन संबंधी सहायता प्राप्त करें'
-              : 'Direct customer service assistance for diagnostic reports, billing, or phlebotomy'}
+            {t('support.subtitle')}
           </p>
         </div>
         <button
-          onClick={() => setIsModalOpen(true)}
-          className="btn-primary"
-          style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}
+          type="button"
+          onClick={handleOpenModal}
+          className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium py-2 px-4 rounded-lg shadow-sm transition-all duration-200 active:scale-95 mb-6"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem',
+            backgroundColor: '#059669',
+            color: '#ffffff',
+            fontSize: '0.875rem',
+            fontWeight: 500,
+            padding: '0.5rem 1rem',
+            borderRadius: '0.5rem',
+            border: 'none',
+            boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
+            cursor: 'pointer',
+            transition: 'all 200ms cubic-bezier(0.4, 0, 0.2, 1)',
+            marginBottom: '1.5rem'
+          }}
         >
-          <PlusIcon style={{ width: '18px' }} />
-          {lang === 'hi' ? 'नई सहायता टिकट बनाएं' : 'Raise Support Ticket'}
+          <PlusIcon className="w-5 h-5" style={{ width: '20px', height: '20px' }} />
+          <span>{t('support.raiseTicket')}</span>
         </button>
       </div>
 
@@ -141,34 +179,34 @@ export default function CitizenSupport({ lang: propLang }) {
       {/* Tickets List */}
       <div style={{ marginBottom: '2.5rem' }}>
         <h2 style={{ fontSize: '1.2rem', color: '#0f172a', marginBottom: '1rem' }}>
-          {lang === 'hi' ? 'आपकी सहायता टिकट एवं स्थिति' : 'Your Support Tickets & Status'}
+          {t('support.yourTickets')}
         </h2>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          {(tickets || []).map(t => (
-            <div key={t.id} style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '1.25rem', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
+          {(tickets || []).map(item => (
+            <div key={item.id} style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '1.25rem', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.5rem' }}>
                 <div>
                   <span style={{ fontSize: '0.75rem', fontWeight: '700', color: '#15803d', background: '#dcfce7', padding: '0.15rem 0.5rem', borderRadius: '4px' }}>
-                    {t.id}
+                    {item.id}
                   </span>
                   <span style={{ fontSize: '0.8rem', color: '#64748b', marginLeft: '0.5rem' }}>
-                    Category: <strong>{t.category}</strong> · {t.date}
+                    {t('support.category')}: <strong>{item.category}</strong> · {item.date}
                   </span>
-                  <h3 style={{ margin: '0.35rem 0 0', fontSize: '1.05rem', color: '#0f172a' }}>{t.subject}</h3>
+                  <h3 style={{ margin: '0.35rem 0 0', fontSize: '1.05rem', color: '#0f172a' }}>{item.subject}</h3>
                 </div>
                 <span style={{
                   fontSize: '0.75rem',
                   fontWeight: '600',
                   padding: '0.25rem 0.65rem',
                   borderRadius: '12px',
-                  background: t.status.includes('Resolved') ? '#dcfce7' : '#fef3c7',
-                  color: t.status.includes('Resolved') ? '#15803d' : '#92400e'
+                  background: item.status.includes('Resolved') ? '#dcfce7' : '#fef3c7',
+                  color: item.status.includes('Resolved') ? '#15803d' : '#92400e'
                 }}>
-                  {t.status}
+                  {item.status.includes('Resolved') ? t('support.resolved') : (item.status.includes('Under Review') ? t('support.underReview') : t('support.open'))}
                 </span>
               </div>
               <div style={{ background: '#f8fafc', padding: '0.75rem 1rem', borderRadius: '6px', fontSize: '0.875rem', color: '#334155', borderLeft: '3px solid #15803d', marginTop: '0.75rem' }}>
-                <strong>Staff Note:</strong> {t.response}
+                <strong>Staff Note:</strong> {item.response}
               </div>
             </div>
           ))}
@@ -179,7 +217,7 @@ export default function CitizenSupport({ lang: propLang }) {
       <div>
         <h2 style={{ fontSize: '1.2rem', color: '#0f172a', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
           <QuestionMarkCircleIcon style={{ width: '22px', color: '#15803d' }} />
-          {lang === 'hi' ? 'अक्सर पूछे जाने वाले प्रश्न (FAQ)' : 'Frequently Asked Patient Questions'}
+          {t('support.faqTitle')}
         </h2>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
           {faqs.map((faq, idx) => (
@@ -218,73 +256,237 @@ export default function CitizenSupport({ lang: propLang }) {
         </div>
       </div>
 
-      {/* New Ticket Modal */}
+      {/* Modern Professional Support Ticket Modal */}
       {isModalOpen && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '1rem' }}>
-          <div style={{ background: 'white', borderRadius: '12px', padding: '1.75rem', width: '100%', maxWidth: '500px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', borderBottom: '1px solid #e2e8f0', paddingBottom: '0.75rem' }}>
-              <h3 style={{ margin: 0, fontSize: '1.15rem' }}>Raise a Support Ticket</h3>
-              <button onClick={() => setIsModalOpen(false)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#64748b' }}>
-                <XMarkIcon style={{ width: '22px' }} />
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm animate-in fade-in duration-200"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 9999,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: 'rgba(0, 0, 0, 0.4)',
+            backdropFilter: 'blur(4px)',
+            WebkitBackdropFilter: 'blur(4px)',
+            padding: '1rem'
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) handleCloseModal();
+          }}
+        >
+          <div
+            className="bg-white rounded-xl shadow-2xl w-full max-w-lg p-6 overflow-hidden"
+            style={{
+              backgroundColor: '#ffffff',
+              borderRadius: '0.75rem',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+              width: '100%',
+              maxWidth: '32rem',
+              padding: '1.5rem',
+              overflow: 'hidden',
+              boxSizing: 'border-box'
+            }}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="ticket-modal-title"
+          >
+            {/* Header */}
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                paddingBottom: '1rem',
+                borderBottom: '1px solid #f1f5f9',
+                marginBottom: '1.25rem'
+              }}
+            >
+              <h3
+                id="ticket-modal-title"
+                style={{
+                  margin: 0,
+                  fontSize: '1.15rem',
+                  fontWeight: 700,
+                  color: '#0f172a'
+                }}
+              >
+                {t('support.createModalTitle')}
+              </h3>
+              <button
+                type="button"
+                onClick={handleCloseModal}
+                className="p-1 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  cursor: 'pointer',
+                  padding: '0.35rem',
+                  borderRadius: '0.5rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#64748b'
+                }}
+                aria-label="Close dialog"
+              >
+                <XMarkIcon style={{ width: '20px', height: '20px' }} />
               </button>
             </div>
 
+            {/* Form */}
             <form onSubmit={handleCreateTicket}>
-              <div style={{ marginBottom: '1rem' }}>
-                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', color: '#334155', marginBottom: '0.35rem' }}>
-                  Category
+              {/* Category Dropdown */}
+              <div style={{ marginBottom: '1.1rem' }}>
+                <label
+                  style={{
+                    display: 'block',
+                    fontSize: '0.85rem',
+                    fontWeight: 600,
+                    color: '#334155',
+                    marginBottom: '0.4rem'
+                  }}
+                >
+                  {t('support.category')}
                 </label>
                 <select
                   value={form.category}
                   onChange={(e) => setForm({ ...form, category: e.target.value })}
-                  style={{ width: '100%', padding: '0.5rem', border: '1px solid #cbd5e1', borderRadius: '6px' }}
+                  className="w-full border border-gray-300 rounded-lg p-2.5 text-sm text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  style={{
+                    width: '100%',
+                    padding: '0.625rem 0.75rem',
+                    fontSize: '0.875rem',
+                    borderRadius: '0.5rem',
+                    border: '1px solid #cbd5e1',
+                    backgroundColor: '#ffffff',
+                    color: '#1e293b',
+                    boxSizing: 'border-box'
+                  }}
                 >
-                  <option value="Report Status">Report Status &amp; Download</option>
-                  <option value="Home Collection">Home Sample Pickup Issue</option>
-                  <option value="Billing & Refund">Billing / Invoice Query</option>
-                  <option value="Doctor Access">Doctor Portal Record Sharing</option>
-                  <option value="General Support">Other General Inquiry</option>
+                  <option value="Report Status">{t('support.categories.reportStatus')}</option>
+                  <option value="Home Collection">{t('support.categories.homeCollection')}</option>
+                  <option value="Billing Issue">{t('support.categories.billingIssue')}</option>
+                  <option value="Phlebotomist Delay">{t('support.categories.phlebotomistDelay')}</option>
+                  <option value="Doctor Access">{t('support.categories.doctorAccess')}</option>
+                  <option value="General Support">{t('support.categories.general')}</option>
                 </select>
               </div>
 
-              <div style={{ marginBottom: '1rem' }}>
-                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', color: '#334155', marginBottom: '0.35rem' }}>
-                  Subject / Summary
+              {/* Subject Line */}
+              <div style={{ marginBottom: '1.1rem' }}>
+                <label
+                  style={{
+                    display: 'block',
+                    fontSize: '0.85rem',
+                    fontWeight: 600,
+                    color: '#334155',
+                    marginBottom: '0.4rem'
+                  }}
+                >
+                  {t('support.subject')}
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. CBC report missing hemoglobin index"
+                  placeholder={t('support.subjectPlaceholder')}
                   value={form.subject}
                   onChange={(e) => setForm({ ...form, subject: e.target.value })}
-                  style={{ width: '100%', padding: '0.5rem', border: '1px solid #cbd5e1', borderRadius: '6px' }}
+                  className="w-full border border-gray-300 rounded-lg p-2.5 text-sm text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  style={{
+                    width: '100%',
+                    padding: '0.625rem 0.75rem',
+                    fontSize: '0.875rem',
+                    borderRadius: '0.5rem',
+                    border: '1px solid #cbd5e1',
+                    backgroundColor: '#ffffff',
+                    color: '#1e293b',
+                    boxSizing: 'border-box'
+                  }}
                   required
                 />
               </div>
 
-              <div style={{ marginBottom: '1.25rem' }}>
-                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', color: '#334155', marginBottom: '0.35rem' }}>
-                  Detailed Description
+              {/* Description Textarea */}
+              <div style={{ marginBottom: '1.5rem' }}>
+                <label
+                  style={{
+                    display: 'block',
+                    fontSize: '0.85rem',
+                    fontWeight: 600,
+                    color: '#334155',
+                    marginBottom: '0.4rem'
+                  }}
+                >
+                  {t('support.description')}
                 </label>
                 <textarea
                   rows={4}
-                  placeholder="Provide registration number, appointment date, or specific concern..."
+                  placeholder={t('support.descPlaceholder')}
                   value={form.description}
                   onChange={(e) => setForm({ ...form, description: e.target.value })}
-                  style={{ width: '100%', padding: '0.5rem', border: '1px solid #cbd5e1', borderRadius: '6px' }}
+                  className="w-full border border-gray-300 rounded-lg p-2.5 text-sm text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 resize-none"
+                  style={{
+                    width: '100%',
+                    minHeight: '6rem',
+                    padding: '0.625rem 0.75rem',
+                    fontSize: '0.875rem',
+                    borderRadius: '0.5rem',
+                    border: '1px solid #cbd5e1',
+                    backgroundColor: '#ffffff',
+                    color: '#1e293b',
+                    resize: 'vertical',
+                    boxSizing: 'border-box',
+                    lineHeight: '1.5'
+                  }}
                   required
                 />
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+              {/* Footer Actions */}
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'flex-end',
+                  alignItems: 'center',
+                  gap: '0.75rem',
+                  paddingTop: '0.75rem',
+                  borderTop: '1px solid #f1f5f9'
+                }}
+              >
                 <button
                   type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  style={{ padding: '0.5rem 1rem', border: '1px solid #cbd5e1', borderRadius: '6px', background: 'white', cursor: 'pointer' }}
+                  onClick={handleCloseModal}
+                  className="text-gray-600 hover:bg-gray-100 text-sm font-medium py-2 px-4 rounded-lg transition-colors"
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: '#475569',
+                    fontSize: '0.875rem',
+                    fontWeight: 500,
+                    padding: '0.5rem 1rem',
+                    borderRadius: '0.5rem',
+                    cursor: 'pointer'
+                  }}
                 >
-                  Cancel
+                  {t('support.cancel')}
                 </button>
-                <button type="submit" className="btn-primary">
-                  Submit Ticket
+                <button
+                  type="submit"
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium py-2 px-4 rounded-lg shadow-sm transition-all duration-200 active:scale-95"
+                  style={{
+                    backgroundColor: '#059669',
+                    color: '#ffffff',
+                    fontSize: '0.875rem',
+                    fontWeight: 600,
+                    padding: '0.5rem 1.15rem',
+                    borderRadius: '0.5rem',
+                    border: 'none',
+                    boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {t('support.submit')}
                 </button>
               </div>
             </form>

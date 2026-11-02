@@ -717,3 +717,194 @@
     border: 1px solid #cbd5e1 !important;
   }
 }
+
+/* ==========================================================================
+   AI Assistant Input Bar Focus Glow & Alignment
+   Matches Google AI Design System
+   ========================================================================== */
+.border-transparent {
+  border-color: transparent !important;
+}
+
+.pl-3 {
+  padding-left: 0.75rem !important;
+}
+
+.transition-shadow {
+  transition-property: box-shadow, border-color, background-color;
+  transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.duration-300 {
+  transition-duration: 300ms;
+}
+
+.focus-within\:ring-2:focus-within {
+  outline: none;
+  border-color: #34d399 !important;
+}
+
+.focus-within\:ring-emerald-400:focus-within {
+  border-color: #34d399 !important;
+}
+
+.focus-within\:shadow-\[0_0_15px_rgba\(16\,185\,129\,0\.25\)\]:focus-within {
+  box-shadow: 0 0 15px rgba(16, 185, 129, 0.25), 0 0 0 2px #34d399 !important;
+}
+
+/* ==========================================================================
+   Enterprise Support Ticket Button & Modal Utilities
+   ========================================================================== */
+.flex {
+  display: flex !important;
+}
+
+.items-center {
+  align-items: center !important;
+}
+
+.justify-center {
+  justify-content: center !important;
+}
+
+.gap-2 {
+  gap: 0.5rem !important;
+}
+
+.mb-6 {
+  margin-bottom: 1.5rem !important;
+}
+
+.mb-4 {
+  margin-bottom: 1rem !important;
+}
+
+.bg-emerald-600 {
+  background-color: #059669 !important;
+}
+
+.hover\:bg-emerald-700:hover {
+  background-color: #047857 !important;
+}
+
+.text-white {
+  color: #ffffff !important;
+}
+
+.text-sm {
+  font-size: 0.875rem !important;
+  line-height: 1.25rem !important;
+}
+
+.font-medium {
+  font-weight: 500 !important;
+}
+
+.py-2 {
+  padding-top: 0.5rem !important;
+  padding-bottom: 0.5rem !important;
+}
+
+.px-4 {
+  padding-left: 1rem !important;
+  padding-right: 1rem !important;
+}
+
+.rounded-lg {
+  border-radius: 0.5rem !important;
+}
+
+.rounded-xl {
+  border-radius: 0.75rem !important;
+}
+
+.shadow-sm {
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05) !important;
+}
+
+.shadow-2xl {
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25) !important;
+}
+
+.transition-all {
+  transition-property: all !important;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.duration-200 {
+  transition-duration: 200ms !important;
+}
+
+.active\:scale-95:active {
+  transform: scale(0.95) !important;
+}
+
+.fixed {
+  position: fixed !important;
+}
+
+.inset-0 {
+  inset: 0 !important;
+}
+
+.z-50 {
+  z-index: 50 !important;
+}
+
+.bg-black\/40 {
+  background-color: rgba(0, 0, 0, 0.4) !important;
+}
+
+.backdrop-blur-sm {
+  backdrop-filter: blur(4px) !important;
+  -webkit-backdrop-filter: blur(4px) !important;
+}
+
+.w-full {
+  width: 100% !important;
+}
+
+.max-w-lg {
+  max-width: 32rem !important;
+}
+
+.p-6 {
+  padding: 1.5rem !important;
+}
+
+.overflow-hidden {
+  overflow: hidden !important;
+}
+
+.text-gray-600 {
+  color: #4b5563 !important;
+}
+
+.hover\:bg-gray-100:hover {
+  background-color: #f3f4f6 !important;
+}
+
+.focus\:ring-2:focus {
+  outline: none !important;
+  box-shadow: 0 0 0 2px #10b981 !important;
+}
+
+.focus\:ring-emerald-500:focus {
+  border-color: #10b981 !important;
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.35) !important;
+}
+
+@keyframes fadeInModal {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-in.fade-in {
+  animation: fadeInModal 0.2s cubic-bezier(0.16, 1, 0.3, 1) both !important;
+}

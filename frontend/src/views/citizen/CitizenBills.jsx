@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { demoCitizenBills } from '../../data/mockLabData';
 import { useAuth } from '../../context/AuthContext';
+import { useTranslation } from '../../context/LanguageContext';
 import {
   CreditCardIcon,
   CheckCircleIcon,
@@ -12,7 +13,8 @@ import {
 } from '@heroicons/react/24/outline';
 
 export default function CitizenBills() {
-  const { currentUser } = useAuth();
+  const { currentUser, activeUHID, activeMember } = useAuth();
+  const { t, lang } = useTranslation();
   const [bills, setBills] = useState(demoCitizenBills);
   const [payingBill, setPayingBill] = useState(null);
   const [paymentMode, setPaymentMode] = useState('upi');
@@ -47,9 +49,9 @@ export default function CitizenBills() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
       <div>
-        <h2 style={{ margin: '0 0 0.25rem 0', fontSize: '1.5rem', color: '#0f172a' }}>Billing & Invoices</h2>
+        <h2 style={{ margin: '0 0 0.25rem 0', fontSize: '1.5rem', color: '#0f172a' }}>{t('bills.pageTitle')}</h2>
         <p style={{ margin: 0, fontSize: '0.9rem', color: '#64748b' }}>
-          View itemized medical receipts, settle pending dues, and download tax invoices.
+          {t('bills.subtitle')}
         </p>
       </div>
 
@@ -78,7 +80,7 @@ export default function CitizenBills() {
           </div>
           <div>
             <div style={{ fontSize: '1.35rem', fontWeight: '700', color: '#0f172a' }}>₹{totalPaid}</div>
-            <div style={{ fontSize: '0.8rem', color: '#64748b' }}>Total Settled</div>
+            <div style={{ fontSize: '0.8rem', color: '#64748b' }}>{t('bills.totalPaid')}</div>
           </div>
         </div>
 
@@ -107,7 +109,7 @@ export default function CitizenBills() {
             <div style={{ fontSize: '1.35rem', fontWeight: '700', color: totalDue > 0 ? '#dc2626' : '#0f172a' }}>
               ₹{totalDue}
             </div>
-            <div style={{ fontSize: '0.8rem', color: '#64748b' }}>Outstanding Balance</div>
+            <div style={{ fontSize: '0.8rem', color: '#64748b' }}>{t('bills.outstanding')}</div>
           </div>
         </div>
       </div>
@@ -123,13 +125,13 @@ export default function CitizenBills() {
           <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.875rem' }}>
             <thead>
               <tr style={{ backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-                <th style={{ padding: '0.85rem 1rem', color: '#475569', fontWeight: '600' }}>INVOICE ID</th>
-                <th style={{ padding: '0.85rem 1rem', color: '#475569', fontWeight: '600' }}>DATE</th>
-                <th style={{ padding: '0.85rem 1rem', color: '#475569', fontWeight: '600' }}>TESTS INCLUDED</th>
-                <th style={{ padding: '0.85rem 1rem', color: '#475569', fontWeight: '600' }}>TOTAL AMOUNT</th>
-                <th style={{ padding: '0.85rem 1rem', color: '#475569', fontWeight: '600' }}>PAID / DUE</th>
-                <th style={{ padding: '0.85rem 1rem', color: '#475569', fontWeight: '600' }}>STATUS</th>
-                <th style={{ padding: '0.85rem 1rem', color: '#475569', fontWeight: '600' }}>ACTIONS</th>
+                <th style={{ padding: '0.85rem 1rem', color: '#475569', fontWeight: '600' }}>{t('bills.invoiceNo', 'INVOICE ID')}</th>
+                <th style={{ padding: '0.85rem 1rem', color: '#475569', fontWeight: '600' }}>{t('common.date', 'DATE')}</th>
+                <th style={{ padding: '0.85rem 1rem', color: '#475569', fontWeight: '600' }}>{t('bills.testName', 'TESTS INCLUDED')}</th>
+                <th style={{ padding: '0.85rem 1rem', color: '#475569', fontWeight: '600' }}>{t('bills.amount', 'TOTAL AMOUNT')}</th>
+                <th style={{ padding: '0.85rem 1rem', color: '#475569', fontWeight: '600' }}>{t('bills.paid')} / {t('bills.pending')}</th>
+                <th style={{ padding: '0.85rem 1rem', color: '#475569', fontWeight: '600' }}>{t('common.status', 'STATUS')}</th>
+                <th style={{ padding: '0.85rem 1rem', color: '#475569', fontWeight: '600' }}>{t('common.action', 'ACTIONS')}</th>
               </tr>
             </thead>
             <tbody>
@@ -149,7 +151,7 @@ export default function CitizenBills() {
                   </td>
                   <td style={{ padding: '0.9rem 1rem' }}>
                     <span style={{ color: '#15803d', fontWeight: '600' }}>₹{b.paid}</span>
-                    {b.due > 0 && <span style={{ color: '#dc2626', marginLeft: '0.4rem', fontWeight: '600' }}>(Due: ₹{b.due})</span>}
+                    {b.due > 0 && <span style={{ color: '#dc2626', marginLeft: '0.4rem', fontWeight: '600' }}>({lang === 'hi' ? 'बकाया' : 'Due'}: ₹{b.due})</span>}
                   </td>
                   <td style={{ padding: '0.9rem 1rem' }}>
                     <span style={{
@@ -160,7 +162,7 @@ export default function CitizenBills() {
                       backgroundColor: b.status === 'Paid' ? '#dcfce7' : '#fee2e2',
                       color: b.status === 'Paid' ? '#15803d' : '#dc2626'
                     }}>
-                      {b.status}
+                      {b.status === 'Paid' ? t('bills.paid') : t('bills.pending')}
                     </span>
                   </td>
                   <td style={{ padding: '0.9rem 1rem' }}>
@@ -180,7 +182,7 @@ export default function CitizenBills() {
                             cursor: 'pointer'
                           }}
                         >
-                          Pay ₹{b.due}
+                          {t('bills.payNow')} ₹{b.due}
                         </button>
                       ) : (
                         <button
@@ -200,7 +202,7 @@ export default function CitizenBills() {
                             cursor: 'pointer'
                           }}
                         >
-                          <ArrowDownTrayIcon style={{ width: '14px' }} /> Receipt
+                          <ArrowDownTrayIcon style={{ width: '14px' }} /> {t('bills.downloadReceipt')}
                         </button>
                       )}
                     </div>
@@ -342,7 +344,7 @@ export default function CitizenBills() {
                     cursor: 'pointer'
                   }}
                 >
-                  Cancel
+                  {t('common.cancel')}
                 </button>
                 <button
                   type="submit"
@@ -357,7 +359,7 @@ export default function CitizenBills() {
                     cursor: 'pointer'
                   }}
                 >
-                  {isProcessing ? 'Processing Payment...' : `Complete Payment of ₹${payingBill.due}`}
+                  {isProcessing ? (lang === 'hi' ? 'भुगतान संसाधित हो रहा है...' : 'Processing Payment...') : `${t('bills.payAmount')}${payingBill.due}`}
                 </button>
               </div>
             </form>
@@ -392,7 +394,7 @@ export default function CitizenBills() {
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                   <span style={{ color: '#64748b' }}>Patient:</span>
-                  <strong>{currentUser?.name || 'Shozab Rizvi'}</strong>
+                  <strong>{activeMember?.name || currentUser?.name || 'Shozab Rizvi'}</strong>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                   <span style={{ color: '#64748b' }}>Payment Mode:</span>

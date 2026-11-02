@@ -16,7 +16,7 @@ const dateValue = (offset = 0) => {
 };
 
 export default function AppointmentWizard() {
-  const { currentUser } = useAuth();
+  const { currentUser, activeUHID, activeMember } = useAuth();
   const { data: appointments, update: saveAppointments } = useDemoResource('appointments', []);
 
   const defaultDraft = {
@@ -24,7 +24,7 @@ export default function AppointmentWizard() {
     visitType: 'lab',
     homeAddress: '',
     patient: {
-      name: currentUser?.name || '',
+      name: activeMember?.name || currentUser?.name || '',
       mobile: currentUser?.phone || ''
     },
     verified: false,
@@ -138,8 +138,9 @@ export default function AppointmentWizard() {
     const record = { 
       id, 
       aptId: id,
-      patientName: patient.name.trim(), 
-      mobile: patient.mobile, 
+      patientName: (patient.name || activeMember?.name || currentUser?.name || 'Patient').trim(), 
+      mobile: patient.mobile || currentUser?.phone || '9876543210', 
+      uhid: activeUHID || currentUser?.uhid || 'UHID-2026-8901',
       department, 
       visitType,
       homeAddress: visitType === 'home' ? homeAddress : undefined,
@@ -175,7 +176,7 @@ export default function AppointmentWizard() {
         visit_type: visitType === 'home' ? 'home_collection' : 'lab_visit',
         status: 'Confirmed',
         purpose: department,
-        notes: `Patient: ${patient.name.trim()}, Phone: ${patient.mobile}, Slot: ${slot}, Type: ${visitType === 'home' ? 'Home Sample Collection' : 'Manual Lab Visit'}${visitType === 'home' && homeAddress ? ', Address: ' + homeAddress : ''}`
+        notes: `Patient: ${(patient.name || activeMember?.name || currentUser?.name || '').trim()}, UHID: ${activeUHID || currentUser?.uhid || ''}, Phone: ${patient.mobile}, Slot: ${slot}, Type: ${visitType === 'home' ? 'Home Sample Collection' : 'Manual Lab Visit'}${visitType === 'home' && homeAddress ? ', Address: ' + homeAddress : ''}`
       }).then(({ error }) => {
         if (error) console.warn('Supabase appointment insert error:', error);
       });
@@ -204,8 +205,9 @@ export default function AppointmentWizard() {
       const record = { 
         id, 
         aptId: id,
-        patientName: (patient.name || currentUser?.name || demoPatient?.name || 'rshozab64').trim(), 
+        patientName: (patient.name || activeMember?.name || currentUser?.name || demoPatient?.name || 'Patient').trim(), 
         mobile: patient.mobile || currentUser?.phone || '9876500000', 
+        uhid: activeUHID || currentUser?.uhid || 'UHID-2026-8901',
         department: department || 'cardiology', 
         visitType,
         homeAddress: visitType === 'home' ? homeAddress : undefined,
@@ -241,7 +243,7 @@ export default function AppointmentWizard() {
           visit_type: visitType === 'home' ? 'home_collection' : 'lab_visit',
           status: 'Confirmed',
           purpose: department || 'cardiology',
-          notes: `Patient: ${record.patientName}, Phone: ${record.mobile}, Type: ${visitType === 'home' ? 'Home Sample Collection' : 'Manual Lab Visit'}`
+          notes: `Patient: ${record.patientName}, UHID: ${activeUHID || currentUser?.uhid || ''}, Phone: ${record.mobile}, Type: ${visitType === 'home' ? 'Home Sample Collection' : 'Manual Lab Visit'}`
         }).then(({ error }) => {
           if (error) console.warn('Supabase appointment insert error:', error);
         });

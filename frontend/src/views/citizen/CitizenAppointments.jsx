@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { supabase } from '../../lib/supabase';
 import { departments, appointmentSlots } from '../../data/mockLabData';
@@ -16,6 +17,7 @@ import {
 } from '@heroicons/react/24/outline';
 
 export default function CitizenAppointments({ lang: propLang, addNewBooking, onAddNewBooking }) {
+  const { currentUser, activeUHID, activeMember } = useAuth();
   const { lang: contextLang } = useLanguage();
   const lang = propLang || contextLang || 'en';
   const initialDemoAppointments = [
@@ -204,6 +206,11 @@ export default function CitizenAppointments({ lang: propLang, addNewBooking, onA
   const [notice, setNotice] = useState('');
 
   const filteredAppts = (appointments || []).filter(a => {
+    if (activeMember && activeMember.relation !== 'Self') {
+      const matchName = a.patientName && a.patientName.toLowerCase().includes(activeMember.name.toLowerCase());
+      const matchUhid = a.uhid && (a.uhid === activeUHID || a.uhid === activeMember.uhid);
+      if (!matchName && !matchUhid) return false;
+    }
     if (filter === 'all') return true;
     if (filter === 'confirmed') return a.status === 'Confirmed' || a.status === 'Sample Collected';
     if (filter === 'reportReady') return a.status === 'Report Ready';
@@ -253,6 +260,12 @@ export default function CitizenAppointments({ lang: propLang, addNewBooking, onA
               ? 'कलेक्शन, लैबोरेटरी प्रोसेसिंग और रिपोर्ट रेडी स्थिति का रीयल-टाइम 4-चरणीय ट्रैकर'
               : 'Real-time 4-stage tracking from appointment confirmation to final report publication'}
           </p>
+          {activeMember && activeMember.relation !== 'Self' && (
+            <div style={{ marginTop: '0.5rem', display: 'inline-flex', alignItems: 'center', gap: '0.4rem', backgroundColor: '#ecfdf5', border: '1px solid #a7f3d0', padding: '0.25rem 0.65rem', borderRadius: '6px', fontSize: '0.8rem', color: '#065f46' }}>
+              <span style={{ width: '7px', height: '7px', borderRadius: '50%', backgroundColor: '#10b981', display: 'inline-block' }}></span>
+              <span>{lang === 'hi' ? 'दिखाए जा रहे रिकॉर्ड' : 'Showing Bookings for'}: <strong>{activeMember.name}</strong> ({activeMember.relation} · {activeUHID})</span>
+            </div>
+          )}
         </div>
         <Link 
           to="/portal/appointments/book"

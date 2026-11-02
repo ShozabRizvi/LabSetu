@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import logo from '../../assets/logo.png';
 import { useAuth } from '../../context/AuthContext';
+import { useLanguage } from '../../context/LanguageContext';
 import './CitizenLayout.css';
 import {
   MagnifyingGlassIcon,
@@ -29,12 +30,12 @@ import {
 } from '@heroicons/react/24/outline';
 
 export default function CitizenLayout() {
-  const { currentUser, logout } = useAuth();
+  const { currentUser, logout, activeUHID, activeMember } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
 
-  // Language state: 'en' | 'hi'
-  const [lang, setLang] = useState(() => localStorage.getItem('labsetu_language') || 'en');
+  // Language state from global context
+  const { lang, setLang, t } = useLanguage();
 
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
@@ -51,9 +52,19 @@ export default function CitizenLayout() {
   const userMenuRef = useRef(null);
   const notifRef = useRef(null);
 
+  const isProfileIncomplete = (!currentUser?.name || !currentUser?.phone || !currentUser?.address);
+  const [isProfileToastDismissed, setIsProfileToastDismissed] = useState(false);
+
+  // Auto-hide popup after 5000ms
   useEffect(() => {
-    localStorage.setItem('labsetu_language', lang);
-  }, [lang]);
+    if (isProfileIncomplete) {
+      setIsProfileToastDismissed(false);
+      const timer = setTimeout(() => {
+        setIsProfileToastDismissed(true);
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [currentUser?.name, currentUser?.phone, currentUser?.address, isProfileIncomplete]);
 
   useEffect(() => {
     function handleClickOutside(e) {
@@ -69,6 +80,7 @@ export default function CitizenLayout() {
   }, []);
 
   const handleLogout = () => {
+    setIsUserMenuOpen(false);
     logout();
     navigate('/');
   };
@@ -249,16 +261,16 @@ export default function CitizenLayout() {
             >
               <UserCircleIcon className="citizen-user-avatar" />
               <div className="citizen-user-meta">
-                <span className="citizen-user-name">{currentUser?.name || 'Ramesh Sharma'}</span>
-                <span className="citizen-user-role">Patient / Citizen</span>
+                <span className="citizen-user-name">{activeMember?.name || currentUser?.name || 'Ramesh Sharma'}</span>
+                <span className="citizen-user-role">{activeMember && activeMember.relation !== 'Self' ? `${activeMember.relation} Profile` : 'Patient / Citizen'}</span>
               </div>
             </button>
 
             {isUserMenuOpen && (
               <div className="citizen-dropdown user-dropdown">
                 <div className="user-dropdown-header">
-                  <strong>{currentUser?.name || 'Ramesh Sharma'}</strong>
-                  <span className="user-uhid">{currentUser?.uhid || 'UHID-2026-8901'}</span>
+                  <strong>{activeMember?.name || currentUser?.name || 'Ramesh Sharma'}</strong>
+                  <span className="user-uhid">{activeUHID || currentUser?.uhid || 'UHID-2026-8901'}</span>
                   <span className="user-email">{currentUser?.email}</span>
                 </div>
                 <div className="user-dropdown-links">
@@ -295,7 +307,7 @@ export default function CitizenLayout() {
                     className="user-dropdown-link logout-btn" 
                     onClick={handleLogout}
                   >
-                    <ArrowRightOnRectangleIcon style={{ width: '18px' }} /> Sign Out
+                    <ArrowRightOnRectangleIcon style={{ width: '18px' }} /> {lang === 'hi' ? 'लॉग आउट' : 'Sign Out'}
                   </button>
                 </div>
               </div>
@@ -368,7 +380,7 @@ export default function CitizenLayout() {
               onClick={() => setIsMobileMenuOpen(false)}
             >
               <SparklesIcon className="citizen-nav-icon" />
-              {lang === 'hi' ? 'एआई रिपोर्ट एक्सप्लेनर' : 'AI Report Explainer'}
+              Clinova
             </NavLink>
 
             <NavLink 
@@ -425,17 +437,6 @@ export default function CitizenLayout() {
               {lang === 'hi' ? 'मेरी प्रोफ़ाइल' : 'My Profile'}
             </NavLink>
           </nav>
-
-          <div className="citizen-sidebar-footer">
-            <div className="support-card">
-              <span className="support-badge">{lang === 'hi' ? 'हेल्पलाइन' : 'Helpline'}</span>
-              <p className="support-text">{lang === 'hi' ? '24x7 आपातकालीन सहायता' : 'Need urgent assistance?'}</p>
-              <a href="tel:18002008899" className="support-phone">📞 1800-200-8899</a>
-            </div>
-            <button type="button" className="citizen-logout-sidebar" onClick={handleLogout}>
-              <ArrowRightOnRectangleIcon style={{ width: '18px' }} /> {lang === 'hi' ? 'लॉग आउट' : 'Sign Out'}
-            </button>
-          </div>
         </aside>
 
         {/* Content Outlet with Lang Prop & Sliding Page Transition */}
@@ -494,44 +495,96 @@ export default function CitizenLayout() {
         </div>
       )}
 
-      {/* Profile Incomplete Banner */}
-      {(!currentUser?.name || !currentUser?.phone || !currentUser?.address) && location.pathname !== '/portal/profile' && (
+      {/* Redesigned Boxy Bottom-Right Profile Incomplete Toast */}
+      {isProfileIncomplete && !isProfileToastDismissed && location.pathname !== '/portal/profile' && (
         <div
+          className="fixed bottom-6 right-6 z-50 w-72 p-5 bg-amber-50 border border-amber-200 rounded-xl shadow-xl flex flex-col justify-between"
           style={{
             position: 'fixed',
-            bottom: '1.25rem',
-            left: '50%',
-            transform: 'translateX(-50%)',
-            background: '#fffbeb',
+            bottom: '1.5rem',
+            right: '1.5rem',
+            zIndex: 9999,
+            width: '18rem',
+            padding: '1.25rem',
+            backgroundColor: '#fffbeb',
             border: '1.5px solid #fde68a',
-            borderRadius: '10px',
-            padding: '0.75rem 1.25rem',
+            borderRadius: '12px',
+            boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
             display: 'flex',
-            alignItems: 'center',
-            gap: '0.75rem',
-            fontSize: '0.85rem',
-            color: '#92400e',
-            boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
-            zIndex: 900,
-            maxWidth: '540px',
-            width: 'calc(100% - 2rem)',
+            flexDirection: 'column',
+            justifyContent: 'space-between',
+            boxSizing: 'border-box'
           }}
+          role="alert"
+          aria-live="polite"
         >
-          <span>Your details are still in progress. Complete your profile by pressing this button.</span>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem', marginBottom: '0.65rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <div style={{
+                width: '28px',
+                height: '28px',
+                borderRadius: '50%',
+                backgroundColor: '#fef3c7',
+                border: '1px solid #fde68a',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#b45309',
+                flexShrink: 0
+              }}>
+                <ShieldCheckIcon style={{ width: '16px', height: '16px' }} />
+              </div>
+              <span style={{ fontSize: '0.85rem', fontWeight: '700', color: '#92400e' }}>Profile Notice</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsProfileToastDismissed(true)}
+              title="Dismiss notification"
+              aria-label="Dismiss notification"
+              className="p-1 text-amber-700 hover:text-amber-900 rounded-lg hover:bg-amber-100 transition-colors"
+              style={{
+                background: 'transparent',
+                border: 'none',
+                cursor: 'pointer',
+                padding: '4px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#92400e',
+                borderRadius: '6px'
+              }}
+            >
+              <XMarkIcon style={{ width: '18px', height: '18px' }} />
+            </button>
+          </div>
+
+          <p style={{
+            margin: '0 0 1rem 0',
+            fontSize: '0.85rem',
+            lineHeight: '1.45',
+            color: '#78350f',
+            fontWeight: '400'
+          }}>
+            Your details are still in progress. Complete your profile by pressing this button.
+          </p>
+
           <button
             type="button"
             onClick={() => navigate('/portal/profile')}
+            className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-medium py-2 px-3 rounded-lg text-sm transition-colors text-center"
             style={{
-              background: '#15803d',
-              color: 'white',
+              width: '100%',
+              backgroundColor: '#15803d',
+              color: '#ffffff',
               border: 'none',
-              padding: '0.35rem 0.85rem',
-              borderRadius: '6px',
-              fontSize: '0.8rem',
+              padding: '0.55rem 0.85rem',
+              borderRadius: '8px',
+              fontSize: '0.85rem',
               fontWeight: '600',
               cursor: 'pointer',
-              whiteSpace: 'nowrap',
-              flexShrink: 0,
+              textAlign: 'center',
+              boxShadow: '0 1px 2px rgba(0, 0, 0, 0.05)',
+              transition: 'background-color 0.2s ease'
             }}
           >
             Complete Profile

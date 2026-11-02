@@ -1,134 +1,381 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useLanguage } from '../../context/LanguageContext';
-import useDemoResource from '../../hooks/useDemoResource';
+import { useAuth } from '../../context/AuthContext';
+import { supabase } from '../../lib/supabase';
 import {
   UserGroupIcon,
   UserPlusIcon,
   UserCircleIcon,
   CheckCircleIcon,
   XMarkIcon,
-  PencilIcon,
-  TrashIcon
+  TrashIcon,
+  ExclamationTriangleIcon,
+  ShieldCheckIcon
 } from '@heroicons/react/24/outline';
 import './CitizenDashboard.css';
 
 export default function CitizenFamilyProfiles({ lang: propLang }) {
-  const { lang: contextLang } = useLanguage();
+  const { lang: contextLang, t } = useLanguage();
   const lang = propLang || contextLang || 'en';
-  const defaultMembers = [
-    {
-      id: 'fam-1',
-      name: 'Ramesh Sharma',
-      relation: 'Self',
-      age: '42 yrs',
-      gender: 'Male',
-      bloodGroup: 'B+',
-      uhid: 'UHID-2026-8901',
-      activeProfile: true
-    },
-    {
-      id: 'fam-2',
-      name: 'Sunita Sharma',
-      relation: 'Spouse',
-      age: '38 yrs',
-      gender: 'Female',
-      bloodGroup: 'O+',
-      uhid: 'UHID-2026-9214',
-      activeProfile: false
-    },
-    {
-      id: 'fam-3',
-      name: 'Dev Sharma',
-      relation: 'Child (Son)',
-      age: '12 yrs',
-      gender: 'Male',
-      bloodGroup: 'B+',
-      uhid: 'UHID-2026-9480',
-      activeProfile: false
-    },
-    {
-      id: 'fam-4',
-      name: 'Om Prakash Sharma',
-      relation: 'Parent (Father)',
-      age: '71 yrs',
-      gender: 'Male',
-      bloodGroup: 'B+',
-      uhid: 'UHID-2026-7812',
-      activeProfile: false
-    }
-  ];
+  const { currentUser, activeUHID, switchActiveProfile } = useAuth();
 
-  const { data: members, update: setMembers } = useDemoResource('labsetu_family_members', defaultMembers);
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [members, setMembers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [pendingDeleteMember, setPendingDeleteMember] = useState(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [notice, setNotice] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
   const [form, setForm] = useState({
     name: '',
-    relation: 'Parent',
+    relation: 'Spouse',
     age: '',
-    gender: 'Male',
-    bloodGroup: 'A+'
+    gender: 'Female',
+    bloodGroup: 'B+'
   });
 
-  const setActiveMember = (id) => {
-    const updated = (members || []).map(m => ({
-      ...m,
-      activeProfile: m.id === id
-    }));
-    setMembers(updated);
-    const selected = updated.find(m => m.id === id);
-    setNotice(lang === 'hi' 
-      ? `सक्रिय प्रोफ़ाइल बदली गई: ${selected?.name} (${selected?.relation})` 
-      : `Switched active dashboard profile to: ${selected?.name} (${selected?.relation})`);
+  // Modal scrolling locks
+  useEffect(() => {
+    if (isAddModalOpen || pendingDeleteMember) {
+      const original = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = original || '';
+      };
+    }
+  }, [isAddModalOpen, pendingDeleteMember]);
+
+  // Fetch family profiles & dependents from Supabase
+  const fetchFamilyMembers = useCallback(async () => {
+    try {
+      setLoading(true);
+      const primaryUserId = (currentUser?.id && typeof currentUser.id === 'string' && currentUser.id.includes('-'))
+        ? currentUser.id
+        : '45370b0a-3a2a-47a6-904e-9040108d5f94';
+
+      // 1. Fetch Primary User Profile for the "Self" Card from profiles & patients
+      let profileRow = null;
+      let patientSelfRow = null;
+
+      try {
+        const { data: pData } = await supabase.from('profiles').select('*').eq('id', primaryUserId).maybeSingle();
+        if (pData) profileRow = pData;
+      } catch {}
+
+      try {
+        const { data: ptData } = await supabase.from('patients').select('*').eq('id', primaryUserId).maybeSingle();
+        if (ptData) patientSelfRow = ptData;
+      } catch {}
+
+      const selfCard = {
+        id: primaryUserId,
+        name: profileRow?.full_name || patientSelfRow?.full_name || currentUser?.name || 'Primary User',
+        relation: 'Self',
+        age: patientSelfRow?.age_years !== null && patientSelfRow?.age_years !== undefined
+          ? `${patientSelfRow.age_years} yrs`
+          : (currentUser?.age ? `${currentUser.age} yrs` : '28 yrs'),
+        gender: patientSelfRow?.sex
+          ? (patientSelfRow.sex.charAt(0).toUpperCase() + patientSelfRow.sex.slice(1))
+          : (currentUser?.gender || 'Male'),
+        bloodGroup: patientSelfRow?.blood_group || currentUser?.bloodGroup || 'B+',
+        uhid: patientSelfRow?.patient_code || currentUser?.uhid || 'UHID-2026-8901',
+        isSelf: true
+      };
+
+      // 2. Query Supabase for family members / dependents
+      let fetchedDependents = [];
+
+      // A: Try family_members table
+      try {
+        const { data: famData, error: famErr } = await supabase
+          .from('family_members')
+          .select('*')
+          .eq('primary_user_id', primaryUserId);
+        if (!famErr && Array.isArray(famData) && famData.length > 0) {
+          fetchedDependents = famData.map(f => ({
+            id: f.id,
+            name: f.full_name || f.name,
+            relation: f.relation || 'Dependent',
+            age: typeof f.age === 'number' ? `${f.age} yrs` : (String(f.age).includes('yrs') ? f.age : `${f.age || 30} yrs`),
+            gender: f.gender || 'Other',
+            bloodGroup: f.blood_group || f.bloodGroup || 'O+',
+            uhid: f.uhid || `UHID-2026-${Math.floor(1000 + Math.random() * 9000)}`,
+            isSelf: false
+          }));
+        }
+      } catch {}
+
+      // B: Try dependents table if empty
+      if (fetchedDependents.length === 0) {
+        try {
+          const { data: depData, error: depErr } = await supabase
+            .from('dependents')
+            .select('*')
+            .eq('primary_user_id', primaryUserId);
+          if (!depErr && Array.isArray(depData) && depData.length > 0) {
+            fetchedDependents = depData.map(f => ({
+              id: f.id,
+              name: f.full_name || f.name,
+              relation: f.relation || 'Dependent',
+              age: typeof f.age === 'number' ? `${f.age} yrs` : (String(f.age).includes('yrs') ? f.age : `${f.age || 30} yrs`),
+              gender: f.gender || 'Other',
+              bloodGroup: f.blood_group || f.bloodGroup || 'O+',
+              uhid: f.uhid || `UHID-2026-${Math.floor(1000 + Math.random() * 9000)}`,
+              isSelf: false
+            }));
+          }
+        } catch {}
+      }
+
+      // C: Try patients table where emergency_contact = primaryUserId
+      if (fetchedDependents.length === 0) {
+        try {
+          const { data: patData } = await supabase
+            .from('patients')
+            .select('*')
+            .eq('emergency_contact', primaryUserId);
+          if (Array.isArray(patData) && patData.length > 0) {
+            fetchedDependents = patData.map(p => {
+              let rel = 'Family Member';
+              try {
+                if (p.notes) {
+                  const parsed = JSON.parse(p.notes);
+                  if (parsed.relation) rel = parsed.relation;
+                }
+              } catch {}
+              return {
+                id: p.id,
+                name: p.full_name,
+                relation: rel,
+                age: p.age_years ? `${p.age_years} yrs` : '35 yrs',
+                gender: p.sex ? (p.sex.charAt(0).toUpperCase() + p.sex.slice(1)) : 'Other',
+                bloodGroup: p.blood_group || 'O+',
+                uhid: p.patient_code,
+                isSelf: false
+              };
+            });
+          }
+        } catch {}
+      }
+
+      // D: Check local cache for newly added members if remote returned empty
+      if (fetchedDependents.length === 0) {
+        try {
+          const cached = localStorage.getItem('labsetu_family_members');
+          if (cached) {
+            const parsed = JSON.parse(cached);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              fetchedDependents = parsed.filter(m => m.relation !== 'Self');
+            }
+          }
+        } catch {}
+      }
+
+      const combined = [selfCard, ...fetchedDependents];
+      setMembers(combined);
+      try {
+        localStorage.setItem('labsetu_family_members', JSON.stringify(combined));
+      } catch {}
+    } catch (err) {
+      console.warn('[CitizenFamilyProfiles] fetch error:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, [currentUser]);
+
+  useEffect(() => {
+    fetchFamilyMembers();
+  }, [fetchFamilyMembers]);
+
+  // Switch Active Profile (Updates global context activeUHID)
+  const handleSwitchProfile = (member) => {
+    switchActiveProfile(member);
+    const msg = lang === 'hi'
+      ? `सक्रिय प्रोफ़ाइल बदली गई: ${member.name} (${member.relation})`
+      : `Switched active dashboard profile to: ${member.name} (${member.relation})`;
+    setNotice(msg);
     setTimeout(() => setNotice(''), 3500);
   };
 
-  const handleAddMember = (e) => {
+  // Add Member Modal Submit (INSERT to Supabase & local state update)
+  const handleAddMember = async (e) => {
     e.preventDefault();
     if (!form.name.trim()) return;
-    const created = {
-      id: `fam-${Date.now().toString().slice(-4)}`,
-      name: form.name.trim(),
-      relation: form.relation,
-      age: `${form.age || '30'} yrs`,
-      gender: form.gender,
-      bloodGroup: form.bloodGroup,
-      uhid: `UHID-2026-${Math.floor(1000 + Math.random() * 9000)}`,
-      activeProfile: false
-    };
-    setMembers([...(members || []), created]);
-    setIsModalOpen(false);
-    setForm({ name: '', relation: 'Parent', age: '', gender: 'Male', bloodGroup: 'A+' });
-    setNotice(lang === 'hi' ? `${created.name} का प्रोफ़ाइल जोड़ा गया।` : `Family member ${created.name} added successfully.`);
-    setTimeout(() => setNotice(''), 3500);
+
+    try {
+      setIsSubmitting(true);
+      const primaryUserId = (currentUser?.id && typeof currentUser.id === 'string' && currentUser.id.includes('-'))
+        ? currentUser.id
+        : '45370b0a-3a2a-47a6-904e-9040108d5f94';
+
+      const assignedUhid = `UHID-2026-${Math.floor(1000 + Math.random() * 9000)}`;
+      const memberUuid = (typeof crypto !== 'undefined' && crypto.randomUUID)
+        ? crypto.randomUUID()
+        : 'fam-' + Math.random().toString(36).substring(2, 9);
+
+      const parsedAge = form.age ? parseInt(form.age, 10) : 30;
+
+      const newMember = {
+        id: memberUuid,
+        primary_user_id: primaryUserId,
+        full_name: form.name.trim(),
+        name: form.name.trim(),
+        relation: form.relation,
+        age: `${parsedAge} yrs`,
+        gender: form.gender,
+        bloodGroup: form.bloodGroup,
+        blood_group: form.bloodGroup,
+        uhid: assignedUhid,
+        isSelf: false
+      };
+
+      // 1. Try INSERT into family_members
+      try {
+        await supabase.from('family_members').insert({
+          id: memberUuid,
+          primary_user_id: primaryUserId,
+          full_name: newMember.name,
+          relation: newMember.relation,
+          gender: newMember.gender,
+          age: parsedAge,
+          uhid: assignedUhid,
+          blood_group: newMember.bloodGroup
+        });
+      } catch {}
+
+      // 2. Try INSERT into dependents
+      try {
+        await supabase.from('dependents').insert({
+          id: memberUuid,
+          primary_user_id: primaryUserId,
+          full_name: newMember.name,
+          relation: newMember.relation,
+          gender: newMember.gender,
+          age: parsedAge,
+          uhid: assignedUhid,
+          blood_group: newMember.bloodGroup
+        });
+      } catch {}
+
+      // 3. Sync to Supabase patients table
+      try {
+        await supabase.from('patients').insert({
+          id: memberUuid,
+          center_id: 'cb17e71d-cb76-49e6-a202-4a82c94de5d8',
+          patient_code: assignedUhid,
+          full_name: newMember.name,
+          age_years: parsedAge,
+          sex: newMember.gender.toLowerCase(),
+          blood_group: newMember.bloodGroup,
+          emergency_contact: primaryUserId,
+          notes: JSON.stringify({ relation: newMember.relation, primary_user_id: primaryUserId }),
+          is_active: true
+        });
+      } catch (err) {
+        console.warn('Patient table insert note:', err);
+      }
+
+      // 4. Update local React state instantly so new card appears without refresh
+      setMembers(prev => {
+        const next = [...prev, newMember];
+        try {
+          localStorage.setItem('labsetu_family_members', JSON.stringify(next));
+        } catch {}
+        return next;
+      });
+
+      setIsAddModalOpen(false);
+      setForm({ name: '', relation: 'Spouse', age: '', gender: 'Female', bloodGroup: 'B+' });
+      setNotice(lang === 'hi' ? `${newMember.name} का प्रोफ़ाइल जोड़ा गया।` : `Family member ${newMember.name} added successfully.`);
+      setTimeout(() => setNotice(''), 3500);
+    } catch (err) {
+      console.warn('Add member error:', err);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const handleDelete = (id) => {
-    setMembers((members || []).filter(m => m.id !== id));
-    setNotice(lang === 'hi' ? 'प्रोफ़ाइल हटा दी गई।' : 'Family member removed.');
-    setTimeout(() => setNotice(''), 3000);
+  // Confirm Delete Handler (DELETE from Supabase)
+  const confirmDelete = async () => {
+    if (!pendingDeleteMember) return;
+    const memberToDelete = pendingDeleteMember;
+
+    try {
+      setIsDeleting(true);
+
+      // 1. DELETE from family_members & dependents
+      try {
+        await supabase.from('family_members').delete().eq('id', memberToDelete.id);
+      } catch {}
+      try {
+        await supabase.from('dependents').delete().eq('id', memberToDelete.id);
+      } catch {}
+      try {
+        await supabase.from('patients').delete().eq('id', memberToDelete.id);
+      } catch {}
+
+      // 2. Remove from local state
+      setMembers(prev => {
+        const next = prev.filter(m => m.id !== memberToDelete.id);
+        try {
+          localStorage.setItem('labsetu_family_members', JSON.stringify(next));
+        } catch {}
+        return next;
+      });
+
+      // 3. If currently viewing this deleted profile, switch back to Self
+      if (activeUHID === memberToDelete.uhid) {
+        const selfMember = members.find(m => m.isSelf);
+        if (selfMember) {
+          switchActiveProfile(selfMember);
+        }
+      }
+
+      setNotice(lang === 'hi' ? `${memberToDelete.name} की प्रोफ़ाइल हटा दी गई।` : `Family profile for ${memberToDelete.name} removed.`);
+      setTimeout(() => setNotice(''), 3500);
+    } catch (err) {
+      console.warn('Delete profile error:', err);
+    } finally {
+      setIsDeleting(false);
+      setPendingDeleteMember(null);
+    }
   };
 
   return (
     <div className="citizen-page">
-      <div className="citizen-page-header">
+      <div className="citizen-page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem', marginBottom: '1.5rem' }}>
         <div>
           <h1 className="citizen-page-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <UserGroupIcon style={{ width: '26px', color: '#15803d' }} />
-            {lang === 'hi' ? 'पारिवारिक प्रोफ़ाइल (फैमिली हेल्थ रिकॉर्ड्स)' : 'Family Profiles & Dependent Health Records'}
+            {t('family.pageTitle')}
           </h1>
           <p className="citizen-page-subtitle">
-            {lang === 'hi'
-              ? 'एक ही खाते से अपने माता-पिता, जीवनसाथी और बच्चों के मेडिकल टेस्ट और रिपोर्ट प्रबंधित करें'
-              : 'Manage diagnostic bookings, history, and test reports for parents, spouse, and children in one account'}
+            {t('family.subtitle')}
           </p>
         </div>
         <button
-          onClick={() => setIsModalOpen(true)}
-          className="btn-primary"
-          style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}
+          type="button"
+          onClick={() => setIsAddModalOpen(true)}
+          className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium py-2 px-4 rounded-lg shadow-sm transition-all duration-200 active:scale-95 cursor-pointer"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem',
+            backgroundColor: '#059669',
+            color: '#ffffff',
+            fontSize: '0.875rem',
+            fontWeight: 500,
+            padding: '0.5rem 1rem',
+            borderRadius: '0.5rem',
+            border: 'none',
+            boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
+            cursor: 'pointer',
+            transition: 'all 200ms cubic-bezier(0.4, 0, 0.2, 1)'
+          }}
         >
-          <UserPlusIcon style={{ width: '18px' }} />
-          {lang === 'hi' ? 'नया सदस्य जोड़ें' : 'Add Family Member'}
+          <UserPlusIcon className="w-5 h-5" style={{ width: '20px', height: '20px' }} />
+          <span>{t('family.add')}</span>
         </button>
       </div>
 
@@ -140,95 +387,195 @@ export default function CitizenFamilyProfiles({ lang: propLang }) {
 
       {/* Profiles Grid */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.25rem' }}>
-        {(members || []).map((m) => (
-          <div
-            key={m.id}
-            style={{
-              background: 'white',
-              border: m.activeProfile ? '2px solid #15803d' : '1px solid #e2e8f0',
-              borderRadius: '12px',
-              padding: '1.5rem',
-              position: 'relative',
-              boxShadow: m.activeProfile ? '0 4px 12px rgba(21, 128, 61, 0.12)' : '0 1px 3px rgba(0,0,0,0.03)'
-            }}
-          >
-            {m.activeProfile && (
-              <span style={{ position: 'absolute', top: '1rem', right: '1rem', background: '#dcfce7', color: '#15803d', fontSize: '0.75rem', fontWeight: '700', padding: '0.2rem 0.6rem', borderRadius: '20px' }}>
-                ✓ Active Profile
-              </span>
-            )}
+        {members.map((m) => {
+          const isActive = (m.uhid === activeUHID) || (m.isSelf && !activeUHID);
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
-              <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: m.activeProfile ? '#dcfce7' : '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <UserCircleIcon style={{ width: '32px', color: m.activeProfile ? '#15803d' : '#64748b' }} />
-              </div>
-              <div>
-                <h3 style={{ margin: 0, fontSize: '1.1rem', color: '#0f172a' }}>{m.name}</h3>
-                <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: '500' }}>
-                  {m.relation} · {m.gender} ({m.age})
+          return (
+            <div
+              key={m.id || m.uhid}
+              className={`hover:shadow-md transition-shadow duration-200 bg-white rounded-xl p-4 ${
+                isActive ? 'border-2 border-emerald-500 bg-emerald-50/20' : 'border border-gray-200'
+              }`}
+              style={{
+                backgroundColor: isActive ? 'rgba(236, 253, 245, 0.45)' : '#ffffff',
+                border: isActive ? '2px solid #10b981' : '1px solid #e2e8f0',
+                borderRadius: '0.75rem',
+                padding: '1.25rem',
+                position: 'relative',
+                boxShadow: isActive ? '0 4px 14px rgba(16, 185, 129, 0.16)' : '0 1px 3px rgba(0,0,0,0.04)',
+                transition: 'box-shadow 200ms ease, border-color 200ms ease, background-color 200ms ease'
+              }}
+            >
+              {isActive && (
+                <span
+                  className="bg-emerald-100 text-emerald-800 text-xs font-semibold px-2.5 py-0.5 rounded-full"
+                  style={{
+                    position: 'absolute',
+                    top: '1rem',
+                    right: '1rem',
+                    background: '#dcfce7',
+                    color: '#15803d',
+                    fontSize: '0.75rem',
+                    fontWeight: '700',
+                    padding: '0.2rem 0.65rem',
+                    borderRadius: '20px'
+                  }}
+                >
+                  ✓ Active Profile
                 </span>
-              </div>
-            </div>
-
-            <div style={{ background: '#f8fafc', padding: '0.75rem', borderRadius: '6px', fontSize: '0.85rem', marginBottom: '1rem' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.3rem' }}>
-                <span style={{ color: '#64748b' }}>UHID Number:</span>
-                <strong>{m.uhid}</strong>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: '#64748b' }}>Blood Group:</span>
-                <strong style={{ color: '#dc2626' }}>{m.bloodGroup}</strong>
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              {!m.activeProfile ? (
-                <button
-                  onClick={() => setActiveMember(m.id)}
-                  style={{ background: 'white', border: '1px solid #15803d', color: '#15803d', padding: '0.4rem 0.85rem', borderRadius: '6px', fontSize: '0.85rem', fontWeight: '600', cursor: 'pointer' }}
-                >
-                  {lang === 'hi' ? 'इस प्रोफ़ाइल पर स्विच करें' : 'Switch to Profile'}
-                </button>
-              ) : (
-                <span style={{ fontSize: '0.85rem', color: '#15803d', fontWeight: '600' }}>Currently Viewing</span>
               )}
 
-              {m.relation !== 'Self' && (
-                <button
-                  onClick={() => handleDelete(m.id)}
-                  style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '0.4rem' }}
-                  title="Remove Profile"
-                >
-                  <TrashIcon style={{ width: '18px' }} />
-                </button>
-              )}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
+                <div style={{
+                  width: '48px',
+                  height: '48px',
+                  borderRadius: '50%',
+                  background: isActive ? '#dcfce7' : '#f1f5f9',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0
+                }}>
+                  <UserCircleIcon style={{ width: '32px', height: '32px', color: isActive ? '#15803d' : '#64748b' }} />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1.1rem', color: '#0f172a', fontWeight: '700' }}>
+                    {m.name}
+                  </h3>
+                  <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: '500' }}>
+                    {m.relation} · {m.gender} ({m.age})
+                  </span>
+                </div>
+              </div>
+
+              <div style={{ background: '#f8fafc', padding: '0.75rem', borderRadius: '8px', fontSize: '0.85rem', marginBottom: '1rem', border: '1px solid #f1f5f9' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
+                  <span style={{ color: '#64748b' }}>UHID Number:</span>
+                  <strong style={{ fontFamily: 'monospace', color: '#0f172a' }}>{m.uhid}</strong>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: '#64748b' }}>Blood Group:</span>
+                  <strong style={{ color: '#dc2626' }}>{m.bloodGroup}</strong>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '0.25rem' }}>
+                {!isActive ? (
+                  <button
+                    type="button"
+                    onClick={() => handleSwitchProfile(m)}
+                    className="text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 font-medium rounded-lg text-xs px-3 py-1.5 transition-colors cursor-pointer"
+                    style={{
+                      background: '#ffffff',
+                      border: '1.5px solid #15803d',
+                      color: '#15803d',
+                      padding: '0.4rem 0.85rem',
+                      borderRadius: '6px',
+                      fontSize: '0.825rem',
+                      fontWeight: '600',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    {lang === 'hi' ? 'इस प्रोफ़ाइल पर स्विच करें' : 'Switch to Profile'}
+                  </button>
+                ) : (
+                  <span style={{ fontSize: '0.85rem', color: '#15803d', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                    <ShieldCheckIcon style={{ width: '16px', height: '16px' }} />
+                    {lang === 'hi' ? 'वर्तमान में सक्रिय' : 'Currently Viewing'}
+                  </span>
+                )}
+
+                {!m.isSelf && (
+                  <button
+                    type="button"
+                    onClick={() => setPendingDeleteMember(m)}
+                    className="p-1.5 rounded-lg text-red-500 hover:text-red-700 hover:bg-red-50 transition-colors cursor-pointer"
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: '#ef4444',
+                      cursor: 'pointer',
+                      padding: '0.4rem',
+                      borderRadius: '6px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}
+                    title="Remove Profile"
+                    aria-label={`Remove profile for ${m.name}`}
+                  >
+                    <TrashIcon style={{ width: '18px', height: '18px' }} />
+                  </button>
+                )}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
-      {/* Add Member Modal */}
-      {isModalOpen && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '1rem' }}>
-          <div style={{ background: 'white', borderRadius: '12px', padding: '1.75rem', width: '100%', maxWidth: '480px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', borderBottom: '1px solid #e2e8f0', paddingBottom: '0.75rem' }}>
-              <h3 style={{ margin: 0, fontSize: '1.2rem', color: '#0f172a' }}>Add Family Dependent Member</h3>
-              <button onClick={() => setIsModalOpen(false)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#64748b' }}>
-                <XMarkIcon style={{ width: '22px' }} />
+      {/* Modern Add Member Modal */}
+      {isAddModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm animate-in fade-in duration-200"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 9999,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: 'rgba(0, 0, 0, 0.4)',
+            backdropFilter: 'blur(4px)',
+            WebkitBackdropFilter: 'blur(4px)',
+            padding: '1rem'
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setIsAddModalOpen(false);
+          }}
+        >
+          <div
+            className="bg-white rounded-xl shadow-2xl w-full max-w-lg p-6 overflow-hidden"
+            style={{
+              backgroundColor: '#ffffff',
+              borderRadius: '0.75rem',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+              width: '100%',
+              maxWidth: '32rem',
+              padding: '1.5rem',
+              overflow: 'hidden',
+              boxSizing: 'border-box'
+            }}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="add-member-modal-title"
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', borderBottom: '1px solid #f1f5f9', paddingBottom: '0.75rem' }}>
+              <h3 id="add-member-modal-title" style={{ margin: 0, fontSize: '1.2rem', color: '#0f172a', fontWeight: '700' }}>
+                {lang === 'hi' ? 'परिवार का नया सदस्य जोड़ें' : 'Add Family Dependent Member'}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setIsAddModalOpen(false)}
+                className="p-1 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+                style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#64748b', padding: '4px' }}
+                aria-label="Close dialog"
+              >
+                <XMarkIcon style={{ width: '20px', height: '20px' }} />
               </button>
             </div>
 
             <form onSubmit={handleAddMember}>
               <div style={{ marginBottom: '1rem' }}>
                 <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', color: '#334155', marginBottom: '0.35rem' }}>
-                  Full Name
+                  {t('profile.fullName')}
                 </label>
                 <input
                   type="text"
                   placeholder="e.g. Priya Sharma"
                   value={form.name}
                   onChange={(e) => setForm({ ...form, name: e.target.value })}
-                  style={{ width: '100%', padding: '0.5rem', border: '1px solid #cbd5e1', borderRadius: '6px' }}
+                  className="w-full border border-gray-300 rounded-lg p-2.5 text-sm text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  style={{ width: '100%', padding: '0.625rem 0.75rem', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '0.875rem', boxSizing: 'border-box' }}
                   required
                 />
               </div>
@@ -236,31 +583,36 @@ export default function CitizenFamilyProfiles({ lang: propLang }) {
               <div style={{ display: 'flex', gap: '1rem', marginBottom: '1rem' }}>
                 <div style={{ flex: 1 }}>
                   <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', color: '#334155', marginBottom: '0.35rem' }}>
-                    Relationship
+                    {lang === 'hi' ? 'संबंध' : 'Relationship'}
                   </label>
                   <select
                     value={form.relation}
                     onChange={(e) => setForm({ ...form, relation: e.target.value })}
-                    style={{ width: '100%', padding: '0.5rem', border: '1px solid #cbd5e1', borderRadius: '6px' }}
+                    className="w-full border border-gray-300 rounded-lg p-2.5 text-sm text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    style={{ width: '100%', padding: '0.625rem 0.75rem', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '0.875rem', boxSizing: 'border-box' }}
                   >
-                    <option value="Parent (Mother)">Parent (Mother)</option>
-                    <option value="Parent (Father)">Parent (Father)</option>
                     <option value="Spouse">Spouse</option>
                     <option value="Child (Son)">Child (Son)</option>
                     <option value="Child (Daughter)">Child (Daughter)</option>
+                    <option value="Parent (Mother)">Parent (Mother)</option>
+                    <option value="Parent (Father)">Parent (Father)</option>
                     <option value="Sibling">Sibling</option>
+                    <option value="Other">Other</option>
                   </select>
                 </div>
                 <div style={{ flex: 1 }}>
                   <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', color: '#334155', marginBottom: '0.35rem' }}>
-                    Age (Years)
+                    {t('profile.age')}
                   </label>
                   <input
                     type="number"
-                    placeholder="e.g. 65"
+                    placeholder="e.g. 35"
+                    min="1"
+                    max="120"
                     value={form.age}
                     onChange={(e) => setForm({ ...form, age: e.target.value })}
-                    style={{ width: '100%', padding: '0.5rem', border: '1px solid #cbd5e1', borderRadius: '6px' }}
+                    className="w-full border border-gray-300 rounded-lg p-2.5 text-sm text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    style={{ width: '100%', padding: '0.625rem 0.75rem', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '0.875rem', boxSizing: 'border-box' }}
                     required
                   />
                 </div>
@@ -269,26 +621,28 @@ export default function CitizenFamilyProfiles({ lang: propLang }) {
               <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.25rem' }}>
                 <div style={{ flex: 1 }}>
                   <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', color: '#334155', marginBottom: '0.35rem' }}>
-                    Gender
+                    {t('profile.gender')}
                   </label>
                   <select
                     value={form.gender}
                     onChange={(e) => setForm({ ...form, gender: e.target.value })}
-                    style={{ width: '100%', padding: '0.5rem', border: '1px solid #cbd5e1', borderRadius: '6px' }}
+                    className="w-full border border-gray-300 rounded-lg p-2.5 text-sm text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    style={{ width: '100%', padding: '0.625rem 0.75rem', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '0.875rem', boxSizing: 'border-box' }}
                   >
-                    <option value="Male">Male</option>
                     <option value="Female">Female</option>
+                    <option value="Male">Male</option>
                     <option value="Other">Other</option>
                   </select>
                 </div>
                 <div style={{ flex: 1 }}>
                   <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', color: '#334155', marginBottom: '0.35rem' }}>
-                    Blood Group
+                    {t('profile.bloodGroup')}
                   </label>
                   <select
                     value={form.bloodGroup}
                     onChange={(e) => setForm({ ...form, bloodGroup: e.target.value })}
-                    style={{ width: '100%', padding: '0.5rem', border: '1px solid #cbd5e1', borderRadius: '6px' }}
+                    className="w-full border border-gray-300 rounded-lg p-2.5 text-sm text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    style={{ width: '100%', padding: '0.625rem 0.75rem', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '0.875rem', boxSizing: 'border-box' }}
                   >
                     <option value="A+">A+</option>
                     <option value="A-">A-</option>
@@ -302,19 +656,127 @@ export default function CitizenFamilyProfiles({ lang: propLang }) {
                 </div>
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', paddingTop: '0.5rem', borderTop: '1px solid #f1f5f9' }}>
                 <button
                   type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  style={{ padding: '0.5rem 1rem', border: '1px solid #cbd5e1', borderRadius: '6px', background: 'white', cursor: 'pointer' }}
+                  onClick={() => setIsAddModalOpen(false)}
+                  className="text-gray-600 hover:bg-gray-100 text-sm font-medium py-2 px-4 rounded-lg transition-colors cursor-pointer"
+                  style={{ padding: '0.5rem 1rem', border: '1px solid #cbd5e1', borderRadius: '8px', background: 'white', cursor: 'pointer' }}
                 >
-                  Cancel
+                  {t('common.cancel')}
                 </button>
-                <button type="submit" className="btn-primary">
-                  Save Member Profile
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-medium py-2 px-4 rounded-lg shadow-sm transition-all duration-200 active:scale-95 cursor-pointer"
+                  style={{
+                    backgroundColor: '#059669',
+                    color: '#ffffff',
+                    border: 'none',
+                    padding: '0.5rem 1.15rem',
+                    borderRadius: '8px',
+                    fontWeight: '600',
+                    cursor: isSubmitting ? 'not-allowed' : 'pointer'
+                  }}
+                >
+                  {isSubmitting ? t('common.loading') : (lang === 'hi' ? 'सदस्य प्रोफ़ाइल सहेजें' : 'Save Member Profile')}
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal (Delete Protection) */}
+      {pendingDeleteMember && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm animate-in fade-in duration-200"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 9999,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: 'rgba(0, 0, 0, 0.4)',
+            backdropFilter: 'blur(4px)',
+            WebkitBackdropFilter: 'blur(4px)',
+            padding: '1rem'
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !isDeleting) setPendingDeleteMember(null);
+          }}
+        >
+          <div
+            className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 overflow-hidden"
+            style={{
+              backgroundColor: '#ffffff',
+              borderRadius: '0.75rem',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+              width: '100%',
+              maxWidth: '28rem',
+              padding: '1.5rem',
+              boxSizing: 'border-box'
+            }}
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="delete-dialog-title"
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
+              <div style={{
+                width: '40px',
+                height: '40px',
+                borderRadius: '50%',
+                backgroundColor: '#fee2e2',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#dc2626',
+                flexShrink: 0
+              }}>
+                <ExclamationTriangleIcon style={{ width: '22px', height: '22px' }} />
+              </div>
+              <div>
+                <h3 id="delete-dialog-title" style={{ margin: 0, fontSize: '1.1rem', color: '#0f172a', fontWeight: '700' }}>
+                  {lang === 'hi' ? 'प्रोफ़ाइल हटाना चाहते हैं?' : 'Remove Family Profile?'}
+                </h3>
+              </div>
+            </div>
+
+            <p style={{ margin: '0 0 1.25rem 0', fontSize: '0.9rem', color: '#64748b', lineHeight: 1.5 }}>
+              {lang === 'hi'
+                ? `क्या आप वाकई ${pendingDeleteMember.name} (${pendingDeleteMember.relation}) की प्रोफ़ाइल हटाना चाहते हैं?`
+                : `Are you sure you want to remove ${pendingDeleteMember.name} (${pendingDeleteMember.relation})? This will detach their dependent medical records.`}
+            </p>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={() => setPendingDeleteMember(null)}
+                className="text-gray-600 hover:bg-gray-100 text-sm font-medium py-2 px-4 rounded-lg transition-colors cursor-pointer"
+                style={{ padding: '0.5rem 1rem', border: '1px solid #cbd5e1', borderRadius: '8px', background: 'white', cursor: 'pointer' }}
+              >
+                {t('common.cancel')}
+              </button>
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={confirmDelete}
+                className="bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-4 rounded-lg shadow-sm transition-all duration-200 active:scale-95 cursor-pointer"
+                style={{
+                  backgroundColor: '#dc2626',
+                  color: '#ffffff',
+                  border: 'none',
+                  padding: '0.5rem 1.15rem',
+                  borderRadius: '8px',
+                  fontWeight: '600',
+                  cursor: isDeleting ? 'not-allowed' : 'pointer'
+                }}
+              >
+                {isDeleting ? t('common.loading') : (lang === 'hi' ? 'हटाएं' : 'Confirm Remove')}
+              </button>
+            </div>
           </div>
         </div>
       )}

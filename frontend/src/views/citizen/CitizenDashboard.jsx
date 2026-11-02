@@ -28,8 +28,8 @@ import {
 } from '@heroicons/react/24/outline';
 
 export default function CitizenDashboard({ lang: propLang }) {
-  const { currentUser } = useAuth();
-  const { lang: contextLang } = useLanguage();
+  const { currentUser, activeUHID, activeMember } = useAuth();
+  const { lang: contextLang, t } = useLanguage();
   const lang = propLang || contextLang || 'en';
   const navigate = useNavigate();
   const { data: appointments, update: setAppointments } = useDemoResource('appointments', []);
@@ -120,20 +120,27 @@ export default function CitizenDashboard({ lang: propLang }) {
       {/* Welcome Banner */}
       <div className="citizen-welcome-hero">
         <div className="hero-text">
-          <h1>{lang === 'hi' ? 'स्वागत है' : 'Welcome'}, {currentUser?.name || 'Patient'}</h1>
+          <h1>
+            {t('dashboard.welcome')}, {activeMember?.name || currentUser?.name || 'Patient'}
+            {activeMember && activeMember.relation !== 'Self' && (
+              <span style={{ marginLeft: '0.5rem', fontSize: '0.75rem', fontWeight: 600, backgroundColor: '#ecfdf5', color: '#065f46', padding: '0.2rem 0.6rem', borderRadius: '9999px', border: '1px solid #a7f3d0' }}>
+                {activeMember.relation}
+              </span>
+            )}
+          </h1>
           <p>
-            {lang === 'hi' ? 'रोगी यूएचआईडी' : 'Patient UHID'}: <strong>{currentUser?.uhid || 'UHID-2026-8901'}</strong> · {lang === 'hi' ? 'पंजीकृत केंद्र' : 'Registered Centre'}:{' '}
+            {t('dashboard.uhid')}: <strong>{activeUHID || currentUser?.uhid || 'UHID-2026-8901'}</strong> · {t('dashboard.centre')}:{' '}
             <strong>LabSetu Diagnostics</strong>
           </p>
         </div>
         <div className="hero-actions">
           <Link to="/portal/appointments/book" className="hero-btn primary">
             <CalendarDaysIcon style={{ width: '18px' }} />
-            {lang === 'hi' ? 'जांच अपॉइंटमेंट बुक करें' : 'Book Lab Appointment'}
+            {t('dashboard.bookAppointment')}
           </Link>
           <Link to="/portal/reports" className="hero-btn secondary">
             <DocumentChartBarIcon style={{ width: '18px' }} />
-            {lang === 'hi' ? 'मेरी रिपोर्ट्स देखें' : 'All Reports'}
+            {t('dashboard.myReports')}
           </Link>
         </div>
       </div>
@@ -146,7 +153,7 @@ export default function CitizenDashboard({ lang: propLang }) {
           </div>
           <div>
             <div className="stat-value">{dbMetrics.publishedReports !== null ? dbMetrics.publishedReports : readyReports.length}</div>
-            <div className="stat-label">Published Reports</div>
+            <div className="stat-label">{t('dashboard.publishedReports')}</div>
           </div>
         </div>
 
@@ -156,7 +163,7 @@ export default function CitizenDashboard({ lang: propLang }) {
           </div>
           <div>
             <div className="stat-value">{dbMetrics.upcomingAppointments !== null ? dbMetrics.upcomingAppointments : upcomingAppts.length}</div>
-            <div className="stat-label">Upcoming Appointments</div>
+            <div className="stat-label">{t('dashboard.upcomingAppointments')}</div>
           </div>
         </div>
 
@@ -166,7 +173,7 @@ export default function CitizenDashboard({ lang: propLang }) {
           </div>
           <div>
             <div className="stat-value">{dbMetrics.outstandingInvoices !== null ? dbMetrics.outstandingInvoices : '₹550'}</div>
-            <div className="stat-label">Outstanding Invoices</div>
+            <div className="stat-label">{t('dashboard.outstandingInvoices')}</div>
           </div>
         </div>
 
@@ -175,8 +182,8 @@ export default function CitizenDashboard({ lang: propLang }) {
             <CheckBadgeIcon className="stat-icon" />
           </div>
           <div>
-            <div className="stat-value">Verified</div>
-            <div className="stat-label">Health ID Status</div>
+            <div className="stat-value">{t('dashboard.verified')}</div>
+            <div className="stat-label">{t('dashboard.healthIdStatus')}</div>
           </div>
         </div>
       </div>
@@ -185,9 +192,9 @@ export default function CitizenDashboard({ lang: propLang }) {
       <div className="citizen-hub-section">
         <div className="hub-section-header">
           <div>
-            <h2 className="hub-section-title">Patient Care & Digital Lab Services</h2>
+            <h2 className="hub-section-title">{t('dashboard.servicesTitle')}</h2>
             <p className="hub-section-subtitle">
-              Book tests, track doorstep phlebotomy, understand biomarkers with AI, and manage consent
+              {t('dashboard.servicesSubtitle')}
             </p>
           </div>
         </div>
@@ -200,10 +207,10 @@ export default function CitizenDashboard({ lang: propLang }) {
               </div>
               <span className="hub-pill active">Doorstep</span>
             </div>
-            <h4>Home Sample Collection</h4>
-            <p>Schedule home phlebotomist visit with live 4-stage tracking and temperature-safe transit.</p>
+            <h4>{t('dashboard.homeCollectionTitle')}</h4>
+            <p>{t('dashboard.homeCollectionDesc')}</p>
             <div className="hub-card-footer">
-              <span>Book / Track visit</span>
+              <span>{t('dashboard.homeCollectionAction')}</span>
               <ArrowRightIcon style={{ width: '14px' }} />
             </div>
           </Link>
@@ -215,10 +222,10 @@ export default function CitizenDashboard({ lang: propLang }) {
               </div>
               <span className="hub-pill ai">AI Assistant</span>
             </div>
-            <h4>AI Report Explainer</h4>
-            <p>Understand complex lab biomarkers in simple Hindi & English with reference ranges.</p>
+            <h4>{t('dashboard.aiExplainerTitle')}</h4>
+            <p>{t('dashboard.aiExplainerDesc')}</p>
             <div className="hub-card-footer">
-              <span>Explain biomarkers</span>
+              <span>{t('dashboard.aiExplainerAction')}</span>
               <ArrowRightIcon style={{ width: '14px' }} />
             </div>
           </Link>
@@ -230,10 +237,10 @@ export default function CitizenDashboard({ lang: propLang }) {
               </div>
               <span className="hub-pill verified">NABL Accredited</span>
             </div>
-            <h4>Nearby Participating Labs</h4>
-            <p>Compare transparent test pricing, distance, turnaround times, and verified credentials.</p>
+            <h4>{t('dashboard.nearbyLabsTitle')}</h4>
+            <p>{t('dashboard.nearbyLabsDesc')}</p>
             <div className="hub-card-footer">
-              <span>Compare labs</span>
+              <span>{t('dashboard.nearbyLabsAction')}</span>
               <ArrowRightIcon style={{ width: '14px' }} />
             </div>
           </Link>
@@ -245,10 +252,10 @@ export default function CitizenDashboard({ lang: propLang }) {
               </div>
               <span className="hub-pill prep">Fasting Guide</span>
             </div>
-            <h4>Fasting Prep & Reminders</h4>
-            <p>Check lab-approved preparation instructions, fasting rules, and recurring reminders.</p>
+            <h4>{t('dashboard.remindersTitle')}</h4>
+            <p>{t('dashboard.remindersDesc')}</p>
             <div className="hub-card-footer">
-              <span>View instructions</span>
+              <span>{t('dashboard.remindersAction')}</span>
               <ArrowRightIcon style={{ width: '14px' }} />
             </div>
           </Link>
@@ -260,10 +267,10 @@ export default function CitizenDashboard({ lang: propLang }) {
               </div>
               <span className="hub-pill">Family UHID</span>
             </div>
-            <h4>Family Health Profiles</h4>
-            <p>Manage health records, appointments, and test history for parents, spouse, and dependents.</p>
+            <h4>{t('dashboard.familyTitle')}</h4>
+            <p>{t('dashboard.familyDesc')}</p>
             <div className="hub-card-footer">
-              <span>Switch / Add member</span>
+              <span>{t('dashboard.familyAction')}</span>
               <ArrowRightIcon style={{ width: '14px' }} />
             </div>
           </Link>
@@ -275,10 +282,10 @@ export default function CitizenDashboard({ lang: propLang }) {
               </div>
               <span className="hub-pill secure">ABDM Secure</span>
             </div>
-            <h4>Privacy & Consent Controls</h4>
-            <p>Grant or revoke doctor access, view immutable access audit logs, and export your health data.</p>
+            <h4>{t('dashboard.privacyTitle')}</h4>
+            <p>{t('dashboard.privacyDesc')}</p>
             <div className="hub-card-footer">
-              <span>Manage consent</span>
+              <span>{t('dashboard.privacyAction')}</span>
               <ArrowRightIcon style={{ width: '14px' }} />
             </div>
           </Link>
@@ -290,19 +297,19 @@ export default function CitizenDashboard({ lang: propLang }) {
         {/* Left Column: Recent Diagnostic Reports */}
         <div className="citizen-dash-panel">
           <div className="panel-header">
-            <h3>Recent Test Reports</h3>
-            <Link to="/portal/reports" className="panel-link">View all reports →</Link>
+            <h3>{t('dashboard.recentReportsTitle')}</h3>
+            <Link to="/portal/reports" className="panel-link">{t('dashboard.viewAll')} →</Link>
           </div>
 
           <div className="reports-table-wrap">
             <table className="citizen-table">
               <thead>
                 <tr>
-                  <th>REPORT ID</th>
-                  <th>TEST NAME</th>
-                  <th>DATE</th>
-                  <th>STATUS</th>
-                  <th>ACTION</th>
+                  <th>{t('bills.invoiceNo', 'REPORT ID')}</th>
+                  <th>{t('bills.testName', 'TEST NAME')}</th>
+                  <th>{t('common.date', 'DATE')}</th>
+                  <th>{t('common.status', 'STATUS')}</th>
+                  <th>{t('common.action', 'ACTION')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -327,7 +334,7 @@ export default function CitizenDashboard({ lang: propLang }) {
                           onClick={() => setSelectedReport(rep)}
                           title="View Report Details"
                         >
-                          <EyeIcon style={{ width: '16px' }} /> View
+                          <EyeIcon style={{ width: '16px' }} /> {t('common.view')}
                         </button>
                         {rep.status === 'Ready' && (
                           <button
@@ -458,9 +465,9 @@ export default function CitizenDashboard({ lang: propLang }) {
             <div className="report-modal-body" style={{ padding: '1.25rem 1.5rem' }}>
               {/* Patient Demographics Grid */}
               <div className="report-meta-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.65rem', background: '#f8fafc', padding: '0.85rem 1rem', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '0.82rem' }}>
-                <div><span style={{ color: '#64748b' }}>Patient:</span> <strong>{currentUser?.name || 'Shozab Rizvi'}</strong></div>
-                <div><span style={{ color: '#64748b' }}>Age / Sex:</span> <strong>42Y / Male</strong></div>
-                <div><span style={{ color: '#64748b' }}>UHID:</span> <strong>{currentUser?.uhid || 'UHID-2026-8901'}</strong></div>
+                <div><span style={{ color: '#64748b' }}>Patient:</span> <strong>{activeMember?.name || currentUser?.name || 'Shozab Rizvi'}</strong></div>
+                <div><span style={{ color: '#64748b' }}>Age / Sex:</span> <strong>{activeMember?.age || (currentUser?.age ? `${currentUser.age}Y` : '28Y')} / {activeMember?.gender || currentUser?.gender || 'Male'}</strong></div>
+                <div><span style={{ color: '#64748b' }}>UHID:</span> <strong>{activeUHID || currentUser?.uhid || 'UHID-2026-8901'}</strong></div>
                 <div><span style={{ color: '#64748b' }}>Collection Date:</span> <strong>{selectedReport.date}</strong></div>
                 <div><span style={{ color: '#64748b' }}>Reporting Doctor:</span> <strong>{selectedReport.doctor}</strong></div>
                 <div><span style={{ color: '#64748b' }}>Status:</span> <strong style={{ color: selectedReport.status === 'Ready' ? '#15803d' : '#b45309' }}>✓ {selectedReport.status}</strong></div>

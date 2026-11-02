@@ -7,6 +7,7 @@ const AuthContext = createContext(null);
 
 const DEFAULT_USERS = [
   {
+    id: '6296e1a6-8a20-4fa7-b26a-883b53800335',
     email: 'admin@labsetu.com',
     password: 'password123',
     name: 'Dr. Shozab Rizvi',
@@ -16,6 +17,7 @@ const DEFAULT_USERS = [
     labId: '61326885'
   },
   {
+    id: '45370b0a-3a2a-47a6-904e-9040108d5f94',
     email: 'patient@labsetu.com',
     password: 'password123',
     name: 'Shozab Rizvi',
@@ -54,6 +56,51 @@ export function AuthProvider({ children }) {
     if (legacy && legacy.role === 'citizen') return legacy;
     return null;
   });
+
+  const [activeUHID, setActiveUHIDState] = useState(() => {
+    try {
+      return localStorage.getItem('labsetu_active_uhid') || sessionStorage.getItem('labsetu_active_uhid') || null;
+    } catch {
+      return null;
+    }
+  });
+
+  const [activeMember, setActiveMember] = useState(() => {
+    try {
+      const saved = localStorage.getItem('labsetu_active_member') || sessionStorage.getItem('labsetu_active_member');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  const setActiveUHID = (uhid) => {
+    setActiveUHIDState(uhid);
+    try {
+      if (uhid) {
+        localStorage.setItem('labsetu_active_uhid', uhid);
+        sessionStorage.setItem('labsetu_active_uhid', uhid);
+      } else {
+        localStorage.removeItem('labsetu_active_uhid');
+        sessionStorage.removeItem('labsetu_active_uhid');
+      }
+    } catch {}
+  };
+
+  const switchActiveProfile = (member) => {
+    if (!member) return;
+    const uhid = member.uhid || member.patient_code;
+    setActiveUHIDState(uhid);
+    setActiveMember(member);
+    try {
+      if (uhid) {
+        localStorage.setItem('labsetu_active_uhid', uhid);
+        sessionStorage.setItem('labsetu_active_uhid', uhid);
+      }
+      localStorage.setItem('labsetu_active_member', JSON.stringify(member));
+      sessionStorage.setItem('labsetu_active_member', JSON.stringify(member));
+    } catch {}
+  };
 
   const [loading, setLoading] = useState(true);
 
@@ -115,7 +162,7 @@ export function AuthProvider({ children }) {
           const targetEmail = session?.user?.email || savedPatient?.email || savedAuth?.email;
 
           let profileRow = null;
-          if (targetUserId) {
+          if (targetUserId && typeof targetUserId === 'string' && targetUserId.includes('-')) {
             const { data } = await supabase.from('profiles').select('*').eq('id', targetUserId).maybeSingle();
             if (data) profileRow = data;
           }
@@ -221,7 +268,7 @@ export function AuthProvider({ children }) {
       // Single Source of Truth: Fetch user row from profiles/patients to ensure static UHID & updated name
       try {
         let profileRow = null;
-        if (user.id) {
+        if (user.id && typeof user.id === 'string' && user.id.includes('-')) {
           const { data } = await supabase.from('profiles').select('*').eq('id', user.id).maybeSingle();
           if (data) profileRow = data;
         }
@@ -326,9 +373,17 @@ export function AuthProvider({ children }) {
     localStorage.removeItem('labsetu_token');
     localStorage.removeItem('userEmail');
     localStorage.removeItem('userRole');
+    localStorage.removeItem('labsetu_active_uhid');
+    sessionStorage.removeItem('labsetu_active_uhid');
+    localStorage.removeItem('labsetu_active_member');
+    sessionStorage.removeItem('labsetu_active_member');
+    setActiveUHIDState(null);
+    setActiveMember(null);
 
     await authService.logout();
   };
+
+  const currentEffectiveUHID = activeUHID || patientUser?.uhid || currentUser?.uhid || 'UHID-2026-8901';
 
   return (
     <AuthContext.Provider value={{
@@ -342,7 +397,12 @@ export function AuthProvider({ children }) {
       signup,
       resetPassword,
       logout,
-      updateCurrentUser
+      updateCurrentUser,
+      activeUHID: currentEffectiveUHID,
+      rawActiveUHID: activeUHID,
+      setActiveUHID,
+      activeMember,
+      switchActiveProfile
     }}>
       {children}
     </AuthContext.Provider>

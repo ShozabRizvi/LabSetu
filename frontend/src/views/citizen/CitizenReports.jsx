@@ -24,7 +24,7 @@ import {
 import { ensureArray } from '../../utils/arrayUtils';
 
 export default function CitizenReports({ lang: propLang }) {
-  const { currentUser } = useAuth();
+  const { currentUser, activeUHID, activeMember } = useAuth();
   const { lang: contextLang } = useLanguage();
   const lang = propLang || contextLang || 'en';
   const navigate = useNavigate();
@@ -92,7 +92,7 @@ export default function CitizenReports({ lang: propLang }) {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [activeUHID]);
 
   // OCR verification state
   const [ocrSampleSelected, setOcrSampleSelected] = useState('cbc-sample');
@@ -246,6 +246,12 @@ export default function CitizenReports({ lang: propLang }) {
               ? 'प्रमाणित पैथोलॉजी, बायोकेमिस्ट्री एवं रेडियोलॉजी रिपोर्ट देखें, डाउनलोड करें और ट्रैक करें'
               : 'Securely view, download, explain and compare release-verified diagnostic findings'}
           </p>
+          {activeMember && (
+            <div style={{ marginTop: '0.5rem', display: 'inline-flex', alignItems: 'center', gap: '0.4rem', backgroundColor: '#ecfdf5', border: '1px solid #a7f3d0', padding: '0.25rem 0.65rem', borderRadius: '6px', fontSize: '0.8rem', color: '#065f46' }}>
+              <span style={{ width: '7px', height: '7px', borderRadius: '50%', backgroundColor: '#10b981', display: 'inline-block' }}></span>
+              <span>{lang === 'hi' ? 'सक्रिय प्रोफ़ाइल' : 'Active Profile'}: <strong>{activeMember.name}</strong> ({activeMember.relation || 'Self'} · {activeUHID})</span>
+            </div>
+          )}
         </div>
         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
           <button
@@ -266,7 +272,7 @@ export default function CitizenReports({ lang: propLang }) {
             }}
           >
             <SparklesIcon style={{ width: '18px' }} />
-            {lang === 'hi' ? 'एआई एक्सप्लेनर खोलें' : 'AI Report Explainer'}
+            {lang === 'hi' ? 'Clinova एआई एक्सप्लेनर' : 'Clinova AI Explainer'}
           </button>
           <button
             type="button"
@@ -749,9 +755,9 @@ export default function CitizenReports({ lang: propLang }) {
             <div className="report-modal-body" style={{ padding: '1.25rem 1.5rem' }}>
               {/* Patient Demographics Grid */}
               <div className="report-meta-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.65rem', background: '#f8fafc', padding: '0.85rem 1rem', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '0.82rem' }}>
-                <div><span style={{ color: '#64748b' }}>Patient:</span> <strong>{currentUser?.name || 'Ramesh Sharma'}</strong></div>
-                <div><span style={{ color: '#64748b' }}>Age / Sex:</span> <strong>42Y / Male</strong></div>
-                <div><span style={{ color: '#64748b' }}>UHID:</span> <strong>{currentUser?.uhid || 'UHID-2026-8901'}</strong></div>
+                <div><span style={{ color: '#64748b' }}>Patient:</span> <strong>{activeMember?.name || currentUser?.name || 'Ramesh Sharma'}</strong></div>
+                <div><span style={{ color: '#64748b' }}>Age / Sex:</span> <strong>{activeMember?.age || (currentUser?.age ? `${currentUser.age}Y` : '28Y')} / {activeMember?.gender || currentUser?.gender || 'Male'}</strong></div>
+                <div><span style={{ color: '#64748b' }}>UHID:</span> <strong>{activeUHID || currentUser?.uhid || 'UHID-2026-8901'}</strong></div>
                 <div><span style={{ color: '#64748b' }}>Collection Date:</span> <strong>{selectedReport.date}</strong></div>
                 <div><span style={{ color: '#64748b' }}>Reporting Doctor:</span> <strong>{selectedReport.doctor}</strong></div>
                 <div><span style={{ color: '#64748b' }}>Status:</span> <strong style={{ color: selectedReport.status === 'Ready' ? '#15803d' : '#b45309' }}>✓ {selectedReport.status}</strong></div>

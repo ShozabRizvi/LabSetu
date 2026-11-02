@@ -7,7 +7,6 @@ import {
   PaperClipIcon,
   XMarkIcon,
   ExclamationTriangleIcon,
-  LanguageIcon,
   DocumentTextIcon,
   PhotoIcon,
   ArrowPathIcon,
@@ -15,6 +14,8 @@ import {
   CpuChipIcon,
   ShieldCheckIcon,
   InformationCircleIcon,
+  MicrophoneIcon,
+  SpeakerWaveIcon,
 } from '@heroicons/react/24/outline';
 import './CitizenDashboard.css';
 
@@ -47,7 +48,7 @@ function MedicalDisclaimer() {
 }
 
 /* ─── Chat Bubble ────────────────────────────────────────────────────────────── */
-function ChatBubble({ msg, lang }) {
+function ChatBubble({ msg, lang, isSpeaking, onToggleTts }) {
   const isUser = msg.role === 'user';
   return (
     <div
@@ -133,11 +134,48 @@ function ChatBubble({ msg, lang }) {
           style={{
             fontSize: '0.72rem',
             color: '#94a3b8',
-            marginTop: '0.3rem',
-            textAlign: isUser ? 'right' : 'left',
+            marginTop: '0.35rem',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: isUser ? 'flex-end' : 'flex-start',
+            gap: '0.5rem',
           }}
         >
-          {msg.time}
+          <span>{msg.time}</span>
+          {!isUser && msg.content && (
+            <button
+              type="button"
+              onClick={() => onToggleTts?.(msg.content, lang, msg.id || msg.time)}
+              title={
+                isSpeaking
+                  ? (lang === 'hi' ? 'आवाज़ बंद करें' : 'Stop speaking')
+                  : (lang === 'hi' ? 'बोलकर सुनाएं (Text-to-Speech)' : 'Read aloud with text-to-speech')
+              }
+              className={`inline-flex items-center gap-1 transition-colors cursor-pointer ${
+                isSpeaking ? 'text-emerald-700 font-semibold' : 'text-slate-400 hover:text-emerald-700'
+              }`}
+              style={{
+                background: isSpeaking ? '#ecfdf5' : 'transparent',
+                border: isSpeaking ? '1px solid #a7f3d0' : 'none',
+                borderRadius: '4px',
+                padding: '2px 6px',
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.25rem',
+                color: isSpeaking ? '#059669' : '#64748b',
+                transition: 'all 0.15s ease',
+              }}
+            >
+              <SpeakerWaveIcon
+                className={isSpeaking ? 'animate-pulse text-emerald-600' : ''}
+                style={{ width: 14, height: 14 }}
+              />
+              <span style={{ fontSize: '0.7rem' }}>
+                {isSpeaking ? (lang === 'hi' ? 'रुकें' : 'Stop') : (lang === 'hi' ? 'सुनाएं' : 'Listen')}
+              </span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -232,28 +270,256 @@ const QUICK_PROMPTS_HI = [
 /* ─── Main Component ─────────────────────────────────────────────────────────── */
 export default function CitizenReportExplainer({ lang: propLang }) {
   const { lang: contextLang } = useLanguage();
-  const effectiveLang = propLang || contextLang || 'en';
-  const [activeLang, setActiveLang] = useState(effectiveLang);
+  const currentGlobalLang = propLang || contextLang || 'en';
+  const isHi = currentGlobalLang === 'hi';
   const [inputFocused, setInputFocused] = useState(false);
 
-  useEffect(() => {
-    setActiveLang(effectiveLang);
-  }, [effectiveLang]);
+  /* ── Web Speech API (Microphone / Voice-to-Text) ──────────────────── */
+  const [isListening, setIsListening] = useState(false);
+  const [micNotice, setMicNotice] = useState('');
+  const [speechRecognitionSupported, setSpeechRecognitionSupported] = useState(false);
+  const recognitionRef = useRef(null);
 
-  const isHi = activeLang === 'hi';
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const isSupported = Boolean(window.SpeechRecognition || window.webkitSpeechRecognition);
+      setSpeechRecognitionSupported(isSupported);
+    }
+  }, []);
+
+  /* ── Web Speech API (Text-to-Speech / TTS) ────────────────────────── */
+  const [voices, setVoices] = useState([]);
+  const [currentlySpeakingId, setCurrentlySpeakingId] = useState(null);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+
+    const populateVoices = () => {
+      try {
+        const available = window.speechSynthesis.getVoices();
+        if (available && available.length > 0) {
+          setVoices(available);
+        }
+      } catch (e) {
+        console.warn('Error fetching speech synthesis voices:', e);
+      }
+    };
+
+    populateVoices();
+    if (window.speechSynthesis.onvoiceschanged !== undefined) {
+      window.speechSynthesis.onvoiceschanged = populateVoices;
+    }
+
+    return () => {
+      try {
+        window.speechSynthesis.cancel();
+      } catch {}
+    };
+  }, []);
+
+  useEffect(() => {
+    // Halt any active speech playback if global language is toggled
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+      setCurrentlySpeakingId(null);
+    }
+  }, [currentGlobalLang]);
+
+  /* Function: speakText(text, lang, msgId) */
+  const speakText = (text, lang, msgId) => {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+
+    // Toggle: clicking speaker icon while speaking halts playback instantly
+    if (currentlySpeakingId !== null) {
+      window.speechSynthesis.cancel();
+      if (currentlySpeakingId === msgId) {
+        setCurrentlySpeakingId(null);
+        return;
+      }
+    }
+
+    try {
+      window.speechSynthesis.cancel();
+
+      // Clean markdown tags & URLs for natural narration
+      const cleanText = (text || '')
+        .replace(/[*#_`]/g, '')
+        .replace(/https?:\/\/\S+/g, '')
+        .trim();
+
+      if (!cleanText) return;
+
+      const utterance = new SpeechSynthesisUtterance(cleanText);
+      const targetLang = lang === 'hi' ? 'hi-IN' : 'en-US';
+      utterance.lang = targetLang;
+      utterance.rate = lang === 'hi' ? 0.95 : 1.0;
+      utterance.pitch = 1.0;
+
+      // Select local high-quality voice matching the language
+      const voiceList = voices.length > 0 ? voices : window.speechSynthesis.getVoices();
+      if (voiceList && voiceList.length > 0) {
+        let matchingVoice = null;
+        if (lang === 'hi') {
+          matchingVoice =
+            voiceList.find(v => v.lang === 'hi-IN' || v.lang === 'hi_IN') ||
+            voiceList.find(v => v.lang.toLowerCase().startsWith('hi')) ||
+            voiceList.find(v => v.name.toLowerCase().includes('hindi') || v.name.toLowerCase().includes('india'));
+        } else {
+          matchingVoice =
+            voiceList.find(v => v.lang === 'en-US' || v.lang === 'en_US') ||
+            voiceList.find(v => v.lang === 'en-IN' || v.lang === 'en_IN') ||
+            voiceList.find(v => v.lang.toLowerCase().startsWith('en'));
+        }
+        if (matchingVoice) {
+          utterance.voice = matchingVoice;
+        }
+      }
+
+      utterance.onstart = () => {
+        setCurrentlySpeakingId(msgId);
+      };
+
+      utterance.onend = () => {
+        setCurrentlySpeakingId(null);
+      };
+
+      utterance.onerror = (e) => {
+        console.warn('SpeechSynthesis playback error:', e);
+        setCurrentlySpeakingId(null);
+      };
+
+      window.speechSynthesis.speak(utterance);
+    } catch (err) {
+      console.warn('speakText error:', err);
+      setCurrentlySpeakingId(null);
+    }
+  };
+
+  /* Function: toggleListening (Voice-to-Text) */
+  const toggleListening = () => {
+    if (isListening) {
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch {}
+      }
+      setIsListening(false);
+      return;
+    }
+
+    try {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) {
+        setMicNotice(isHi ? 'इस ब्राउज़र में वॉयस इनपुट समर्थित नहीं है।' : 'Voice input is not supported in this browser.');
+        setTimeout(() => setMicNotice(''), 3500);
+        return;
+      }
+
+      // Stop any TTS audio before capturing voice input
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+        setCurrentlySpeakingId(null);
+      }
+
+      const recognition = new SpeechRecognition();
+      recognitionRef.current = recognition;
+
+      recognition.continuous = false;
+      recognition.interimResults = false;
+      recognition.lang = currentGlobalLang === 'hi' ? 'hi-IN' : 'en-US';
+
+      recognition.onstart = () => {
+        setIsListening(true);
+      };
+
+      recognition.onresult = (event) => {
+        let transcript = '';
+        for (let i = event.resultIndex || 0; i < event.results.length; i++) {
+          transcript += event.results[i][0].transcript;
+        }
+        if (transcript) {
+          setInputText((prev) => {
+            const trimmed = prev.trim();
+            return trimmed ? `${trimmed} ${transcript}` : transcript;
+          });
+          setTimeout(() => {
+            const el = textareaRef.current;
+            if (el) {
+              el.style.height = 'auto';
+              el.style.height = Math.min(el.scrollHeight, 140) + 'px';
+            }
+          }, 50);
+        }
+      };
+
+      recognition.onerror = (event) => {
+        console.warn('SpeechRecognition error:', event.error);
+        setIsListening(false);
+        if (event.error === 'not-allowed' || event.name === 'NotAllowedError') {
+          setMicNotice(isHi ? 'कृपया माइक्रोफ़ोन अनुमति दें।' : 'Please allow microphone access.');
+          setTimeout(() => setMicNotice(''), 4000);
+        } else if (event.error !== 'no-speech') {
+          setMicNotice(isHi ? 'माइक्रोफ़ोन त्रुटि हुई।' : `Mic error: ${event.error}`);
+          setTimeout(() => setMicNotice(''), 3000);
+        }
+      };
+
+      recognition.onend = () => {
+        setIsListening(false);
+      };
+
+      recognition.start();
+    } catch (err) {
+      console.warn('Microphone start error:', err);
+      setIsListening(false);
+      if (err.name === 'NotAllowedError' || (err.message && err.message.toLowerCase().includes('not allowed'))) {
+        setMicNotice(isHi ? 'कृपया माइक्रोफ़ोन अनुमति दें।' : 'Please allow microphone access.');
+      } else {
+        setMicNotice(isHi ? 'माइक्रोफ़ोन शुरू करने में विफल।' : 'Could not activate microphone.');
+      }
+      setTimeout(() => setMicNotice(''), 4000);
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch {}
+      }
+    };
+  }, []);
 
   /* ── Chat state ─────────────────────────────────────────────────── */
   const [messages, setMessages] = useState([
     {
+      id: 'welcome-init',
       role: 'assistant',
       content: isHi
-        ? 'नमस्ते! 👋 मैं LabSetu का AI स्वास्थ्य सहायक हूँ।\n\nआप अपनी लैब रिपोर्ट (PDF/Image) अपलोड कर सकते हैं या सीधे प्रश्न टाइप करें। उदाहरण: "मेरी CBC रिपोर्ट समझाएं" या "HbA1c 6.8% का क्या मतलब है?"'
-        : 'Hello! 👋 I\'m the LabSetu AI Health Assistant.\n\nYou can upload your lab report (PDF or image) or type your question directly. For example: "Explain my CBC report" or "Is my HbA1c of 6.8% high?"',
+        ? 'नमस्ते! 👋 मैं Clinova, LabSetu का AI स्वास्थ्य सहायक हूँ।\n\nआप अपनी लैब रिपोर्ट (PDF/Image) अपलोड कर सकते हैं या सीधे प्रश्न टाइप करें। उदाहरण: "मेरी CBC रिपोर्ट समझाएं" या "HbA1c 6.8% का क्या मतलब है?"'
+        : 'Hello! 👋 I\'m Clinova, the LabSetu AI Health Assistant.\n\nYou can upload your lab report (PDF or image) or type your question directly. For example: "Explain my CBC report" or "Is my HbA1c of 6.8% high?"',
       time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
       file: null,
       isExplanation: false,
     },
   ]);
+
+  useEffect(() => {
+    setMessages((prev) => {
+      if (prev.length === 1 && prev[0].role === 'assistant' && !prev[0].isExplanation) {
+        return [
+          {
+            ...prev[0],
+            content: currentGlobalLang === 'hi'
+              ? 'नमस्ते! 👋 मैं Clinova, LabSetu का AI स्वास्थ्य सहायक हूँ।\n\nआप अपनी लैब रिपोर्ट (PDF/Image) अपलोड कर सकते हैं या सीधे प्रश्न टाइप करें। उदाहरण: "मेरी CBC रिपोर्ट समझाएं" या "HbA1c 6.8% का क्या मतलब है?"'
+              : 'Hello! 👋 I\'m Clinova, the LabSetu AI Health Assistant.\n\nYou can upload your lab report (PDF or image) or type your question directly. For example: "Explain my CBC report" or "Is my HbA1c of 6.8% high?"',
+          },
+        ];
+      }
+      return prev;
+    });
+  }, [currentGlobalLang]);
   const [inputText, setInputText] = useState('');
   const [attachedFile, setAttachedFile] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -313,6 +579,7 @@ export default function CitizenReportExplainer({ lang: propLang }) {
     const now = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
 
     const userMsg = {
+      id: `msg-user-${Date.now()}`,
       role: 'user',
       content: text || (isHi ? '(रिपोर्ट अपलोड की)' : '(Lab report uploaded)'),
       file: attachedFile
@@ -338,7 +605,7 @@ export default function CitizenReportExplainer({ lang: propLang }) {
       /* Build backend payload */
       const payload = {
         query: text || (isHi ? 'इस रिपोर्ट का सरल विश्लेषण करें।' : 'Please analyze this lab report.'),
-        lang: activeLang,
+        lang: currentGlobalLang,
         fileBase64,
         fileMimeType,
         context: 'patient_report_explainer',
@@ -378,12 +645,13 @@ export default function CitizenReportExplainer({ lang: propLang }) {
 
       /* ── Local intelligent simulation (offline / hackathon fallback) ── */
       if (!aiText) {
-        aiText = generateOfflineResponse(text, activeLang, attachedFile?.name);
+        aiText = generateOfflineResponse(text, currentGlobalLang, attachedFile?.name);
       }
 
       setMessages((prev) => [
         ...prev,
         {
+          id: `msg-ai-${Date.now()}`,
           role: 'assistant',
           content: aiText,
           time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
@@ -395,6 +663,7 @@ export default function CitizenReportExplainer({ lang: propLang }) {
       setMessages((prev) => [
         ...prev,
         {
+          id: `msg-ai-${Date.now()}`,
           role: 'assistant',
           content: isHi
             ? 'क्षमा करें, अभी AI प्रतिक्रिया उपलब्ध नहीं है। कृपया पुनः प्रयास करें।'
@@ -407,7 +676,7 @@ export default function CitizenReportExplainer({ lang: propLang }) {
     } finally {
       setIsLoading(false);
     }
-  }, [inputText, attachedFile, activeLang, isHi]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [inputText, attachedFile, currentGlobalLang, isHi]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const location = useLocation();
   const autoRunRef = useRef(false);
@@ -440,12 +709,17 @@ export default function CitizenReportExplainer({ lang: propLang }) {
   };
 
   const handleClearChat = () => {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+      setCurrentlySpeakingId(null);
+    }
     setMessages([
       {
+        id: `welcome-${Date.now()}`,
         role: 'assistant',
         content: isHi
-          ? 'नमस्ते! 👋 मैं LabSetu का AI स्वास्थ्य सहायक हूँ। अपना प्रश्न टाइप करें या रिपोर्ट अपलोड करें।'
-          : 'Hello! 👋 I\'m the LabSetu AI Health Assistant. Type your question or upload a lab report.',
+          ? 'नमस्ते! 👋 मैं Clinova, LabSetu का AI स्वास्थ्य सहायक हूँ। अपना प्रश्न टाइप करें या रिपोर्ट अपलोड करें।'
+          : 'Hello! 👋 I\'m Clinova, the LabSetu AI Health Assistant. Type your question or upload a lab report.',
         time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
         file: null,
         isExplanation: false,
@@ -465,7 +739,7 @@ export default function CitizenReportExplainer({ lang: propLang }) {
             style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
           >
             <SparklesIcon style={{ width: '28px', color: '#15803d' }} />
-            {isHi ? 'AI हेल्थ असिस्टेंट' : 'AI Health Assistant'}
+            {isHi ? 'Clinova - AI हेल्थ असिस्टेंट' : 'Clinova - AI Health Assistant'}
           </h1>
           <p className="citizen-page-subtitle">
             {isHi
@@ -512,7 +786,13 @@ export default function CitizenReportExplainer({ lang: propLang }) {
         }}
       >
         {messages.map((msg, idx) => (
-          <ChatBubble key={idx} msg={msg} lang={activeLang} />
+          <ChatBubble
+            key={msg.id || idx}
+            msg={msg}
+            lang={currentGlobalLang}
+            isSpeaking={currentlySpeakingId === (msg.id || msg.time)}
+            onToggleTts={speakText}
+          />
         ))}
         {isLoading && <TypingIndicator />}
         <div ref={chatEndRef} />
@@ -595,22 +875,55 @@ export default function CitizenReportExplainer({ lang: propLang }) {
         </div>
       )}
 
+      {/* ── Microphone Notice Toast ───────────────────────────────── */}
+      {micNotice && (
+        <div
+          role="alert"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem',
+            background: '#1e293b',
+            color: '#f8fafc',
+            padding: '0.45rem 0.85rem',
+            borderRadius: '8px',
+            fontSize: '0.8rem',
+            marginBottom: '0.5rem',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+            width: 'fit-content',
+            marginLeft: 'auto',
+            marginRight: 'auto',
+          }}
+        >
+          <ExclamationTriangleIcon style={{ width: 16, height: 16, color: '#fbbf24', flexShrink: 0 }} />
+          <span>{micNotice}</span>
+          <button
+            type="button"
+            onClick={() => setMicNotice('')}
+            style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: 0, marginLeft: '0.25rem' }}
+          >
+            <XMarkIcon style={{ width: 14, height: 14 }} />
+          </button>
+        </div>
+      )}
+
       {/* ── Input Bar ───────────────────────────────────────────────── */}
       <div
+        className="focus-within:ring-2 focus-within:ring-emerald-400 focus-within:shadow-[0_0_15px_rgba(16,185,129,0.25)] transition-shadow duration-300 border-transparent"
         style={{
-          background: inputFocused ? 'rgba(236, 253, 245, 0.75)' : '#ffffff',
-          border: inputFocused ? '2px solid #059669' : '2px solid #e2e8f0',
+          background: inputFocused ? '#f0fdf4' : '#ffffff',
+          border: '2px solid transparent',
           borderRadius: attachedFile ? '0 0 14px 14px' : '14px',
-          padding: '0.75rem 1rem',
+          padding: '0.65rem 0.85rem',
           display: 'flex',
-          alignItems: 'flex-end',
-          gap: '0.6rem',
+          alignItems: 'center',
+          gap: '0.5rem',
           boxShadow: inputFocused
-            ? '0 8px 24px -4px rgba(5, 150, 105, 0.18), 0 0 0 3px rgba(16, 185, 129, 0.22)'
-            : '0 2px 8px rgba(0,0,0,0.06)',
-          transform: inputFocused ? 'translateY(-1px) scale(1.004)' : 'translateY(0) scale(1)',
+            ? '0 0 15px rgba(16, 185, 129, 0.25), 0 0 0 2px #34d399'
+            : '0 1px 3px rgba(0, 0, 0, 0.05)',
           marginTop: 0,
-          transition: 'all 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
+          transition: 'box-shadow 300ms cubic-bezier(0.16, 1, 0.3, 1), border-color 300ms ease, background-color 300ms ease',
+          boxSizing: 'border-box'
         }}
       >
         {/* Attachment button */}
@@ -622,7 +935,7 @@ export default function CitizenReportExplainer({ lang: propLang }) {
             background: 'none',
             border: '1.5px solid #e2e8f0',
             borderRadius: '8px',
-            padding: '0.5rem',
+            padding: '0.45rem',
             cursor: 'pointer',
             color: '#64748b',
             display: 'flex',
@@ -640,7 +953,7 @@ export default function CitizenReportExplainer({ lang: propLang }) {
             e.currentTarget.style.color = '#64748b';
           }}
         >
-          <PaperClipIcon style={{ width: 20 }} />
+          <PaperClipIcon style={{ width: 20, height: 20 }} />
         </button>
         <input
           ref={fileInputRef}
@@ -662,57 +975,81 @@ export default function CitizenReportExplainer({ lang: propLang }) {
           onBlur={() => setInputFocused(false)}
           placeholder={
             isHi
-              ? 'यहाँ अपना प्रश्न टाइप करें… (जैसे: "HbA1c 6.8% का क्या अर्थ है?")'
-              : 'Type your question… (e.g. "What does HbA1c of 6.8% mean?")'
+              ? 'यहाँ अपना स्वास्थ्य प्रश्न टाइप करें… (जैसे: "HbA1c 6.8% का क्या अर्थ है?")'
+              : 'Type your health question… (e.g. "What does HbA1c of 6.8% mean?")'
           }
           disabled={isLoading}
+          className="pl-3"
           style={{
             flex: 1,
             resize: 'none',
             border: 'none',
             outline: 'none',
             fontSize: '0.92rem',
-            lineHeight: 1.55,
+            lineHeight: '1.5',
+            paddingLeft: '0.75rem',
+            paddingTop: '0.35rem',
+            paddingBottom: '0.35rem',
             color: '#0f172a',
             background: 'transparent',
             fontFamily: 'inherit',
             overflowY: 'hidden',
             maxHeight: 140,
+            margin: 0,
+            boxSizing: 'border-box'
           }}
         />
 
-        {/* Language Toggle (inside input bar, before Send) */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.2rem',
-            flexShrink: 0,
-            borderLeft: '1px solid #e2e8f0',
-            paddingLeft: '0.5rem',
-          }}
-        >
-          {['en', 'hi'].map((l) => (
-            <button
-              key={l}
-              type="button"
-              onClick={() => setActiveLang(l)}
-              style={{
-                border: 'none',
-                background: activeLang === l ? '#15803d' : 'transparent',
-                color: activeLang === l ? 'white' : '#94a3b8',
-                padding: '0.2rem 0.4rem',
-                borderRadius: '4px',
-                fontWeight: '600',
-                cursor: 'pointer',
-                fontSize: '0.75rem',
-                transition: 'all 0.15s',
-              }}
-            >
-              {l === 'en' ? 'EN' : 'हिं'}
-            </button>
-          ))}
-        </div>
+        {/* Microphone Button (Voice-to-Text) - immediately to the left of Send icon */}
+        {speechRecognitionSupported && (
+          <button
+            type="button"
+            onClick={toggleListening}
+            title={
+              isListening
+                ? (isHi ? 'सुनना बंद करें' : 'Stop listening')
+                : (isHi ? 'बोलकर टाइप करें (वॉयस इनपुट)' : 'Voice input (Speech-to-text)')
+            }
+            className={`cursor-pointer transition-all duration-200 flex items-center justify-center flex-shrink-0 ${
+              isListening ? 'animate-pulse text-red-500' : ''
+            }`}
+            style={{
+              background: isListening ? '#fef2f2' : 'none',
+              border: isListening ? '1.5px solid #fca5a5' : '1.5px solid #e2e8f0',
+              borderRadius: '8px',
+              padding: '0.45rem',
+              cursor: 'pointer',
+              color: isListening ? '#ef4444' : '#64748b',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+              transition: 'all 0.15s ease',
+            }}
+            onMouseEnter={(e) => {
+              if (!isListening) {
+                e.currentTarget.style.borderColor = '#15803d';
+                e.currentTarget.style.color = '#15803d';
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (!isListening) {
+                e.currentTarget.style.borderColor = '#e2e8f0';
+                e.currentTarget.style.color = '#64748b';
+              }
+            }}
+            aria-label={
+              isListening
+                ? (isHi ? 'सुनना बंद करें' : 'Stop listening')
+                : (isHi ? 'बोलकर टाइप करें' : 'Voice input')
+            }
+          >
+            <MicrophoneIcon
+              className={isListening ? 'animate-pulse text-red-500' : ''}
+              style={{ width: 20, height: 20 }}
+            />
+          </button>
+        )}
 
         {/* Send button */}
         <button

@@ -111,7 +111,7 @@ export default function Home() {
               <li>✓ Verified lab price comparison</li>
               <li>✓ Safe doorstep sample collection</li>
               <li>✓ Released reports with instant PDF download</li>
-              <li>✓ Bilingual AI Report Explainer (Hindi / English)</li>
+              <li>✓ Bilingual Clinova AI Report Explainer (Hindi / English)</li>
               <li>✓ Family profiles &amp; preparation reminders</li>
             </ul>
             <div className="home-role-btn-wrap">
@@ -172,7 +172,7 @@ export default function Home() {
 
           <div className="home-feature-card">
             <SparklesIcon className="home-feature-icon" />
-            <h4>AI Diagnostic Explainer</h4>
+            <h4>Clinova - AI Diagnostic Explainer</h4>
             <p>Educational breakdowns of biological markers in clear, non-jargon Hindi or English without prescribing medicines.</p>
           </div>
 
@@ -218,7 +218,7 @@ export default function Home() {
             <Link to="/signup">Register</Link>
             <Link to="/forgot-password">Reset Password</Link>
             <Link to="/portal/tests">Diagnostic Tests</Link>
-            <Link to="/portal/explainer">Report Explainer</Link>
+            <Link to="/portal/explainer">Clinova AI</Link>
           </div>
         </div>
       </footer>
