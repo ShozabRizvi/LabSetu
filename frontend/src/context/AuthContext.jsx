@@ -174,6 +174,8 @@ export function AuthProvider({ children }) {
           sessionStorage.setItem('labsetu_auth', JSON.stringify(updatedAuth));
           localStorage.setItem('labsetu_auth', JSON.stringify(updatedAuth));
         } else {
+          const rawGender = profileRow?.gender || (patientRow?.sex ? (patientRow.sex.charAt(0).toUpperCase() + patientRow.sex.slice(1)) : '');
+          const rawAge = (profileRow?.age !== undefined && profileRow?.age !== null) ? profileRow.age : (patientRow?.age_years !== undefined && patientRow?.age_years !== null ? patientRow.age_years : undefined);
           const updatedPatient = {
             id: userId,
             email: userEmail,
@@ -181,11 +183,13 @@ export function AuthProvider({ children }) {
             name: resolvedName,
             uhid: resolvedUhid,
             phone: profileRow?.phone || patientRow?.phone || '',
-            address: patientRow?.address || '',
-            bloodGroup: patientRow?.blood_group || '',
-            gender: patientRow?.sex ? (patientRow.sex.charAt(0).toUpperCase() + patientRow.sex.slice(1)) : '',
-            age: patientRow?.age_years !== undefined && patientRow?.age_years !== null ? patientRow.age_years : undefined,
-            emergencyContact: patientRow?.emergency_contact || ''
+            address: profileRow?.address || patientRow?.address || '',
+            bloodGroup: profileRow?.blood_group || patientRow?.blood_group || '',
+            gender: rawGender,
+            age: rawAge,
+            emergencyContact: profileRow?.emergency_contact || patientRow?.emergency_contact || '',
+            securityQuestion: profileRow?.security_question || profileRow?.security_question_1 || patientRow?.security_question || '',
+            securityAnswer: profileRow?.security_answer || profileRow?.security_answer_1 || patientRow?.security_answer || ''
           };
           if (isMounted) setPatientUser(updatedPatient);
           sessionStorage.setItem('labsetu_patient_session', JSON.stringify(updatedPatient));
@@ -210,7 +214,7 @@ export function AuthProvider({ children }) {
         try {
           const { data } = await supabase
             .from('profiles')
-            .select('full_name, uhid, role')
+            .select('*')
             .eq('id', session.user.id)
             .maybeSingle();
           if (data) profile = data;
@@ -233,6 +237,14 @@ export function AuthProvider({ children }) {
           role: isAuthRole ? 'authority' : 'citizen',
           name: cleanAuthName,
           uhid: resolvedUhid,
+          phone: profile?.phone || '',
+          address: profile?.address || '',
+          bloodGroup: profile?.blood_group || '',
+          gender: profile?.gender || '',
+          age: profile?.age !== undefined && profile?.age !== null ? profile.age : undefined,
+          emergencyContact: profile?.emergency_contact || '',
+          securityQuestion: profile?.security_question || profile?.security_question_1 || '',
+          securityAnswer: profile?.security_answer || profile?.security_answer_1 || ''
         };
 
         if (isAuthRole) {

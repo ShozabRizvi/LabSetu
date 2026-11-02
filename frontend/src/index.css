@@ -1,6 +1,17 @@
-body {
+html, body, #root {
+  min-height: 100vh;
+  width: 100%;
   margin: 0;
   padding: 0;
+  overflow-x: hidden;
+}
+
+#root {
+  display: flex;
+  flex-direction: column;
+}
+
+body {
   box-sizing: border-box;
   font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   color: #0f172a;
@@ -49,7 +60,8 @@ button, input, select, textarea {
   backface-visibility: hidden;
   perspective: 1000px;
   width: 100%;
-  height: 100%;
+  flex: 1 0 auto;
+  min-height: 0;
 }
 
 /* Respect user accessibility preferences */
@@ -59,6 +71,70 @@ button, input, select, textarea {
     animation: pageFadeIn 0.15s ease-out both;
     transform: none !important;
   }
+}
+
+/* ==========================================================================
+   Global Sticky Footer & Master Layout System
+   Strict bottom positioning, responsive centering, and zero text overflow
+   ========================================================================== */
+.app-global-footer {
+  width: 100%;
+  margin-top: auto;
+  padding: 2.25rem 1.5rem 1.75rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-size: 0.875rem;
+  color: #64748b;
+  border-top: 1px solid #e2e8f0;
+  background-color: transparent;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  white-space: normal;
+}
+
+.app-global-footer .footer-links-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 1.25rem;
+  margin-bottom: 0.5rem;
+  width: 100%;
+}
+
+.app-global-footer .footer-link,
+.app-global-footer a {
+  color: #475569;
+  text-decoration: none;
+  font-weight: 500;
+  font-size: 0.875rem;
+  transition: color 0.15s ease-in-out;
+}
+
+.app-global-footer .footer-link:hover,
+.app-global-footer a:hover {
+  color: #16a34a;
+}
+
+.app-global-footer .footer-bullet {
+  color: #cbd5e1;
+  user-select: none;
+}
+
+.app-global-footer .footer-copyright {
+  font-size: 0.775rem;
+  color: #94a3b8;
+  margin: 0.35rem 0 0;
+  text-align: center;
+  max-width: 100%;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  white-space: normal;
 }
 
 /* ==========================================================================

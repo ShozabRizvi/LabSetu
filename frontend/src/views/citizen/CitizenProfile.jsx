@@ -80,17 +80,22 @@ export default function CitizenProfile() {
         }
 
         if (isMounted) {
-          const loadedName = profileRow?.full_name || patientRow?.full_name || sessionUser?.user_metadata?.full_name || (currentUser?.name && !currentUser.name.includes('@') ? currentUser.name : '');
+          const loadedName = profileRow?.full_name || profileRow?.display_name || patientRow?.full_name || sessionUser?.user_metadata?.full_name || (currentUser?.name && !currentUser.name.includes('@') ? currentUser.name : '');
           const loadedEmail = profileRow?.email || patientRow?.email || currentUserEmail || '';
           const loadedPhone = profileRow?.phone || patientRow?.phone || currentUser?.phone || '';
-          const loadedUhid = patientRow?.patient_code || profileRow?.uhid || currentUser?.uhid || '';
-          const loadedAddress = patientRow?.address || currentUser?.address || '';
-          const loadedBloodGroup = patientRow?.blood_group || currentUser?.bloodGroup || '';
-          const loadedGender = patientRow?.sex ? (patientRow.sex.charAt(0).toUpperCase() + patientRow.sex.slice(1)) : (currentUser?.gender || '');
-          const loadedAge = patientRow?.age_years !== null && patientRow?.age_years !== undefined ? String(patientRow.age_years) : (currentUser?.age ? String(currentUser.age) : '');
-          const loadedEmergency = patientRow?.emergency_contact || currentUser?.emergencyContact || '';
-          const loadedSq = profileRow?.security_question || profileRow?.security_question_1 || patientRow?.security_question || 'What is your childhood nickname?';
-          const loadedSa = profileRow?.security_answer || profileRow?.security_answer_1 || patientRow?.security_answer || '';
+          const loadedUhid = profileRow?.uhid || patientRow?.patient_code || currentUser?.uhid || (currentUserId ? `UHID-${currentUserId.substring(0, 4)}-${new Date().getFullYear()}` : '');
+          const loadedAddress = profileRow?.address || patientRow?.address || currentUser?.address || '';
+          const loadedBloodGroup = profileRow?.blood_group || patientRow?.blood_group || currentUser?.bloodGroup || '';
+          const rawGender = profileRow?.gender || patientRow?.sex || currentUser?.gender || '';
+          const loadedGender = rawGender ? (rawGender.charAt(0).toUpperCase() + rawGender.slice(1).toLowerCase()) : '';
+          const loadedAge = (profileRow?.age !== null && profileRow?.age !== undefined) 
+            ? String(profileRow.age) 
+            : (patientRow?.age_years !== null && patientRow?.age_years !== undefined 
+                ? String(patientRow.age_years) 
+                : (currentUser?.age !== null && currentUser?.age !== undefined ? String(currentUser.age) : ''));
+          const loadedEmergency = profileRow?.emergency_contact || patientRow?.emergency_contact || currentUser?.emergencyContact || '';
+          const loadedSq = profileRow?.security_question || profileRow?.security_question_1 || patientRow?.security_question || currentUser?.securityQuestion || 'What is your childhood nickname?';
+          const loadedSa = profileRow?.security_answer || profileRow?.security_answer_1 || patientRow?.security_answer || currentUser?.securityAnswer || '';
 
           setProfile({
             name: loadedName,
@@ -106,13 +111,20 @@ export default function CitizenProfile() {
             securityAnswer: loadedSa
           });
 
-          if (typeof updateCurrentUser === 'function' && (loadedName || loadedUhid || loadedPhone)) {
+          if (typeof updateCurrentUser === 'function') {
             updateCurrentUser({
               ...(currentUser || {}),
               id: currentUserId || currentUser?.id,
               name: loadedName || currentUser?.name,
               phone: loadedPhone || currentUser?.phone,
-              uhid: loadedUhid || currentUser?.uhid
+              uhid: loadedUhid || currentUser?.uhid,
+              address: loadedAddress,
+              bloodGroup: loadedBloodGroup,
+              gender: loadedGender,
+              age: loadedAge,
+              emergencyContact: loadedEmergency,
+              securityQuestion: loadedSq,
+              securityAnswer: loadedSa
             });
           }
         }
@@ -137,17 +149,28 @@ export default function CitizenProfile() {
     e.preventDefault();
     const newName = profile.name.trim();
     const newPhone = profile.phone ? profile.phone.trim() : '';
+    const cleanAnswer = (profile.securityAnswer || '').trim().toLowerCase();
+    const parsedAge = profile.age ? parseInt(profile.age, 10) : null;
+    const validAge = isNaN(parsedAge) ? null : parsedAge;
+    const cleanAddress = profile.address ? profile.address.trim() : null;
+    const cleanEmergency = profile.emergencyContact ? profile.emergencyContact.trim() : null;
     const user = currentUser || {};
 
     try {
       const { data: sessionData } = await supabase.auth.getSession();
       const currentUserId = sessionData?.session?.user?.id || user.id;
 
-      // 1. MUST execute Supabase update on profiles table
-      const cleanAnswer = (profile.securityAnswer || '').trim().toLowerCase();
+      // 1. MUST execute Supabase update/upsert on profiles table
       const profileUpdates = {
+        id: currentUserId,
         full_name: newName,
+        display_name: newName,
         phone: newPhone || null,
+        address: cleanAddress,
+        gender: profile.gender || null,
+        blood_group: profile.bloodGroup || null,
+        age: validAge,
+        emergency_contact: cleanEmergency,
         security_question: profile.securityQuestion,
         security_answer: cleanAnswer || null,
         security_question_1: profile.securityQuestion,
@@ -156,32 +179,50 @@ export default function CitizenProfile() {
       };
 
       if (currentUserId && typeof currentUserId === 'string' && currentUserId.includes('-')) {
-        await supabase.from('profiles').update(profileUpdates).eq('id', currentUserId);
+        const { error: profileErr } = await supabase
+          .from('profiles')
+          .upsert(profileUpdates, { onConflict: 'id' });
+
+        if (profileErr) {
+          console.warn('[CitizenProfile] profiles upsert fallback to update:', profileErr);
+          await supabase.from('profiles').update(profileUpdates).eq('id', currentUserId);
+        }
       }
 
+      // 2. Also upsert patients table for clinical records
       const patientUpdate = {
+        id: currentUserId,
         full_name: newName,
         phone: newPhone || null,
-        address: profile.address || null,
+        address: cleanAddress,
         blood_group: profile.bloodGroup || null,
-        emergency_contact: profile.emergencyContact || null,
-        age_years: profile.age ? parseInt(profile.age, 10) : null,
+        emergency_contact: cleanEmergency,
+        age_years: validAge,
         sex: profile.gender ? profile.gender.toLowerCase() : null,
         security_question: profile.securityQuestion,
         security_answer: cleanAnswer || null,
         updated_at: new Date().toISOString()
       };
       if (currentUserId && typeof currentUserId === 'string' && currentUserId.includes('-')) {
-        await supabase.from('patients').update(patientUpdate).eq('id', currentUserId);
+        await supabase.from('patients').upsert(patientUpdate, { onConflict: 'id' }).catch((err) => {
+          console.warn('[CitizenProfile] patients upsert warning:', err);
+        });
       }
 
-      // 2. Update local state and global auth state
+      // 3. Update local state and global auth state
       const updatedUser = {
         ...user,
         ...profile,
         id: currentUserId || user.id,
         name: newName,
-        phone: newPhone
+        phone: newPhone,
+        address: cleanAddress || '',
+        gender: profile.gender || '',
+        bloodGroup: profile.bloodGroup || '',
+        age: profile.age || '',
+        emergencyContact: cleanEmergency || '',
+        securityQuestion: profile.securityQuestion,
+        securityAnswer: cleanAnswer
       };
       if (typeof updateCurrentUser === 'function') {
         updateCurrentUser(updatedUser);
@@ -195,7 +236,18 @@ export default function CitizenProfile() {
       setTimeout(() => setSavedNotice(false), 2500);
     } catch (err) {
       console.warn('Profile update error:', err);
-      const updatedUser = { ...user, ...profile, name: newName, phone: newPhone };
+      const updatedUser = {
+        ...user,
+        ...profile,
+        name: newName,
+        phone: newPhone,
+        address: cleanAddress || '',
+        gender: profile.gender || '',
+        bloodGroup: profile.bloodGroup || '',
+        age: profile.age || '',
+        emergencyContact: cleanEmergency || '',
+        securityAnswer: cleanAnswer
+      };
       if (typeof updateCurrentUser === 'function') {
         updateCurrentUser(updatedUser);
       }

@@ -450,34 +450,32 @@ export default function CitizenLayout() {
             <Outlet context={{ lang }} />
           </div>
 
-          <footer className="w-full mt-auto pt-8 pb-6 flex flex-col items-center justify-center text-center text-sm text-gray-500 border-t border-gray-100">
+          <footer className="app-global-footer">
             {/* Row 1: Terms & Conditions and Privacy Policy */}
-            <div className="flex items-center justify-center gap-6 mb-2">
+            <div className="footer-links-row">
               <NavLink 
                 to="/portal/privacy" 
-                className="hover:text-emerald-600 transition-colors font-medium text-gray-600 no-underline"
+                className="footer-link"
               >
                 {lang === 'hi' ? 'नियम व शर्तें' : 'Terms & Conditions'}
               </NavLink>
-              <span className="text-gray-300">•</span>
+              <span className="footer-bullet">•</span>
               <NavLink 
                 to="/portal/privacy" 
-                className="hover:text-emerald-600 transition-colors font-medium text-gray-600 no-underline"
+                className="footer-link"
               >
                 {lang === 'hi' ? 'गोपनीयता नीति' : 'Privacy Policy'}
               </NavLink>
-            </div>
-            {/* Row 2: Refund Policy centered underneath */}
-            <div className="flex items-center justify-center mb-3">
+              <span className="footer-bullet">•</span>
               <NavLink 
                 to="/portal/support" 
-                className="hover:text-emerald-600 transition-colors font-medium text-gray-600 no-underline"
+                className="footer-link"
               >
-                {lang === 'hi' ? 'रिफंड व रद्दीकरण नीति' : 'Refund & Cancellation Policy'}
+                {lang === 'hi' ? 'रिफंड व रद्दीकरण नीति' : 'Refund Policy'}
               </NavLink>
             </div>
-            {/* Row 3: Copyright notice */}
-            <p className="text-xs text-gray-400 m-0">
+            {/* Row 2: Copyright notice */}
+            <p className="footer-copyright">
               &copy; 2026 LabSetu Healthcare Systems. All rights reserved.
             </p>
           </footer>

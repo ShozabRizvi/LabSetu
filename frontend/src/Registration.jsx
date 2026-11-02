@@ -399,7 +399,8 @@ export default function Registration({ initialMode }) {
 
   return (
     <div className="registration-container">
-      <div className="registration-card">
+      <div className="registration-content-wrapper">
+        <div className="registration-card">
         {/* Brand Logo in the middle */}
         <div className="registration-logo-wrapper">
           <Link to="/" title="LabSetu Home">
@@ -905,7 +906,21 @@ export default function Registration({ initialMode }) {
           </div>
         )}
 
+        </div>
       </div>
+
+      <footer className="app-global-footer">
+        <div className="footer-links-row">
+          <Link to="/portal/privacy" className="footer-link">Terms &amp; Conditions</Link>
+          <span className="footer-bullet">•</span>
+          <Link to="/portal/privacy" className="footer-link">Privacy Policy</Link>
+          <span className="footer-bullet">•</span>
+          <Link to="/portal/support" className="footer-link">Refund Policy</Link>
+        </div>
+        <p className="footer-copyright">
+          &copy; 2026 LabSetu Healthcare Systems. All rights reserved.
+        </p>
+      </footer>
     </div>
   );
 }
