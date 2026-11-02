@@ -20,52 +20,8 @@ export default function CitizenAppointments({ lang: propLang, addNewBooking, onA
   const { currentUser, activeUHID, activeMember } = useAuth();
   const { lang: contextLang } = useLanguage();
   const lang = propLang || contextLang || 'en';
-  const initialDemoAppointments = [
-    {
-      id: 'APT-10824',
-      aptId: 'APT-10824',
-      patientName: 'Ramesh Sharma',
-      mobile: '9876543210',
-      department: 'dept-pathology',
-      date: '2026-10-18',
-      slot: 'slot-10am',
-      status: 'Confirmed',
-      stage: 1, // 1: Confirmed, 2: Sample Collected, 3: Processing, 4: Report Ready
-      createdAt: '2026-10-16T10:00:00Z',
-      prep: '10 hours overnight fasting recommended. Plain water allowed.',
-      isMock: true
-    },
-    {
-      id: 'APT-10790',
-      aptId: 'APT-10790',
-      patientName: 'Ramesh Sharma',
-      mobile: '9876543210',
-      department: 'dept-biochemistry',
-      date: '2026-10-17',
-      slot: 'slot-09am',
-      status: 'Sample Collected',
-      stage: 2,
-      createdAt: '2026-10-15T14:30:00Z',
-      prep: 'Sample drawn at Gurugram Hub. Sent for automated analysis.',
-      isMock: true
-    },
-    {
-      id: 'APT-10650',
-      aptId: 'APT-10650',
-      patientName: 'Ramesh Sharma',
-      mobile: '9876543210',
-      department: 'dept-radiology',
-      date: '2026-10-12',
-      slot: 'slot-11am',
-      status: 'Report Ready',
-      stage: 4,
-      createdAt: '2026-10-10T09:15:00Z',
-      prep: 'Digital X-Ray Chest PA report published and verified.',
-      isMock: true
-    }
-  ];
 
-  // Smart Lazy Initialization: synchronously load from localStorage or fall back to mock data
+  // Smart Lazy Initialization: load from localStorage if clean, otherwise initialize empty
   const [bookings, setBookings] = useState(() => {
     try {
       const stored = typeof window !== 'undefined' && window.localStorage
@@ -74,13 +30,12 @@ export default function CitizenAppointments({ lang: propLang, addNewBooking, onA
       if (stored) {
         const parsed = JSON.parse(stored);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed;
+          const clean = parsed.filter(item => !item?.isMock && !['Ramesh Sharma', 'APT-10824', 'APT-10790', 'APT-10650'].includes(item?.patientName) && !['APT-10824', 'APT-10790', 'APT-10650'].includes(item?.id));
+          return clean;
         }
       }
-    } catch {
-      // Graceful Hydration: Silently fallback to mock data on error/restricted storage
-    }
-    return initialDemoAppointments;
+    } catch {}
+    return [];
   });
 
   const appointments = bookings;
@@ -136,7 +91,50 @@ export default function CitizenAppointments({ lang: propLang, addNewBooking, onA
     });
   };
 
+  const fetchAppointments = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('appointments')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (!error && Array.isArray(data) && data.length > 0) {
+        const mapped = data.map((row) => {
+          const s = (row.tracking_status || row.status || '').toLowerCase();
+          let stage = 1;
+          if (s.includes('ready') || s.includes('signed') || s.includes('completed')) {
+            stage = 4;
+          } else if (s.includes('processing') || s.includes('transit') || s.includes('lab')) {
+            stage = 3;
+          } else if (s.includes('collected') || s.includes('sample') || s.includes('assigned') || s.includes('phlebotomist')) {
+            stage = 2;
+          }
+
+          return {
+            id: row.id,
+            rawId: row.id,
+            patientName: row.patient_name || currentUser?.name || 'Patient',
+            mobile: row.patient_phone || currentUser?.phone || '—',
+            department: row.purpose || 'dept-pathology',
+            date: row.appointment_date || (row.created_at ? new Date(row.created_at).toISOString().slice(0, 10) : ''),
+            slot: row.time_slot || row.slot || 'slot-10am',
+            status: row.tracking_status || row.status || 'Confirmed',
+            stage,
+            uhid: row.uhid || currentUser?.uhid,
+            prep: row.preparation_instructions || 'Standard laboratory visit.',
+            createdAt: row.created_at
+          };
+        });
+        setBookings(mapped);
+      }
+    } catch (err) {
+      console.warn('[CitizenAppointments] fetch error:', err);
+    }
+  };
+
   useEffect(() => {
+    fetchAppointments();
+
     if (typeof onAddNewBooking === 'function') {
       onAddNewBooking(handleAddNewBooking);
     }
@@ -193,6 +191,7 @@ export default function CitizenAppointments({ lang: propLang, addNewBooking, onA
               } catch {}
               return copy;
             }
+            fetchAppointments();
             return list;
           });
         }
@@ -231,8 +230,20 @@ export default function CitizenAppointments({ lang: propLang, addNewBooking, onA
     return true;
   });
 
-  const handleCancel = (id) => {
+  const handleCancel = async (id) => {
     if (window.confirm('Are you sure you want to cancel this booking?')) {
+      try {
+        await supabase
+          .from('appointments')
+          .update({
+            status: 'Cancelled',
+            tracking_status: 'Cancelled',
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', id);
+      } catch (err) {
+        console.warn('Supabase cancel booking error:', err);
+      }
       setAppointments(appointments.map(a => a.id === id ? { ...a, status: 'Cancelled', stage: 0 } : a));
       setNotice('Booking cancelled according to laboratory cancellation policy.');
       setTimeout(() => setNotice(''), 3000);
