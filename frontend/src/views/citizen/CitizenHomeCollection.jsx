@@ -264,80 +264,101 @@ export default function CitizenHomeCollection({ lang: propLang }) {
     tests: 'Complete Blood Count (CBC)',
     date: new Date(Date.now() + 86400000).toISOString().slice(0, 10),
     timeSlot: '07:30 AM - 08:30 AM (Fasting)',
-    address: 'House #42, Sector 14, Gurugram, Haryana',
+    address: currentUser?.address || 'House #42, Sector 14, Gurugram, Haryana',
     instructions: 'Ring doorbell twice'
   });
+  const [isSubmittingBooking, setIsSubmittingBooking] = useState(false);
 
   const handleCreateBooking = async (e) => {
     e.preventDefault();
+    if (isSubmittingBooking) return;
+    setIsSubmittingBooking(true);
+
     const assignedLab = geoState.matchedLab || {
-      id: 'lab-central',
-      name: 'LabSetu Central Reference Lab',
-      accreditation: 'NABL & ICMR Accredited (ISO 15189)',
-      distanceKm: 1.2
+      id: 'lab-maxpath',
+      name: 'MaxPath Precision Laboratories',
+      accreditation: 'NABL Certified & CAP Accredited',
+      distanceKm: 2.8
     };
 
     const newId = `HC-${Math.floor(1000 + Math.random() * 9000)}`;
     const isFasting = /fasting|sugar|glucose|lipid|cholesterol|kft|lft/i.test(form.tests);
     const prepNotice = isFasting ? 'Strict 10-12 hours overnight fasting required. Plain water permitted.' : null;
 
-    const created = {
-      id: newId,
-      tests: form.tests,
-      date: form.date,
-      timeSlot: form.timeSlot,
-      address: form.address,
-      phlebotomist: {
-        name: 'Suresh Kumar',
-        phone: '+91 98765 43210',
-        badge: 'Vaccinated · NABL Certified',
-        photo: 'https://images.unsplash.com/photo-1622253692010-333f2da6031d?w=150',
-        rating: '4.9 ★ (1,240 pickups)'
-      },
-      assignedLab: {
-        id: assignedLab.id,
-        name: assignedLab.name,
-        accreditation: assignedLab.accreditation,
-        distanceKm: geoState.distanceKm || 1.2
-      },
-      status: 'Order Placed',
-      stage: 0,
-      prep: prepNotice
+    const appointmentPayload = {
+      appointment_date: form.date,
+      visit_type: 'home_collection',
+      type: 'home_collection',
+      status: 'Confirmed',
+      tracking_status: 'Order Placed',
+      estimated_delivery_time: '30-45 mins',
+      assigned_lab_id: assignedLab.id,
+      patient_id: currentUser?.id && currentUser.id.includes('-') ? currentUser.id : null,
+      patient_name: currentUser?.name || 'Citizen Patient',
+      patient_phone: currentUser?.phone || null,
+      patient_email: currentUser?.email || null,
+      uhid: activeUHID || currentUser?.uhid || null,
+      patient_latitude: geoState.coords?.latitude,
+      patient_longitude: geoState.coords?.longitude,
+      purpose: form.tests,
+      preparation_instructions: prepNotice,
+      notes: `Ref: ${newId}, Address: ${form.address}, MatchedLab: ${assignedLab.name}`
     };
 
-    setBookings((prev) => [created, ...(prev || [])]);
-    setActiveTrackingId(newId);
+    console.log('[CitizenHomeCollection] Submitting appointment payload:', appointmentPayload);
 
     try {
-      await supabase.from('appointments').insert({
-        appointment_date: form.date,
-        visit_type: 'home_collection',
-        type: 'home_collection',
-        status: 'Confirmed',
-        tracking_status: 'Order Placed',
-        estimated_delivery_time: '30-45 mins',
-        assigned_lab_id: assignedLab.id,
-        patient_id: currentUser?.id && currentUser.id.includes('-') ? currentUser.id : null,
-        patient_name: currentUser?.name || 'Citizen Patient',
-        patient_phone: currentUser?.phone || null,
-        patient_email: currentUser?.email || null,
-        uhid: activeUHID || currentUser?.uhid || null,
-        patient_latitude: geoState.coords?.latitude,
-        patient_longitude: geoState.coords?.longitude,
-        purpose: form.tests,
-        preparation_instructions: prepNotice,
-        notes: `Ref: ${created.id}, Address: ${form.address}, MatchedLab: ${assignedLab.name}`
-      });
-      fetchHomeCollections();
-    } catch (dbErr) {
-      console.warn('Supabase insert fallback:', dbErr);
-    }
+      const { data, error } = await supabase.from('appointments').insert(appointmentPayload).select();
 
-    setIsModalOpen(false);
-    setNotice(lang === 'hi' 
-      ? `घर से सैंपल कलेक्शन सफलतापूर्वक बुक किया गया: ${created.id}`
-      : `Home collection scheduled successfully: ${created.id}`);
-    setTimeout(() => setNotice(''), 4000);
+      if (error) {
+        console.error('[CitizenHomeCollection] Supabase appointment insert error:', error);
+        setNotice(lang === 'hi' 
+          ? `बुकिंग दर्ज करने में त्रुटि: ${error.message || 'कृपया अपने विवरण जांचें।'}`
+          : `Booking failed: ${error.message || 'Please check your inputs and try again.'}`);
+        // CRITICAL: DO NOT reset form or close modal! Keep form state intact on error
+        setIsSubmittingBooking(false);
+        return;
+      }
+
+      const created = {
+        id: newId,
+        rawId: data?.[0]?.id,
+        tests: form.tests,
+        date: form.date,
+        timeSlot: form.timeSlot,
+        address: form.address,
+        phlebotomist: {
+          name: 'Suresh Kumar',
+          phone: '+91 98765 43210',
+          badge: 'Vaccinated · NABL Certified',
+          photo: 'https://images.unsplash.com/photo-1622253692010-333f2da6031d?w=150',
+          rating: '4.9 ★ (1,240 pickups)'
+        },
+        assignedLab: {
+          id: assignedLab.id,
+          name: assignedLab.name,
+          accreditation: assignedLab.accreditation,
+          distanceKm: geoState.distanceKm || 2.8
+        },
+        status: 'Order Placed',
+        stage: 0,
+        prep: prepNotice
+      };
+
+      setBookings((prev) => [created, ...(prev || [])]);
+      setActiveTrackingId(newId);
+      setIsModalOpen(false);
+      setNotice(lang === 'hi' 
+        ? `घर से सैंपल कलेक्शन सफलतापूर्वक बुक किया गया: ${created.id}`
+        : `Home collection scheduled successfully: ${created.id}`);
+      fetchHomeCollections();
+      setTimeout(() => setNotice(''), 4000);
+    } catch (dbErr) {
+      console.error('[CitizenHomeCollection] Exception during booking:', dbErr);
+      setNotice(lang === 'hi' ? `त्रुटि: ${dbErr.message}` : `Booking failed: ${dbErr.message}`);
+    } finally {
+      setIsSubmittingBooking(false);
+    }
   };
 
   const handleCancel = async (id) => {
@@ -1138,9 +1159,21 @@ export default function CitizenHomeCollection({ lang: propLang }) {
                 </button>
                 <button
                   type="submit"
-                  style={{ padding: '0.6rem 1.25rem', border: 'none', borderRadius: '8px', background: '#059669', color: 'white', cursor: 'pointer', fontWeight: '600' }}
+                  disabled={isSubmittingBooking}
+                  style={{
+                    padding: '0.6rem 1.25rem',
+                    border: 'none',
+                    borderRadius: '8px',
+                    background: isSubmittingBooking ? '#94a3b8' : '#059669',
+                    color: 'white',
+                    cursor: isSubmittingBooking ? 'wait' : 'pointer',
+                    fontWeight: '600',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.4rem'
+                  }}
                 >
-                  Confirm &amp; Book Phlebotomist
+                  {isSubmittingBooking ? 'Scheduling Phlebotomist...' : 'Confirm & Book Phlebotomist'}
                 </button>
               </div>
             </form>

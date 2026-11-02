@@ -3,21 +3,6 @@ import { supabase } from '../lib/supabase';
 
 export const DEFAULT_ACCREDITED_LABS = [
   {
-    id: 'lab-central',
-    name: 'LabSetu Central Reference Lab',
-    accreditation: 'NABL & ICMR Accredited (ISO 15189)',
-    nabl: true,
-    latitude: 28.4595,
-    longitude: 77.0266,
-    address: 'Sector 14 Healthcare Hub, Gurugram',
-    city: 'Gurugram',
-    state: 'Haryana',
-    supported_tests: ['cbc', 'lipid', 'thyroid', 'sugar', 'lft', 'kft', 'hba1c'],
-    rating: 4.9,
-    review_count: '1,420',
-    home_pickup: true
-  },
-  {
     id: 'lab-maxpath',
     name: 'MaxPath Precision Laboratories',
     accreditation: 'NABL Certified & CAP Accredited',

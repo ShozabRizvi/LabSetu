@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import './DailyBusiness.css';
 import { supabase } from '../../lib/supabase';
-import { FunnelIcon, MagnifyingGlassIcon, UserPlusIcon, XMarkIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
+import { FunnelIcon, MagnifyingGlassIcon, UserPlusIcon, XMarkIcon, CheckCircleIcon, ExclamationCircleIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
 
 export default function DailyBusiness() {
   const navigate = useNavigate();
@@ -11,19 +11,20 @@ export default function DailyBusiness() {
   const [search, setSearch] = useState('');
   const [isCashierModalOpen, setIsCashierModalOpen] = useState(false);
   const [cashierName, setCashierName] = useState('');
+  const [isAddingCashier, setIsAddingCashier] = useState(false);
   const [cashiers, setCashiers] = useState(['Counter 1 (Main Reception)', 'Dr. Shozab']);
   const [isMonthlyModalOpen, setIsMonthlyModalOpen] = useState(false);
   const [records, setRecords] = useState(null);
-  const [toast, setToast] = useState({ show: false, message: '', isFading: false });
+  const [toast, setToast] = useState({ show: false, message: '', isFading: false, isError: false });
 
-  const showToastNotification = (msg) => {
-    setToast({ show: true, message: msg, isFading: false });
+  const showToastNotification = (msg, isError = false) => {
+    setToast({ show: true, message: msg, isFading: false, isError });
     setTimeout(() => {
       setToast(prev => ({ ...prev, isFading: true }));
       setTimeout(() => {
-        setToast({ show: false, message: '', isFading: false });
+        setToast({ show: false, message: '', isFading: false, isError: false });
       }, 300); // 300ms fade-out animation
-    }, 3000); // 3-second auto-dismiss
+    }, 3500); // 3.5-second auto-dismiss
   };
 
   // Live Supabase query filtered by calendar day (gte startOfDay, lte endOfDay)
@@ -94,17 +95,38 @@ export default function DailyBusiness() {
 
   const handleAddCashier = async (e) => {
     e.preventDefault();
-    if (cashierName.trim()) {
-      const added = cashierName.trim();
+    if (!cashierName.trim() || isAddingCashier) return;
+    const added = cashierName.trim();
+    const cashierPayload = {
+      id: `CSH-${Date.now()}`,
+      name: added,
+      desk_name: added,
+      status: 'Active'
+    };
+
+    console.log('[AddCashier] Submitting cashier payload:', cashierPayload);
+    setIsAddingCashier(true);
+
+    try {
+      const { data, error } = await supabase.from('cashier').insert(cashierPayload).select();
+
+      if (error) {
+        console.error('[AddCashier] Supabase cashier insert error:', error);
+        showToastNotification(`Failed to save cashier to database: ${error.message || 'Check database schema'}`, true);
+        setIsAddingCashier(false);
+        return;
+      }
+
+      console.log('[AddCashier] Successfully registered cashier:', data);
       setCashiers(prev => [...prev, added]);
       setCashierName('');
       setIsCashierModalOpen(false);
-      try {
-        await supabase.from('cashier').insert({ name: added, status: 'Active' });
-      } catch (err) {
-        console.warn('Cashier registration notice:', err);
-      }
       showToastNotification(`Cashier "${added}" registered and assigned to Active Cash Desk.`);
+    } catch (err) {
+      console.error('[AddCashier] Exception during cashier insert:', err);
+      showToastNotification(`Cashier registration error: ${err.message || 'Network exception'}`, true);
+    } finally {
+      setIsAddingCashier(false);
     }
   };
 
@@ -135,7 +157,7 @@ export default function DailyBusiness() {
             display: 'flex',
             alignItems: 'center',
             gap: '0.65rem',
-            backgroundColor: '#064e3b',
+            backgroundColor: toast.isError ? '#991b1b' : '#064e3b',
             color: '#ffffff',
             padding: '0.85rem 1.25rem',
             borderRadius: '10px',
@@ -143,12 +165,16 @@ export default function DailyBusiness() {
             transform: toast.isFading ? 'translateX(100%)' : 'translateX(0)',
             opacity: toast.isFading ? 0 : 1,
             transition: 'all 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
-            border: '1px solid #059669',
+            border: toast.isError ? '1px solid #ef4444' : '1px solid #059669',
             maxWidth: '380px'
           }}
           role="alert"
         >
-          <CheckCircleIcon style={{ width: '22px', height: '22px', color: '#34d399', flexShrink: 0 }} />
+          {toast.isError ? (
+            <ExclamationCircleIcon style={{ width: '22px', height: '22px', color: '#fca5a5', flexShrink: 0 }} />
+          ) : (
+            <CheckCircleIcon style={{ width: '22px', height: '22px', color: '#34d399', flexShrink: 0 }} />
+          )}
           <span style={{ fontSize: '0.875rem', fontWeight: '500', lineHeight: 1.4 }}>{toast.message}</span>
         </div>
       )}
@@ -383,8 +409,32 @@ export default function DailyBusiness() {
                 <input required type="text" placeholder="e.g. Counter 3 (Pathology)" value={cashierName} onChange={e => setCashierName(e.target.value)} style={{ width: '100%', padding: '0.6rem', border: '1px solid #cbd5e1', borderRadius: '6px', boxSizing: 'border-box' }} />
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '0.5rem' }}>
-                <button type="button" onClick={() => setIsCashierModalOpen(false)} style={{ padding: '0.55rem 1rem', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#ffffff', cursor: 'pointer' }}>Cancel</button>
-                <button type="submit" style={{ padding: '0.55rem 1rem', borderRadius: '6px', border: 'none', background: '#15803d', color: '#ffffff', fontWeight: '600', cursor: 'pointer' }}>Add Cashier</button>
+                <button type="button" disabled={isAddingCashier} onClick={() => setIsCashierModalOpen(false)} style={{ padding: '0.55rem 1rem', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#ffffff', cursor: isAddingCashier ? 'not-allowed' : 'pointer' }}>Cancel</button>
+                <button 
+                  type="submit" 
+                  disabled={isAddingCashier}
+                  style={{ 
+                    padding: '0.55rem 1rem', 
+                    borderRadius: '6px', 
+                    border: 'none', 
+                    background: isAddingCashier ? '#94a3b8' : '#15803d', 
+                    color: '#ffffff', 
+                    fontWeight: '600', 
+                    cursor: isAddingCashier ? 'wait' : 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.4rem'
+                  }}
+                >
+                  {isAddingCashier ? (
+                    <>
+                      <ArrowPathIcon style={{ width: '16px', height: '16px', animation: 'spin 1s linear infinite' }} />
+                      Saving Cashier...
+                    </>
+                  ) : (
+                    'Add Cashier'
+                  )}
+                </button>
               </div>
             </form>
           </div>

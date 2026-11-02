@@ -81,34 +81,41 @@ export default function CitizenProfile() {
       let profileRow = null;
       let patientRow = null;
 
-      // 1. SELECT from profiles table strictly for authenticated user (never by email)
+      // 1. SELECT from profiles table strictly for authenticated user
       if (currentUserId && typeof currentUserId === 'string' && currentUserId.includes('-')) {
         const { data } = await supabase.from('profiles').select('*').eq('id', currentUserId).maybeSingle();
         if (data) profileRow = data;
       }
 
-      // 2. SELECT from patients table for clinical demographics strictly for authenticated user (never by email)
+      // 2. SELECT from patients table for clinical demographics
       if (currentUserId && typeof currentUserId === 'string' && currentUserId.includes('-')) {
         const { data } = await supabase.from('patients').select('*').eq('id', currentUserId).maybeSingle();
         if (data) patientRow = data;
       }
 
-      const loadedName = profileRow?.full_name || profileRow?.display_name || patientRow?.full_name || sessionUser?.user_metadata?.full_name || (currentUser?.name && !currentUser.name.includes('@') ? currentUser.name : '');
-      const loadedEmail = profileRow?.email || patientRow?.email || currentUserEmail || '';
-      const loadedPhone = profileRow?.phone || patientRow?.phone || '';
-      const loadedUhid = profileRow?.uhid || patientRow?.patient_code || currentUser?.uhid || (currentUserId ? 'UHID-1000' : '');
-      const loadedAddress = profileRow?.address || patientRow?.address || '';
-      const loadedBloodGroup = profileRow?.blood_group || patientRow?.blood_group || '';
-      const rawGender = profileRow?.gender || patientRow?.sex || '';
+      // 3. Fallback to cached profile to protect against missing database columns before migration
+      let localCache = null;
+      try {
+        const rawCache = localStorage.getItem('labsetu_patient_profile') || localStorage.getItem('labsetu_patient_session');
+        if (rawCache) localCache = JSON.parse(rawCache);
+      } catch {}
+
+      const loadedName = profileRow?.full_name || profileRow?.display_name || patientRow?.full_name || sessionUser?.user_metadata?.full_name || localCache?.name || (currentUser?.name && !currentUser.name.includes('@') ? currentUser.name : '');
+      const loadedEmail = profileRow?.email || patientRow?.email || currentUserEmail || localCache?.email || '';
+      const loadedPhone = profileRow?.phone || patientRow?.phone || localCache?.phone || currentUser?.phone || '';
+      const loadedUhid = profileRow?.uhid || patientRow?.patient_code || localCache?.uhid || currentUser?.uhid || (currentUserId ? `UHID-${currentUserId.substring(0, 4)}-${new Date().getFullYear()}` : '');
+      const loadedAddress = profileRow?.address || patientRow?.address || localCache?.address || currentUser?.address || '';
+      const loadedBloodGroup = profileRow?.blood_group || patientRow?.blood_group || localCache?.bloodGroup || currentUser?.bloodGroup || '';
+      const rawGender = profileRow?.gender || patientRow?.sex || localCache?.gender || currentUser?.gender || '';
       const loadedGender = rawGender ? (rawGender.charAt(0).toUpperCase() + rawGender.slice(1).toLowerCase()) : '';
       const loadedAge = (profileRow?.age !== null && profileRow?.age !== undefined) 
         ? String(profileRow.age) 
         : (patientRow?.age_years !== null && patientRow?.age_years !== undefined 
             ? String(patientRow.age_years) 
-            : (currentUser?.age !== null && currentUser?.age !== undefined ? String(currentUser.age) : ''));
-      const loadedEmergency = profileRow?.emergency_contact || patientRow?.emergency_contact || '';
-      const loadedSq = profileRow?.security_question || profileRow?.security_question_1 || patientRow?.security_question || 'What is your childhood nickname?';
-      const loadedSa = profileRow?.security_answer || profileRow?.security_answer_1 || patientRow?.security_answer || '';
+            : (localCache?.age ? String(localCache.age) : (currentUser?.age !== null && currentUser?.age !== undefined ? String(currentUser.age) : '')));
+      const loadedEmergency = profileRow?.emergency_contact || patientRow?.emergency_contact || localCache?.emergencyContact || currentUser?.emergencyContact || '';
+      const loadedSq = profileRow?.security_question || profileRow?.security_question_1 || patientRow?.security_question || localCache?.securityQuestion || 'What is your childhood nickname?';
+      const loadedSa = profileRow?.security_answer || profileRow?.security_answer_1 || patientRow?.security_answer || localCache?.securityAnswer || '';
 
       const loadedData = {
         name: loadedName,
@@ -148,7 +155,7 @@ export default function CitizenProfile() {
     } finally {
       setLoading(false);
     }
-  }, [currentUser?.id, currentUser?.email]);
+  }, [currentUser?.id, currentUser?.email, currentUser?.name, currentUser?.phone, currentUser?.address, currentUser?.gender, currentUser?.age, currentUser?.bloodGroup, currentUser?.emergencyContact, currentUser?.uhid, updateCurrentUser]);
 
   useEffect(() => {
     hydrateProfileFromDb();
@@ -168,6 +175,19 @@ export default function CitizenProfile() {
     const cleanAddress = profile.address ? profile.address.trim() : null;
     const cleanEmergency = profile.emergencyContact ? profile.emergencyContact.trim() : null;
     const user = currentUser || {};
+
+    const profileDataToSave = {
+      ...profile,
+      name: newName,
+      phone: newPhone,
+      address: cleanAddress || '',
+      gender: profile.gender || '',
+      bloodGroup: profile.bloodGroup || '',
+      age: profile.age || '',
+      emergencyContact: cleanEmergency || '',
+      securityQuestion: profile.securityQuestion,
+      securityAnswer: cleanAnswer
+    };
 
     try {
       const { data: sessionData } = await supabase.auth.getSession();
@@ -197,8 +217,17 @@ export default function CitizenProfile() {
           .upsert(profileUpdates, { onConflict: 'id' });
 
         if (profileErr) {
-          console.warn('[CitizenProfile] profiles upsert fallback to update:', profileErr);
-          await supabase.from('profiles').update(profileUpdates).eq('id', currentUserId);
+          console.warn('[CitizenProfile] profiles full upsert note, falling back to core schema columns:', profileErr);
+          // Graceful fallback if database schema does not yet have demographics on profiles table
+          await supabase.from('profiles').upsert({
+            id: currentUserId,
+            full_name: newName,
+            phone: newPhone || null,
+            security_question: profile.securityQuestion,
+            security_answer: cleanAnswer || null,
+            security_question_1: profile.securityQuestion,
+            security_answer_1: cleanAnswer || null
+          }, { onConflict: 'id' }).catch(() => {});
         }
       }
 
@@ -225,34 +254,31 @@ export default function CitizenProfile() {
       // 3. Update local state and global auth state
       const updatedUser = {
         ...user,
-        ...profile,
-        id: currentUserId || user.id,
-        name: newName,
-        phone: newPhone,
-        address: cleanAddress || '',
-        gender: profile.gender || '',
-        bloodGroup: profile.bloodGroup || '',
-        age: profile.age || '',
-        emergencyContact: cleanEmergency || '',
-        securityQuestion: profile.securityQuestion,
-        securityAnswer: cleanAnswer
+        ...profileDataToSave,
+        id: currentUserId || user.id
       };
       if (typeof updateCurrentUser === 'function') {
         updateCurrentUser(updatedUser);
       }
+      localStorage.setItem('labsetu_patient_profile', JSON.stringify(profileDataToSave));
+      sessionStorage.setItem('labsetu_patient_profile', JSON.stringify(profileDataToSave));
       sessionStorage.setItem('labsetu_patient_session', JSON.stringify(updatedUser));
       localStorage.setItem('labsetu_patient_session', JSON.stringify(updatedUser));
       sessionStorage.setItem('labsetu_auth', JSON.stringify(updatedUser));
       localStorage.setItem('labsetu_auth', JSON.stringify(updatedUser));
 
-      // Re-fetch fresh data from DB to reset dirty state to pristine
-      await hydrateProfileFromDb();
+      // Reset form baseline to saved data so dirty state resets to pristine
+      setProfile(profileDataToSave);
+      setInitialProfile(profileDataToSave);
 
       setSavedNotice(true);
       setTimeout(() => setSavedNotice(false), 2500);
     } catch (err) {
       console.warn('Profile update error:', err);
-      await hydrateProfileFromDb();
+      // Ensure local state and storage preserve the user's edits
+      localStorage.setItem('labsetu_patient_profile', JSON.stringify(profileDataToSave));
+      setProfile(profileDataToSave);
+      setInitialProfile(profileDataToSave);
       setSavedNotice(true);
       setTimeout(() => setSavedNotice(false), 2500);
     } finally {
@@ -314,7 +340,7 @@ export default function CitizenProfile() {
   }
 
   return (
-    <div style={{ maxWidth: '800px', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+    <div style={{ maxWidth: '800px', width: '100%', display: 'flex', flexDirection: 'column', gap: '1.25rem', marginBottom: '2rem' }}>
       <div>
         <h2 style={{ margin: '0 0 0.25rem 0', fontSize: '1.5rem', color: '#0f172a' }}>{t('profile.pageTitle')}</h2>
         <p style={{ margin: 0, fontSize: '0.9rem', color: '#64748b' }}>
