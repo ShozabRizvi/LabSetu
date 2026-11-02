@@ -331,43 +331,23 @@ export default function DoctorAccess() {
                   <td style={{ textAlign: 'right' }}>
                     <div style={{ display: 'inline-flex', gap: '0.4rem', alignItems: 'center' }}>
                       {isPending && (
-                        <>
-                          <button
-                            type="button"
-                            title="Resend invitation email"
-                            onClick={() => handleResendInvite(doc)}
-                            style={{
-                              background: '#f0fdf4',
-                              border: '1px solid #86efac',
-                              color: '#15803d',
-                              padding: '0.25rem 0.5rem',
-                              borderRadius: '6px',
-                              fontSize: '0.75rem',
-                              fontWeight: '600',
-                              cursor: 'pointer'
-                            }}
-                          >
-                            Resend Invite
-                          </button>
-
-                          <button
-                            type="button"
-                            title="Evaluator shortcut: simulate clicking email activation link"
-                            onClick={() => handleSimulateActivation(doc)}
-                            style={{
-                              background: '#ecfdf5',
-                              border: '1px solid #059669',
-                              color: '#059669',
-                              padding: '0.25rem 0.55rem',
-                              borderRadius: '6px',
-                              fontSize: '0.75rem',
-                              fontWeight: '700',
-                              cursor: 'pointer'
-                            }}
-                          >
-                            ⚡ Simulate Activation
-                          </button>
-                        </>
+                        <button
+                          type="button"
+                          title="Resend invitation email"
+                          onClick={() => handleResendInvite(doc)}
+                          style={{
+                            background: '#f0fdf4',
+                            border: '1px solid #86efac',
+                            color: '#15803d',
+                            padding: '0.25rem 0.5rem',
+                            borderRadius: '6px',
+                            fontSize: '0.75rem',
+                            fontWeight: '600',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          Resend Invite
+                        </button>
                       )}
 
                       <button

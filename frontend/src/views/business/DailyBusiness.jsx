@@ -101,7 +101,9 @@ export default function DailyBusiness() {
       id: `CSH-${Date.now()}`,
       name: added,
       desk_name: added,
-      status: 'Active'
+      lab_id: 'LAB-1001',
+      status: 'Active',
+      created_at: new Date().toISOString()
     };
 
     console.log('[AddCashier] Submitting cashier payload:', cashierPayload);

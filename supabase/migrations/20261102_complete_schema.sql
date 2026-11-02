@@ -462,19 +462,25 @@ create table if not exists public.cashier (
   id text primary key default ('CSH-' || floor(random() * 90000 + 10000)::text),
   name text not null,
   desk_name text,
+  lab_id text default 'LAB-1001',
   status text default 'Active',
   created_at timestamptz default now()
 );
+
+alter table public.cashier add column if not exists lab_id text default 'LAB-1001';
+alter table public.cashier add column if not exists desk_name text;
+alter table public.cashier add column if not exists status text default 'Active';
+alter table public.cashier add column if not exists created_at timestamptz default now();
 
 alter table public.cashier enable row level security;
 drop policy if exists "Cashier all operations" on public.cashier;
 create policy "Cashier all operations" on public.cashier for all using (true) with check (true);
 
-insert into public.cashier (id, name, desk_name, status)
+insert into public.cashier (id, name, desk_name, lab_id, status)
 values
-  ('CSH-1001', 'Counter 1 (Main Reception)', 'Desk 01', 'Active'),
-  ('CSH-1002', 'Counter 2 (OPD Registration)', 'Desk 02', 'Active'),
-  ('CSH-1003', 'Counter 3 (Emergency / Night)', 'Desk 03', 'Active')
+  ('CSH-1001', 'Counter 1 (Main Reception)', 'Desk 01', 'LAB-1001', 'Active'),
+  ('CSH-1002', 'Counter 2 (OPD Registration)', 'Desk 02', 'LAB-1001', 'Active'),
+  ('CSH-1003', 'Counter 3 (Emergency / Night)', 'Desk 03', 'LAB-1001', 'Active')
 on conflict (id) do nothing;
 
 -- =====================================================================================
@@ -561,3 +567,6 @@ begin
   exception when others then null;
   end;
 end $$;
+
+-- Force PostgREST schema cache reload immediately
+notify pgrst, 'reload schema';
