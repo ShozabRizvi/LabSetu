@@ -206,7 +206,7 @@ export default function CitizenReports({ lang: propLang }) {
     setSelectedReport(report);
     setTimeout(() => {
       window.print();
-    }, 250);
+    }, 400);
   };
 
   const handleExplainWithAi = (report) => {

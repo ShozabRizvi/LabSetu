@@ -92,13 +92,18 @@ export default function DailyBusiness() {
     setDate(newDateStr);
   };
 
-  const handleAddCashier = (e) => {
+  const handleAddCashier = async (e) => {
     e.preventDefault();
     if (cashierName.trim()) {
       const added = cashierName.trim();
-      setCashiers([...cashiers, added]);
+      setCashiers(prev => [...prev, added]);
       setCashierName('');
       setIsCashierModalOpen(false);
+      try {
+        await supabase.from('cashier').insert({ name: added, status: 'Active' });
+      } catch (err) {
+        console.warn('Cashier registration notice:', err);
+      }
       showToastNotification(`Cashier "${added}" registered and assigned to Active Cash Desk.`);
     }
   };

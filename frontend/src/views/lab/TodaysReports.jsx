@@ -273,12 +273,22 @@ export default function TodaysReports() {
     setTimeout(() => setModalNotice(''), 3000);
   };
 
+  const [isPrinting, setIsPrinting] = useState(false);
+
   const handleDownloadPdf = () => {
-    window.print();
+    setIsPrinting(true);
+    setTimeout(() => {
+      window.print();
+      setIsPrinting(false);
+    }, 400);
   };
 
   const handlePrintReport = () => {
-    window.print();
+    setIsPrinting(true);
+    setTimeout(() => {
+      window.print();
+      setIsPrinting(false);
+    }, 400);
   };
 
   const testMap = Object.fromEntries(TEST_CATALOGUE.map(t => [t.test_id, t]));

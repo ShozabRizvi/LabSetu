@@ -117,7 +117,7 @@ export default function SearchCasesXray() {
 
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               <button
-                onClick={() => window.print()}
+                onClick={() => setTimeout(() => window.print(), 350)}
                 style={{ background: 'none', border: '1px solid #cbd5e1', padding: '0.5rem 1rem', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
               >
                 <PrinterIcon style={{ width: '16px' }} /> Print X-Ray Report

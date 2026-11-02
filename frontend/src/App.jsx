@@ -27,8 +27,6 @@ import OutsourceCases from './views/cases/OutsourceCases';
 import CtScanCases from './views/cases/CtScanCases';
 import Patients from './views/cases/Patients';
 import Transactions from './views/cases/Transactions';
-import ReferralDoctors from './views/cases/ReferralDoctors';
-import Agents from './views/cases/Agents';
 
 import TodaysReports from './views/lab/TodaysReports';
 import SearchReports from './views/lab/SearchReports';
@@ -205,8 +203,6 @@ function App() {
               <Route path="ctscan" element={<CtScanCases />} />
               <Route path="patients" element={<Patients />} />
               <Route path="transactions" element={<Transactions />} />
-              <Route path="referral-doctors" element={<ReferralDoctors />} />
-              <Route path="agents" element={<Agents />} />
             </Route>
 
             {/* Lab Sub-routes */}

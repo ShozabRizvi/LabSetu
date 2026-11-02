@@ -155,28 +155,33 @@ export default function CitizenAppointments({ lang: propLang, addNewBooking, onA
           const updatedRow = payload.new;
           setBookings((prev) => {
             const list = Array.isArray(prev) ? prev : [];
-            const index = list.findIndex(b => b.id === updatedRow.id || (updatedRow.notes && updatedRow.notes.includes(b.id)));
+            const index = list.findIndex(b => 
+              b.id === updatedRow.id || 
+              b.rawId === updatedRow.id || 
+              (updatedRow.notes && updatedRow.notes.includes(b.id))
+            );
             if (index !== -1) {
               const current = list[index];
-              const s = (updatedRow.status || '').toLowerCase();
+              const s = (updatedRow.tracking_status || updatedRow.status || '').toLowerCase();
               let newStage = current.stage;
-              let newStatus = current.status;
+              let newStatus = updatedRow.tracking_status || updatedRow.status || current.status;
               if (s.includes('ready') || s.includes('signed') || s.includes('completed')) {
                 newStage = 4;
                 newStatus = 'Report Ready';
-              } else if (s.includes('processing')) {
+              } else if (s.includes('processing') || s.includes('transit') || s.includes('lab')) {
                 newStage = 3;
                 newStatus = 'In Lab Processing';
-              } else if (s.includes('collected') || s.includes('sample') || s.includes('assigned')) {
+              } else if (s.includes('collected') || s.includes('sample') || s.includes('assigned') || s.includes('phlebotomist')) {
                 newStage = 2;
                 newStatus = 'Sample Collected';
-              } else if (s.includes('confirmed') || s.includes('scheduled')) {
+              } else if (s.includes('confirmed') || s.includes('scheduled') || s.includes('placed')) {
                 newStage = 1;
                 newStatus = 'Confirmed';
               }
               const updated = {
                 ...current,
                 status: newStatus,
+                tracking_status: newStatus,
                 stage: newStage
               };
               const copy = [...list];
@@ -210,7 +215,7 @@ export default function CitizenAppointments({ lang: propLang, addNewBooking, onA
     setPrintingApptId(apptId);
     setTimeout(() => {
       window.print();
-    }, 150);
+    }, 400);
   };
 
   const filteredAppts = (appointments || []).filter(a => {
@@ -362,7 +367,12 @@ export default function CitizenAppointments({ lang: propLang, addNewBooking, onA
           {filteredAppts.map(appt => {
             const dept = departments.find(d => d.id === appt.department);
             const slotObj = appointmentSlots.find(s => s.id === appt.slot);
-            const currentStage = appt.stage || (appt.status === 'Report Ready' ? 4 : appt.status === 'Sample Collected' ? 2 : 1);
+            const ts = (appt.tracking_status || appt.status || '').toLowerCase();
+            const currentStage = appt.stage || (
+              (ts.includes('ready') || ts.includes('signed') || ts.includes('completed')) ? 4 :
+              (ts.includes('processing') || ts.includes('transit') || ts.includes('lab')) ? 3 :
+              (ts.includes('collected') || ts.includes('sample') || ts.includes('assigned') || ts.includes('phlebotomist')) ? 2 : 1
+            );
 
             return (
               <div 

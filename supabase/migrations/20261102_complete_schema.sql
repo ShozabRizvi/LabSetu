@@ -413,3 +413,30 @@ create table if not exists public.outsource_tracking (
 alter table public.outsource_tracking enable row level security;
 drop policy if exists "Outsource tracking all operations" on public.outsource_tracking;
 create policy "Outsource tracking all operations" on public.outsource_tracking for all using (true) with check (true);
+
+-- =====================================================================================
+-- 10. TRANSACTIONS TABLE & REALTIME FINANCIAL LEDGER
+-- Row Level Security (RLS) configured for authenticated and authority access
+-- =====================================================================================
+create table if not exists public.transactions (
+  id text primary key default ('TX-' || floor(random() * 90000 + 10000)::text),
+  reg_no text default ('REG-' || floor(random() * 9000 + 1000)::text),
+  patient text not null,
+  ref text default 'Self',
+  dcn text default 'D-01',
+  cc text default 'Main Lab',
+  amount numeric not null default 0,
+  method text default 'Cash', -- 'Cash' | 'UPI' | 'Card'
+  received_by text default 'Counter 1',
+  status text default 'Paid',
+  description text,
+  created_at timestamptz default now()
+);
+
+-- Enable RLS and grant full permissions for authenticated / authority / anon operations
+alter table public.transactions enable row level security;
+drop policy if exists "Transactions all operations" on public.transactions;
+create policy "Transactions all operations" on public.transactions for all using (true) with check (true);
+
+-- Realtime Publication for instant UI state synchronization
+alter publication supabase_realtime add table public.transactions;

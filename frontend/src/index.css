@@ -139,56 +139,70 @@ button, input, select, textarea {
 
 /* ==========================================================================
    Global Universal Print Protection Rules — Dedicated Printable Report Isolation
+   Guarantees zero blank pages, full container visibility & unconstrained pagination
    ========================================================================== */
 @media print {
-  /* Hide all background UI, navigation, sidebars, headers, footers and action buttons */
+  /* Hide all background navigation, sidebars, headers, footers and action controls */
   nav, aside, .sidebar, .layout-sidebar, .citizen-sidebar, .citizen-header, .layout-header, 
   .app-sidebar, .app-header, .main-header, header, footer, button, .no-print, 
   .citizen-modal-close, .report-modal-footer, .report-modal-utility-bar, .lab-print-status,
-  .hero-actions, .db-action-btn, .lab-controls-row, .lab-tabs-row {
+  .hero-actions, .db-action-btn, .lab-controls-row, .lab-tabs-row, .app-global-footer {
     display: none !important;
     visibility: hidden !important;
   }
 
-  /* Unconstrain viewport / body / scroll containers so browser never clips */
-  html, body, #root, .citizen-layout-container, .citizen-body, .citizen-main-content, 
-  .main-layout-container, .main-body, .layout-main-content {
+  /* Unconstrain viewport / body / modal scroll containers so browser never clips or hides pages */
+  html, body, #root, 
+  .citizen-layout-container, .citizen-body, .citizen-main-content, 
+  .layout-container, .layout-body, .layout-main-content,
+  .main-layout-container, .main-body,
+  .layout-slide-wrapper, .layout-fade-wrapper,
+  .citizen-modal-backdrop, .citizen-modal-card,
+  .report-modal-backdrop, .report-modal-backdrop-custom,
+  .report-modal-wrapper, .report-modal-card {
     height: auto !important;
     min-height: auto !important;
     max-height: none !important;
     overflow: visible !important;
+    overflow-x: visible !important;
+    overflow-y: visible !important;
     position: static !important;
     margin: 0 !important;
     padding: 0 !important;
     background: #ffffff !important;
     color: #000000 !important;
-  }
-
-  /* Strict Isolation: Make only #printable-report, .printable-report, or .print-target and their contents visible */
-  body:has(#printable-report) *,
-  body:has(.print-target) * {
-    visibility: hidden;
-  }
-
-  body:has(#printable-report) #printable-report,
-  body:has(#printable-report) #printable-report *,
-  body:has(.print-target) .print-target,
-  body:has(.print-target) .print-target * {
-    visibility: visible !important;
-  }
-
-  /* Dedicated container ID enforcement & appointment print-target */
-  #printable-report,
-  .print-target {
+    box-shadow: none !important;
+    border: none !important;
+    transform: none !important;
+    animation: none !important;
     display: block !important;
     visibility: visible !important;
-    position: absolute !important;
-    left: 0 !important;
-    top: 0 !important;
+  }
+
+  /* Strict Isolation: Hide all non-printable siblings when a printable container is present */
+  body:has(#printable-report) > *:not(:has(#printable-report)),
+  body:has(.print-target) > *:not(:has(.print-target)),
+  body:has(.printable-area) > *:not(:has(.printable-area)) {
+    display: none !important;
+  }
+
+  /* Explicit report container visibility enforcement — Never clipped by top absolute coordinates */
+  #printable-report,
+  .clinical-report-sheet,
+  .print-target,
+  .printable-area {
+    display: block !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    position: relative !important;
+    left: auto !important;
+    top: auto !important;
     width: 100% !important;
     max-width: 100% !important;
-    margin: 0 !important;
-    padding: 24px !important;
+    height: auto !important;
+    max-height: none !important;
+    margin: 0 auto !important;
+    padding: 20px !important;
     background: #ffffff !important;
     color: #000000 !important;
     box-shadow: none !important;
@@ -196,16 +210,19 @@ button, input, select, textarea {
     border-radius: 8px !important;
     overflow: visible !important;
     z-index: 999999 !important;
+    box-sizing: border-box !important;
+    page-break-inside: avoid;
+    break-inside: avoid;
   }
 
-  /* Full-page modal backdrops in print */
-  .citizen-modal-backdrop, .report-modal-backdrop, .report-modal-backdrop-custom {
-    position: static !important;
-    background: transparent !important;
-    display: block !important;
+  /* Guarantee all inner text, SVGs, tables, and charts are fully visible */
+  #printable-report *,
+  .clinical-report-sheet *,
+  .print-target *,
+  .printable-area * {
     visibility: visible !important;
-    padding: 0 !important;
-    margin: 0 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 }
 

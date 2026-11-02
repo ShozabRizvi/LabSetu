@@ -438,8 +438,6 @@ export default function MainLayout() {
                   <NavLink to="/app/cases/ctscan" onClick={() => setIsMobileNavOpen(false)} className={({isActive}) => `layout-submenu-item ${isActive ? 'layout-nav-active' : ''}`}><FilmIcon/> Ct scan cases</NavLink>
                   <NavLink to="/app/cases/patients" onClick={() => setIsMobileNavOpen(false)} className={({isActive}) => `layout-submenu-item ${isActive ? 'layout-nav-active' : ''}`}><UserGroupIcon/> Patients</NavLink>
                   <NavLink to="/app/cases/transactions" onClick={() => setIsMobileNavOpen(false)} className={({isActive}) => `layout-submenu-item ${isActive ? 'layout-nav-active' : ''}`}><ArrowsRightLeftIcon/> Transactions</NavLink>
-                  <NavLink to="/app/cases/referral-doctors" onClick={() => setIsMobileNavOpen(false)} className={({isActive}) => `layout-submenu-item ${isActive ? 'layout-nav-active' : ''}`}><UserPlusIcon/> Referral Doctors</NavLink>
-                  <NavLink to="/app/cases/agents" onClick={() => setIsMobileNavOpen(false)} className={({isActive}) => `layout-submenu-item ${isActive ? 'layout-nav-active' : ''}`}><IdentificationIcon/> Agents</NavLink>
                 </div>
               </div>
             </div>

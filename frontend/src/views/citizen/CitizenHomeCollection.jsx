@@ -113,8 +113,6 @@ export default function CitizenHomeCollection({ lang: propLang }) {
   const [activeTrackingId, setActiveTrackingId] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [notice, setNotice] = useState('');
-  const [isSimulating, setIsSimulating] = useState(false);
-  const autoSimTimerRef = useRef(null);
 
   // Fetch live home collection appointments strictly from Supabase
   const fetchHomeCollections = React.useCallback(async () => {
@@ -222,7 +220,7 @@ export default function CitizenHomeCollection({ lang: propLang }) {
     };
   }, []);
 
-  // Realtime Supabase Channel
+  // Realtime Supabase Channel strictly synchronizing from Authority updates
   useEffect(() => {
     const channel = supabase.channel('home-collection-live')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments' }, (payload) => {
@@ -230,20 +228,26 @@ export default function CitizenHomeCollection({ lang: propLang }) {
           const updatedRow = payload.new;
           setBookings((prev) => {
             const list = Array.isArray(prev) ? prev : [];
-            const index = list.findIndex(b => b.id === updatedRow.id || (updatedRow.notes && updatedRow.notes.includes(b.id)));
+            const index = list.findIndex(b =>
+              b.id === updatedRow.id ||
+              b.rawId === updatedRow.id ||
+              (updatedRow.notes && updatedRow.notes.includes(b.id))
+            );
             if (index !== -1) {
               const current = list[index];
-              const newStageName = updatedRow.tracking_status || updatedRow.status;
+              const newStageName = updatedRow.tracking_status || updatedRow.status || current.status;
               const matchedStage = TRACKING_STAGES.findIndex(s => s.key.toLowerCase() === (newStageName || '').toLowerCase());
               const updated = {
                 ...current,
-                status: newStageName || current.status,
+                status: newStageName,
                 stage: matchedStage !== -1 ? matchedStage : current.stage
               };
               const copy = [...list];
               copy[index] = updated;
               return copy;
             }
+            // If not found in current list, re-fetch list to include newly created appointments
+            fetchHomeCollections();
             return list;
           });
         }
@@ -253,66 +257,7 @@ export default function CitizenHomeCollection({ lang: propLang }) {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
-
-  // Advance or rewind stage for simulation
-  const setBookingStage = (newStage) => {
-    const clamped = Math.max(0, Math.min(6, newStage));
-    const targetStage = TRACKING_STAGES[clamped];
-
-    setBookings((prev) => {
-      const list = Array.isArray(prev) ? prev : [];
-      return list.map(b => {
-        if (b.id === activeBooking?.id) {
-          return {
-            ...b,
-            stage: clamped,
-            status: targetStage.key
-          };
-        }
-        return b;
-      });
-    });
-
-    // Sync to Supabase
-    try {
-      supabase
-        .from('appointments')
-        .update({
-          tracking_status: targetStage.key,
-          estimated_delivery_time: targetStage.etaTime
-        })
-        .ilike('notes', `%${activeBooking?.id}%`)
-        .then(() => {});
-    } catch {}
-  };
-
-  // Auto-play simulation runner
-  useEffect(() => {
-    if (isSimulating) {
-      autoSimTimerRef.current = setInterval(() => {
-        setBookings(prev => {
-          const list = Array.isArray(prev) ? prev : [];
-          return list.map(b => {
-            if (b.id === activeBooking?.id) {
-              const nextStage = ((b.stage ?? 0) + 1) % 7;
-              return {
-                ...b,
-                stage: nextStage,
-                status: TRACKING_STAGES[nextStage].key
-              };
-            }
-            return b;
-          });
-        });
-      }, 3500);
-    } else {
-      if (autoSimTimerRef.current) clearInterval(autoSimTimerRef.current);
-    }
-    return () => {
-      if (autoSimTimerRef.current) clearInterval(autoSimTimerRef.current);
-    };
-  }, [isSimulating, activeBooking?.id]);
+  }, [fetchHomeCollections]);
 
   // Booking Form State
   const [form, setForm] = useState({
@@ -649,17 +594,15 @@ export default function CitizenHomeCollection({ lang: propLang }) {
                 return (
                   <div
                     key={s.key}
-                    onClick={() => setBookingStage(idx)}
                     style={{
                       display: 'flex',
                       flexDirection: 'column',
                       alignItems: 'center',
                       flex: 1,
                       zIndex: 1,
-                      cursor: 'pointer',
+                      cursor: 'default',
                       padding: '0 0.25rem'
                     }}
-                    title={`Click to set stage: ${s.label}`}
                   >
                     <div style={{
                       width: '40px',
@@ -937,106 +880,6 @@ export default function CitizenHomeCollection({ lang: propLang }) {
                   Call Phlebotomist
                 </a>
               </div>
-            </div>
-          </div>
-
-          {/* Interactive Hackathon Evaluator Simulation Toolbar */}
-          <div style={{
-            background: '#f1f5f9',
-            borderTop: '1px solid #e2e8f0',
-            padding: '0.85rem 1.5rem',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            flexWrap: 'wrap',
-            gap: '0.75rem'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <span style={{ fontSize: '0.78rem', fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>
-                🧪 Evaluator Simulation Controls:
-              </span>
-              <span style={{ fontSize: '0.78rem', color: '#64748b' }}>
-                Stage: <strong>{currentStageIndex + 1}/7 ({currentStageInfo.key})</strong>
-              </span>
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <button
-                type="button"
-                disabled={currentStageIndex <= 0}
-                onClick={() => setBookingStage(currentStageIndex - 1)}
-                style={{
-                  padding: '0.4rem 0.75rem',
-                  borderRadius: '6px',
-                  border: '1px solid #cbd5e1',
-                  background: currentStageIndex <= 0 ? '#f8fafc' : 'white',
-                  color: currentStageIndex <= 0 ? '#94a3b8' : '#334155',
-                  fontSize: '0.8rem',
-                  fontWeight: '600',
-                  cursor: currentStageIndex <= 0 ? 'not-allowed' : 'pointer'
-                }}
-              >
-                ◀ Prev Stage
-              </button>
-
-              <button
-                type="button"
-                disabled={currentStageIndex >= 6}
-                onClick={() => setBookingStage(currentStageIndex + 1)}
-                style={{
-                  padding: '0.4rem 0.85rem',
-                  borderRadius: '6px',
-                  border: 'none',
-                  background: currentStageIndex >= 6 ? '#cbd5e1' : '#059669',
-                  color: 'white',
-                  fontSize: '0.8rem',
-                  fontWeight: '600',
-                  cursor: currentStageIndex >= 6 ? 'not-allowed' : 'pointer',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '0.35rem'
-                }}
-              >
-                ▶ Next Stage (Advance)
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setIsSimulating(!isSimulating)}
-                style={{
-                  padding: '0.4rem 0.85rem',
-                  borderRadius: '6px',
-                  border: '1px solid #059669',
-                  background: isSimulating ? '#ecfdf5' : 'white',
-                  color: '#059669',
-                  fontSize: '0.8rem',
-                  fontWeight: '600',
-                  cursor: 'pointer',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '0.35rem'
-                }}
-              >
-                {isSimulating ? <PauseIcon style={{ width: '14px' }} /> : <PlayIcon style={{ width: '14px' }} />}
-                {isSimulating ? 'Pause Auto-Play' : '⚡ Auto-Play Cycle'}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setBookingStage(0)}
-                style={{
-                  padding: '0.4rem 0.75rem',
-                  borderRadius: '6px',
-                  border: '1px solid #cbd5e1',
-                  background: 'white',
-                  color: '#475569',
-                  fontSize: '0.8rem',
-                  cursor: 'pointer'
-                }}
-                title="Reset simulation to Stage 1"
-              >
-                Reset
-              </button>
             </div>
           </div>
         </div>

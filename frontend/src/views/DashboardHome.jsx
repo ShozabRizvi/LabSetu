@@ -88,14 +88,18 @@ export default function DashboardHome() {
       setUpdatingId(apptId);
       await supabase
         .from('appointments')
-        .update({ status: nextStatus, updated_at: new Date().toISOString() })
+        .update({ 
+          status: nextStatus, 
+          tracking_status: nextStatus,
+          updated_at: new Date().toISOString() 
+        })
         .eq('id', apptId);
 
       setLiveAppointments(prev =>
-        prev.map(a => a.id === apptId ? { ...a, status: nextStatus } : a)
+        prev.map(a => a.id === apptId ? { ...a, status: nextStatus, tracking_status: nextStatus } : a)
       );
 
-      if (nextStatus === 'Report Signed') {
+      if (nextStatus === 'Report Signed' || nextStatus === 'Report Ready') {
         await supabase.from('reports').insert({
           title: 'Complete Blood Count & Comprehensive Metabolic Profile',
           status: 'signed',
@@ -239,25 +243,43 @@ export default function DashboardHome() {
                     </div>
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                      <span style={{
-                        fontSize: '0.75rem',
-                        fontWeight: '700',
-                        padding: '0.25rem 0.55rem',
-                        borderRadius: '20px',
-                        background: appt.status === 'Report Signed' ? '#dcfce7' : (appt.status === 'Assigned' ? '#fef3c7' : '#e0e7ff'),
-                        color: appt.status === 'Report Signed' ? '#15803d' : (appt.status === 'Assigned' ? '#92400e' : '#3730a3')
-                      }}>
-                        {appt.status || 'Confirmed'}
-                      </span>
+                      <select
+                        aria-label={`Update tracking status for ${appt.id}`}
+                        disabled={updatingId === appt.id}
+                        value={appt.tracking_status || appt.status || 'Order Placed'}
+                        onChange={(e) => handleUpdateStatus(appt.id, e.target.value)}
+                        style={{
+                          fontSize: '0.75rem',
+                          fontWeight: '600',
+                          padding: '0.25rem 0.5rem',
+                          borderRadius: '6px',
+                          border: '1px solid #cbd5e1',
+                          backgroundColor: '#ffffff',
+                          color: '#0f172a',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        <option value="Order Placed">Order Placed</option>
+                        <option value="Phlebotomist Assigned">Phlebotomist Assigned</option>
+                        <option value="Out for Collection">Out for Collection</option>
+                        <option value="Sample Collected">Sample Collected</option>
+                        <option value="In Transit to Lab">In Transit</option>
+                        <option value="Processing">Processing</option>
+                        <option value="Report Ready">Report Ready</option>
+                      </select>
 
-                      {appt.status !== 'Report Signed' && (
+                      {appt.status !== 'Report Signed' && appt.status !== 'Report Ready' && (
                         <button
                           type="button"
                           disabled={updatingId === appt.id}
                           onClick={() => {
-                            const next = appt.status === 'Confirmed' || appt.status === 'scheduled'
-                              ? 'Assigned'
-                              : (appt.status === 'Assigned' ? 'Sample Collected' : 'Report Signed');
+                            const cur = appt.tracking_status || appt.status;
+                            const next = cur === 'Order Placed' || cur === 'Confirmed' || cur === 'scheduled'
+                              ? 'Phlebotomist Assigned'
+                              : (cur === 'Phlebotomist Assigned' ? 'Out for Collection' 
+                                : (cur === 'Out for Collection' ? 'Sample Collected' 
+                                  : (cur === 'Sample Collected' ? 'In Transit to Lab' 
+                                    : (cur === 'In Transit to Lab' ? 'Processing' : 'Report Ready'))));
                             handleUpdateStatus(appt.id, next);
                           }}
                           style={{
@@ -272,7 +294,7 @@ export default function DashboardHome() {
                             transition: 'all 0.15s ease'
                           }}
                         >
-                          {appt.status === 'Confirmed' || appt.status === 'scheduled' ? '→ Assign Phlebotomist' : (appt.status === 'Assigned' ? '→ Mark Sample Picked' : '✓ Sign & Release Report')}
+                          → Advance Stage
                         </button>
                       )}
                     </div>
