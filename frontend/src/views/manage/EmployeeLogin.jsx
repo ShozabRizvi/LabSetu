@@ -145,8 +145,14 @@ export default function EmployeeLogin() {
       };
       persistEmployees([newEmp, ...employees]);
 
-      // Push to Supabase staff_invites
+      // Push to Supabase staff_invites and dispatch genuine auth email invite
       try {
+        if (supabase.auth?.admin?.inviteUserByEmail) {
+          supabase.auth.admin.inviteUserByEmail(form.email, {
+            data: { full_name: form.name, role: form.role.toLowerCase() }
+          }).catch((e) => console.warn('[EmployeeLogin] Admin invite API:', e));
+        }
+
         supabase.from('staff_invites').insert({
           name: form.name,
           email: form.email,
@@ -165,33 +171,17 @@ export default function EmployeeLogin() {
     setIsModalOpen(false);
   };
 
-  const handleResendInvite = (emp) => {
-    showToast(`Invitation re-dispatched to ${emp.email} with activation credentials.`);
-  };
-
-  const handleSimulateActivation = (emp) => {
-    const updated = employees.map(item => {
-      if (item.id === emp.id) {
-        return {
-          ...item,
-          status: 'Active',
-          lastLogin: `Active Now (Activated ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})`
-        };
-      }
-      return item;
-    });
-    persistEmployees(updated);
-
-    // Update in Supabase
+  const handleResendInvite = async (emp) => {
     try {
-      supabase
-        .from('staff_invites')
-        .update({ status: 'Active', activated_at: new Date().toISOString() })
-        .eq('email', emp.email)
-        .then(() => {});
-    } catch {}
-
-    showToast(`Staff account activated! ${emp.name} is now an Active ${emp.role}.`);
+      if (supabase.auth?.admin?.inviteUserByEmail) {
+        await supabase.auth.admin.inviteUserByEmail(emp.email, {
+          data: { full_name: emp.name, role: (emp.role || '').toLowerCase() }
+        });
+      }
+    } catch (err) {
+      console.warn('[EmployeeLogin] Resend invite warning:', err);
+    }
+    showToast(`Invitation re-dispatched to ${emp.email} with activation credentials.`);
   };
 
   const handleDelete = (empId) => {

@@ -262,6 +262,53 @@ begin
   end;
 end $$;
 
--- 10. FORCE POSTGREST SCHEMA CACHE RELOAD
+-- 10. STAFF INVITES TABLE & EMAIL CONFIRMATION TRIGGER
+create table if not exists public.staff_invites (
+  id uuid primary key default gen_random_uuid(),
+  email text not null,
+  name text not null,
+  role text not null, -- 'doctor' | 'employee' | 'receptionist' | 'technician' | 'phlebotomist'
+  access_level text default 'Full Access',
+  status text default 'Pending Activation', -- 'Pending Activation' | 'Active' | 'Revoked'
+  invited_at timestamptz default now(),
+  activated_at timestamptz
+);
+
+alter table public.staff_invites enable row level security;
+drop policy if exists "Staff invites operations" on public.staff_invites;
+create policy "Staff invites operations" on public.staff_invites for all using (true) with check (true);
+
+-- Realtime publication for staff_invites
+do $$
+begin
+  alter publication supabase_realtime add table public.staff_invites;
+exception when others then null;
+end $$;
+
+-- Trigger: When an invited user confirms their email, automatically transition staff_invites status to 'Active'
+create or replace function public.handle_user_confirmation()
+returns trigger as $$
+declare
+  v_is_confirmed boolean;
+begin
+  v_is_confirmed := (new.email_confirmed_at is not null and (old.email_confirmed_at is null or old.email_confirmed_at != new.email_confirmed_at))
+                 or (new.confirmed_at is not null and (old.confirmed_at is null or old.confirmed_at != new.confirmed_at));
+  if v_is_confirmed then
+    update public.staff_invites
+    set status = 'Active', activated_at = now()
+    where lower(email) = lower(new.email);
+  end if;
+  return new;
+exception when others then
+  return new;
+end;
+$$ language plpgsql security definer;
+
+drop trigger if exists on_auth_user_confirmed on auth.users;
+create trigger on_auth_user_confirmed
+  after update on auth.users
+  for each row execute function public.handle_user_confirmation();
+
+-- 11. FORCE POSTGREST SCHEMA CACHE RELOAD
 -- Informs the live PostgREST API daemon to immediately recognize newly created tables and columns
 notify pgrst, 'reload schema';

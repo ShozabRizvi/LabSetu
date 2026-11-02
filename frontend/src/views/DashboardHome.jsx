@@ -39,24 +39,7 @@ export default function DashboardHome() {
       if (dbAppts && dbAppts.length > 0) {
         setLiveAppointments(dbAppts);
       } else {
-        setLiveAppointments([
-          {
-            id: 'APT-10824',
-            notes: 'Patient: Ramesh Sharma, Phone: 9876543210, Type: Home Sample Collection',
-            appointment_date: '2026-10-18',
-            purpose: 'dept-pathology',
-            status: 'Confirmed',
-            visit_type: 'home_collection'
-          },
-          {
-            id: 'APT-10790',
-            notes: 'Patient: Ramesh Sharma, Phone: 9876543210, Type: Manual Lab Visit',
-            appointment_date: '2026-10-17',
-            purpose: 'dept-biochemistry',
-            status: 'Sample Collected',
-            visit_type: 'lab_visit'
-          }
-        ]);
+        setLiveAppointments([]);
       }
 
       if (dbBills && dbBills.length > 0) {
@@ -64,7 +47,8 @@ export default function DashboardHome() {
         setDbDues(sum);
       }
     } catch (e) {
-      console.warn('Live appointments fallback:', e);
+      console.warn('Live appointments error:', e);
+      setLiveAppointments([]);
     }
   };
 
@@ -208,7 +192,23 @@ export default function DashboardHome() {
 
             <div className="dashboard-home-card-body" style={{ padding: '0.75rem 1rem' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                {liveAppointments.map((appt) => (
+                {liveAppointments.length === 0 ? (
+                  <div style={{
+                    textAlign: 'center',
+                    padding: '2.5rem 1rem',
+                    color: '#64748b',
+                    fontSize: '0.9rem',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: '0.5rem'
+                  }}>
+                    <span style={{ fontSize: '1.5rem' }}>📋</span>
+                    <span style={{ fontWeight: 500 }}>No live bookings at the moment</span>
+                    <span style={{ fontSize: '0.78rem', color: '#94a3b8' }}>Incoming home collection and lab appointments will appear here in real-time.</span>
+                  </div>
+                ) : (
+                  liveAppointments.map((appt) => (
                   <div
                     key={appt.id}
                     style={{
@@ -299,7 +299,8 @@ export default function DashboardHome() {
                       )}
                     </div>
                   </div>
-                ))}
+                ))
+              )}
               </div>
             </div>
           </div>

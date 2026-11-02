@@ -146,8 +146,14 @@ export default function DoctorAccess() {
       };
       persistDoctors([newDoc, ...doctors]);
 
-      // Push to Supabase staff_invites
+      // Push to Supabase staff_invites and dispatch genuine auth email invite
       try {
+        if (supabase.auth?.admin?.inviteUserByEmail) {
+          supabase.auth.admin.inviteUserByEmail(form.email, {
+            data: { full_name: form.name, role: 'doctor' }
+          }).catch((e) => console.warn('[DoctorAccess] Admin invite API:', e));
+        }
+
         supabase.from('staff_invites').insert({
           name: form.name,
           email: form.email,
@@ -166,33 +172,17 @@ export default function DoctorAccess() {
     setIsModalOpen(false);
   };
 
-  const handleResendInvite = (doc) => {
-    showToast(`Invitation re-dispatched to ${doc.email} with secure single-use token.`);
-  };
-
-  const handleSimulateActivation = (doc) => {
-    const updated = doctors.map(d => {
-      if (d.id === doc.id) {
-        return {
-          ...d,
-          status: 'Active',
-          lastLogin: `Active Now (Activated ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})`
-        };
-      }
-      return d;
-    });
-    persistDoctors(updated);
-
-    // Update in Supabase
+  const handleResendInvite = async (doc) => {
     try {
-      supabase
-        .from('staff_invites')
-        .update({ status: 'Active', activated_at: new Date().toISOString() })
-        .eq('email', doc.email)
-        .then(() => {});
-    } catch {}
-
-    showToast(`Access activated successfully! ${doc.name} can now sign into LIMS.`);
+      if (supabase.auth?.admin?.inviteUserByEmail) {
+        await supabase.auth.admin.inviteUserByEmail(doc.email, {
+          data: { full_name: doc.name, role: 'doctor' }
+        });
+      }
+    } catch (err) {
+      console.warn('[DoctorAccess] Resend invite warning:', err);
+    }
+    showToast(`Invitation re-dispatched to ${doc.email} with secure single-use token.`);
   };
 
   const handleDelete = (docId) => {

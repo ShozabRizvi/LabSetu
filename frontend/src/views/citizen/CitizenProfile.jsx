@@ -193,41 +193,27 @@ export default function CitizenProfile() {
       const { data: sessionData } = await supabase.auth.getSession();
       const currentUserId = sessionData?.session?.user?.id || user.id;
 
-      // 1. MUST execute Supabase update/upsert on profiles table
+      // 1. MUST execute Supabase update/upsert on profiles table (core schema columns)
       const profileUpdates = {
         id: currentUserId,
         full_name: newName,
-        display_name: newName,
         phone: newPhone || null,
-        address: cleanAddress,
-        gender: profile.gender || null,
-        blood_group: profile.bloodGroup || null,
-        age: validAge,
-        emergency_contact: cleanEmergency,
         security_question: profile.securityQuestion,
         security_answer: cleanAnswer || null,
-        security_question_1: profile.securityQuestion,
-        security_answer_1: cleanAnswer || null,
         updated_at: new Date().toISOString()
       };
 
       if (currentUserId && typeof currentUserId === 'string' && currentUserId.includes('-')) {
-        const { error: profileErr } = await supabase
-          .from('profiles')
-          .upsert(profileUpdates, { onConflict: 'id' });
+        try {
+          const { error: profileErr } = await supabase
+            .from('profiles')
+            .upsert(profileUpdates, { onConflict: 'id' });
 
-        if (profileErr) {
-          console.warn('[CitizenProfile] profiles full upsert note, falling back to core schema columns:', profileErr);
-          // Graceful fallback if database schema does not yet have demographics on profiles table
-          await supabase.from('profiles').upsert({
-            id: currentUserId,
-            full_name: newName,
-            phone: newPhone || null,
-            security_question: profile.securityQuestion,
-            security_answer: cleanAnswer || null,
-            security_question_1: profile.securityQuestion,
-            security_answer_1: cleanAnswer || null
-          }, { onConflict: 'id' }).catch(() => {});
+          if (profileErr) {
+            console.warn('[CitizenProfile] profiles upsert note:', profileErr);
+          }
+        } catch (pErr) {
+          console.warn('[CitizenProfile] profiles upsert caught error:', pErr);
         }
       }
 
@@ -246,9 +232,16 @@ export default function CitizenProfile() {
         updated_at: new Date().toISOString()
       };
       if (currentUserId && typeof currentUserId === 'string' && currentUserId.includes('-')) {
-        await supabase.from('patients').upsert(patientUpdate, { onConflict: 'id' }).catch((err) => {
-          console.warn('[CitizenProfile] patients upsert warning:', err);
-        });
+        try {
+          const { error: patientErr } = await supabase
+            .from('patients')
+            .upsert(patientUpdate, { onConflict: 'id' });
+          if (patientErr) {
+            console.warn('[CitizenProfile] patients upsert warning:', patientErr);
+          }
+        } catch (ptErr) {
+          console.warn('[CitizenProfile] patients upsert exception:', ptErr);
+        }
       }
 
       // 3. Update local state and global auth state
