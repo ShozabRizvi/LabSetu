@@ -80,6 +80,7 @@ export default function DashboardHome() {
     document.title = 'LabSetu - Authority Dashboard';
     fetchLiveAppointments();
 
+    // CORRECTED: Chain .on() BEFORE .subscribe()
     const channel = supabase.channel('authority-appointments-realtime')
       .on(
         'postgres_changes',
