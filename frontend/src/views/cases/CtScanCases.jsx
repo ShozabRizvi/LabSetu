@@ -1,8 +1,11 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import './OutsourceCases.css';
+import { supabase } from '../../lib/supabase';
 import { PlusIcon, MagnifyingGlassIcon, XMarkIcon } from '@heroicons/react/24/outline';
 
 export default function CtScanCases() {
+  const navigate = useNavigate();
   const [cases, setCases] = useState([
     { id: 'CT-901', regNo: 'REG-1049', date: '13/09/2026', patient: 'Ramesh Trivedi', investigations: 'CT Brain Plain', status: 'Completed', scanCenter: 'Metro Imaging Hub' },
     { id: 'CT-902', regNo: 'REG-1052', date: '12/09/2026', patient: 'Sunita Mehra', investigations: 'HRCT Chest', status: 'In Progress', scanCenter: 'City Scan Centre' },
@@ -13,22 +16,69 @@ export default function CtScanCases() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newCase, setNewCase] = useState({ patient: '', investigations: 'HRCT Chest', scanCenter: 'Metro Imaging Hub' });
 
-  const handleAddCase = (e) => {
+  const handleAddCase = async (e) => {
     e.preventDefault();
-    if (newCase.patient) {
-      const created = {
-        id: `CT-${Math.floor(904 + Math.random() * 90)}`,
-        regNo: `REG-${Math.floor(1060 + Math.random() * 100)}`,
-        date: new Date().toLocaleDateString('en-GB'),
-        patient: newCase.patient,
-        investigations: newCase.investigations,
-        status: 'Scheduled',
-        scanCenter: newCase.scanCenter
-      };
-      setCases([created, ...cases]);
-      setIsModalOpen(false);
-      setNewCase({ patient: '', investigations: 'HRCT Chest', scanCenter: 'Metro Imaging Hub' });
+    if (!newCase.patient.trim()) return;
+
+    const patientName = newCase.patient.trim();
+    const caseId = `CT-${904 + cases.length}`;
+    const regNo = `REG-${1060 + cases.length}`;
+
+    // Fix foreign key / missing column constraint: look up or insert patient to get valid patient_id UUID
+    let patientUuid = null;
+    try {
+      const { data: existingPt } = await supabase
+        .from('patients')
+        .select('id')
+        .ilike('full_name', patientName)
+        .maybeSingle();
+
+      if (existingPt?.id) {
+        patientUuid = existingPt.id;
+      } else {
+        const { data: insertedPt } = await supabase
+          .from('patients')
+          .insert({ full_name: patientName, patient_code: regNo })
+          .select('id')
+          .maybeSingle();
+        patientUuid = insertedPt?.id;
+      }
+    } catch (err) {
+      console.warn('Patient UUID lookup notice for CT scan:', err);
     }
+
+    if (!patientUuid) {
+      patientUuid = (typeof crypto !== 'undefined' && crypto.randomUUID) 
+        ? crypto.randomUUID() 
+        : '00000000-0000-4000-8000-000000000001';
+    }
+
+    // Fully-mapped INSERT payload satisfying imaging_cases schema
+    const insertPayload = {
+      patient_id: patientUuid,
+      case_type: 'ct_scan',
+      status: 'scheduled',
+      accession_number: regNo,
+      referred_by: 'Self',
+      notes: `${newCase.investigations} (${newCase.scanCenter})`
+    };
+
+    try {
+      await supabase.from('imaging_cases').insert(insertPayload);
+    } catch {}
+
+    const created = {
+      id: caseId,
+      regNo,
+      date: new Date().toLocaleDateString('en-GB'),
+      patient: patientName,
+      investigations: newCase.investigations,
+      status: 'Scheduled',
+      scanCenter: newCase.scanCenter
+    };
+    setCases([created, ...cases]);
+    setIsModalOpen(false);
+    setNewCase({ patient: '', investigations: 'HRCT Chest', scanCenter: 'Metro Imaging Hub' });
   };
 
   const filtered = cases.filter(c =>
@@ -59,7 +109,7 @@ export default function CtScanCases() {
             cursor: 'pointer'
           }}
         >
-          <PlusIcon style={{ width: '16px' }} /> + New CT Case
+          <PlusIcon style={{ width: '16px' }} /> New CT Case
         </button>
       </div>
       
@@ -106,8 +156,8 @@ export default function CtScanCases() {
               <td>
                 <button
                   type="button"
-                  onClick={() => alert(`Opening DICOM / Scan summary for ${c.patient}`)}
-                  style={{ padding: '0.3rem 0.6rem', border: '1px solid #cbd5e1', borderRadius: '4px', background: '#ffffff', fontSize: '0.75rem', cursor: 'pointer' }}
+                  onClick={() => navigate(`/ct-scan/${c.id}`)}
+                  style={{ padding: '0.35rem 0.75rem', border: '1px solid #cbd5e1', borderRadius: '4px', background: '#ffffff', fontSize: '0.75rem', fontWeight: '600', color: '#15803d', cursor: 'pointer' }}
                 >
                   View
                 </button>

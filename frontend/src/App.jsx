@@ -55,6 +55,7 @@ import XraySignatures from './views/xray/Signatures';
 import BrowserSecurity from './views/manage/BrowserSecurity';
 import EmployeeLogin from './views/manage/EmployeeLogin';
 import DoctorAccess from './views/manage/DoctorAccess';
+import AuthoritySettings from './views/manage/AuthoritySettings';
 
 // Setup
 import SetupLayout from './views/setup/SetupLayout';
@@ -235,7 +236,13 @@ function App() {
             <Route path="manage/employee-login" element={<EmployeeLogin />} />
             <Route path="manage/doctor-access" element={<DoctorAccess />} />
 
+            {/* Dedicated Authority Account & Settings Route */}
+            <Route path="settings" element={<AuthoritySettings />} />
           </Route>
+
+          {/* Authority Settings Direct URL Alias */}
+          <Route path="/authority/settings" element={<Navigate to="/app/settings" replace />} />
+          <Route path="/ct-scan/:scanId" element={<Navigate to="/app/cases/ctscan" replace />} />
 
           {/* Catch-all fallback */}
           <Route path="*" element={<NotFound />} />

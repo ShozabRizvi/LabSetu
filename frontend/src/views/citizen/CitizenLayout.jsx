@@ -3,6 +3,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import logo from '../../assets/logo.png';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
+import Footer from '../../components/common/Footer';
 import './CitizenLayout.css';
 import {
   MagnifyingGlassIcon,
@@ -450,35 +451,7 @@ export default function CitizenLayout() {
             <Outlet context={{ lang }} />
           </div>
 
-          <footer className="app-global-footer">
-            {/* Row 1: Terms & Conditions and Privacy Policy */}
-            <div className="footer-links-row">
-              <NavLink 
-                to="/portal/privacy" 
-                className="footer-link"
-              >
-                {lang === 'hi' ? 'नियम व शर्तें' : 'Terms & Conditions'}
-              </NavLink>
-              <span className="footer-bullet">•</span>
-              <NavLink 
-                to="/portal/privacy" 
-                className="footer-link"
-              >
-                {lang === 'hi' ? 'गोपनीयता नीति' : 'Privacy Policy'}
-              </NavLink>
-              <span className="footer-bullet">•</span>
-              <NavLink 
-                to="/portal/support" 
-                className="footer-link"
-              >
-                {lang === 'hi' ? 'रिफंड व रद्दीकरण नीति' : 'Refund Policy'}
-              </NavLink>
-            </div>
-            {/* Row 2: Copyright notice */}
-            <p className="footer-copyright">
-              &copy; 2026 LabSetu Healthcare Systems. All rights reserved.
-            </p>
-          </footer>
+          <Footer lang={lang} />
         </main>
       </div>
 

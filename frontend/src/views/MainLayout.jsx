@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import { PRESET_SECURITY_QUESTIONS } from '../services/authService';
 import LabSetuVideoPlayer from '../components/common/LabSetuVideoPlayer';
+import Footer from '../components/common/Footer';
 import './MainLayout.css';
 import { 
   MagnifyingGlassIcon, 
@@ -75,106 +76,12 @@ export default function MainLayout() {
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [isVideoOpen, setIsVideoOpen] = useState(false);
-  const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
-  const [accountName, setAccountName] = useState(currentUser?.name || '');
-  const [accountSecurityQuestion, setAccountSecurityQuestion] = useState('What is your childhood nickname?');
-  const [accountSecurityAnswer, setAccountSecurityAnswer] = useState('');
-  const [isSavingAccount, setIsSavingAccount] = useState(false);
-  const [accountNotice, setAccountNotice] = useState('');
   const [legalModal, setLegalModal] = useState(null);
   const [isNewLabModalOpen, setIsNewLabModalOpen] = useState(false);
   const [isEmailPrefModalOpen, setIsEmailPrefModalOpen] = useState(false);
   const [isNewNavEnabled, setIsNewNavEnabled] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [copiedLabId, setCopiedLabId] = useState(false);
-
-  useEffect(() => {
-    if (isAccountModalOpen && currentUser) {
-      setAccountName(currentUser.name || '');
-      setAccountNotice('');
-
-      const fetchAccountSecurity = async () => {
-        try {
-          const targetId = currentUser.id || '6296e1a6-8a20-4fa7-b26a-883b53800335';
-          const { data } = await supabase
-            .from('profiles')
-            .select('security_question, security_question_1, security_answer, security_answer_1')
-            .eq('id', targetId)
-            .maybeSingle();
-          if (data) {
-            if (data.security_question || data.security_question_1) {
-              setAccountSecurityQuestion(data.security_question || data.security_question_1);
-            }
-            if (data.security_answer || data.security_answer_1) {
-              setAccountSecurityAnswer(data.security_answer || data.security_answer_1);
-            }
-          }
-        } catch {}
-      };
-      fetchAccountSecurity();
-    }
-  }, [isAccountModalOpen, currentUser]);
-
-  const handleSaveAccount = async (e) => {
-    e.preventDefault();
-    if (!accountName.trim()) return;
-
-    try {
-      setIsSavingAccount(true);
-      setAccountNotice('');
-      const newName = accountName.trim();
-      const targetUserId = currentUser?.id || '6296e1a6-8a20-4fa7-b26a-883b53800335';
-      const cleanAnswer = (accountSecurityAnswer || '').trim().toLowerCase();
-
-      // 1. Commit update to Supabase database
-      try {
-        let updateRes = await supabase
-          .from('profiles')
-          .update({
-            full_name: newName,
-            display_name: newName,
-            security_question: accountSecurityQuestion,
-            security_answer: cleanAnswer || null,
-            security_question_1: accountSecurityQuestion,
-            security_answer_1: cleanAnswer || null
-          })
-          .eq('id', targetUserId);
-
-        if (updateRes.error) {
-          await supabase
-            .from('profiles')
-            .update({
-              full_name: newName,
-              security_question: accountSecurityQuestion,
-              security_answer: cleanAnswer || null
-            })
-            .eq('id', targetUserId);
-        }
-      } catch (dbErr) {
-        console.warn('Supabase profile update warning:', dbErr);
-      }
-
-      // 2. Immediately update local auth state / user context
-      const updatedUser = {
-        ...(currentUser || {}),
-        id: targetUserId,
-        name: newName,
-        role: 'authority'
-      };
-      updateCurrentUser(updatedUser);
-
-      setAccountNotice('Profile updated successfully!');
-      setTimeout(() => {
-        setIsAccountModalOpen(false);
-        setAccountNotice('');
-      }, 700);
-    } catch (err) {
-      console.error('Account update error:', err);
-      setAccountNotice('Error updating profile. Please try again.');
-    } finally {
-      setIsSavingAccount(false);
-    }
-  };
 
   const [notifications, setNotifications] = useState([
     { id: 1, title: 'Sample Collected', desc: 'Sample collected for Patient Riya Sharma (CBC).', time: '10 mins ago', read: false },
@@ -397,14 +304,13 @@ export default function MainLayout() {
               </div>
 
               <div className="user-menu-links">
-                <button 
-                  type="button" 
+                <NavLink 
+                  to="/app/settings" 
                   className="user-menu-link" 
-                  style={{ width: '100%', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer' }}
-                  onClick={() => { setIsUserMenuExpanded(false); setIsAccountModalOpen(true); }}
+                  onClick={() => setIsUserMenuExpanded(false)}
                 >
-                  <UserIcon style={{width:'18px'}} /> My account
-                </button>
+                  <UserIcon style={{width:'18px'}} /> My account / Settings
+                </NavLink>
                 <NavLink 
                   to="/app/setup/center-details" 
                   className="user-menu-link" 
@@ -658,38 +564,7 @@ export default function MainLayout() {
             <Outlet />
           </div>
 
-          <footer className="app-global-footer">
-            {/* Row 1: Terms & Conditions, Privacy Policy and Refund Policy */}
-            <div className="footer-links-row">
-              <a 
-                href="/terms" 
-                onClick={(e) => { e.preventDefault(); setLegalModal('terms'); }} 
-                className="footer-link"
-              >
-                Terms &amp; Conditions
-              </a>
-              <span className="footer-bullet">•</span>
-              <a 
-                href="/privacy" 
-                onClick={(e) => { e.preventDefault(); setLegalModal('privacy'); }} 
-                className="footer-link"
-              >
-                Privacy Policy
-              </a>
-              <span className="footer-bullet">•</span>
-              <a 
-                href="/refund" 
-                onClick={(e) => { e.preventDefault(); setLegalModal('refund'); }} 
-                className="footer-link"
-              >
-                Refund Policy
-              </a>
-            </div>
-            {/* Row 2: Copyright notice */}
-            <p className="footer-copyright">
-              &copy; 2026 LabSetu Healthcare Systems. All rights reserved.
-            </p>
-          </footer>
+          <Footer onLegalClick={setLegalModal} />
         </main>
       </div>
 
@@ -746,134 +621,6 @@ export default function MainLayout() {
                 Done Watching
               </button>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* My Account Modal */}
-      {isAccountModalOpen && (
-        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '1rem' }} onClick={() => setIsAccountModalOpen(false)}>
-          <div style={{ backgroundColor: '#ffffff', borderRadius: '12px', maxWidth: '480px', width: '100%', padding: '1.5rem', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)' }} onClick={e => e.stopPropagation()}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
-              <h3 style={{ margin: 0, fontSize: '1.25rem', color: '#0f172a' }}>Account Owner Profile</h3>
-              <button type="button" onClick={() => setIsAccountModalOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
-                <XMarkIcon style={{ width: '20px', color: '#64748b' }} />
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveAccount} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              <div>
-                <label style={{ display: 'block', marginBottom: '0.4rem', fontSize: '0.85rem', fontWeight: '600', color: '#334155' }}>
-                  Full Name
-                </label>
-                <input
-                  type="text"
-                  value={accountName}
-                  onChange={(e) => setAccountName(e.target.value)}
-                  required
-                  placeholder="e.g. Dr. Shozab Rizvi"
-                  style={{
-                    width: '100%',
-                    padding: '0.65rem 0.85rem',
-                    border: '1px solid #cbd5e1',
-                    borderRadius: '8px',
-                    fontSize: '0.9rem',
-                    boxSizing: 'border-box',
-                    outline: 'none',
-                    color: '#0f172a'
-                  }}
-                />
-              </div>
-
-              <div style={{ backgroundColor: '#f8fafc', borderRadius: '8px', padding: '0.85rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', fontSize: '0.85rem', border: '1px solid #e2e8f0' }}>
-                <div><span style={{ color: '#64748b' }}>Role:</span> <strong style={{ color: '#15803d' }}>Authority / Center Admin</strong></div>
-                <div><span style={{ color: '#64748b' }}>Registered Email:</span> <strong>{currentUser?.email || 'admin@labsetu.com'}</strong></div>
-                <div><span style={{ color: '#64748b' }}>Associated Center:</span> <strong>{currentUser?.centerName || 'LabSetu Diagnostics'}</strong></div>
-                <div><span style={{ color: '#64748b' }}>Lab ID #:</span> <strong>{currentUser?.labId || '61326885'}</strong></div>
-              </div>
-
-              {/* Password Recovery Security Question for Staff */}
-              <div style={{ backgroundColor: '#f8fafc', padding: '0.85rem', borderRadius: '8px', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                <div style={{ fontSize: '0.85rem', fontWeight: '700', color: '#0f172a' }}>
-                  Password Recovery Security Question
-                </div>
-                <div>
-                  <label style={{ display: 'block', marginBottom: '0.3rem', fontSize: '0.8rem', fontWeight: '500', color: '#334155' }}>
-                    Select Question
-                  </label>
-                  <select
-                    value={accountSecurityQuestion}
-                    onChange={(e) => setAccountSecurityQuestion(e.target.value)}
-                    style={{ width: '100%', padding: '0.55rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.85rem', backgroundColor: '#fff', boxSizing: 'border-box' }}
-                  >
-                    {PRESET_SECURITY_QUESTIONS.map(q => (
-                      <option key={q} value={q}>{q}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label style={{ display: 'block', marginBottom: '0.3rem', fontSize: '0.8rem', fontWeight: '500', color: '#334155' }}>
-                    Security Answer
-                  </label>
-                  <input
-                    type="text"
-                    value={accountSecurityAnswer}
-                    onChange={(e) => setAccountSecurityAnswer(e.target.value)}
-                    placeholder="Enter confidential answer"
-                    style={{ width: '100%', padding: '0.55rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.85rem', boxSizing: 'border-box' }}
-                  />
-                </div>
-              </div>
-
-              {accountNotice && (
-                <div style={{
-                  padding: '0.55rem 0.85rem',
-                  borderRadius: '6px',
-                  backgroundColor: accountNotice.includes('Error') ? '#fef2f2' : '#f0fdf4',
-                  color: accountNotice.includes('Error') ? '#dc2626' : '#15803d',
-                  fontSize: '0.85rem',
-                  fontWeight: '500'
-                }}>
-                  {accountNotice}
-                </div>
-              )}
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '0.5rem' }}>
-                <button
-                  type="button"
-                  onClick={() => setIsAccountModalOpen(false)}
-                  style={{
-                    padding: '0.55rem 1rem',
-                    borderRadius: '6px',
-                    border: '1px solid #cbd5e1',
-                    backgroundColor: '#ffffff',
-                    color: '#475569',
-                    fontSize: '0.875rem',
-                    fontWeight: '500',
-                    cursor: 'pointer'
-                  }}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSavingAccount}
-                  style={{
-                    padding: '0.55rem 1.25rem',
-                    borderRadius: '6px',
-                    border: 'none',
-                    backgroundColor: '#15803d',
-                    color: '#ffffff',
-                    fontWeight: '600',
-                    fontSize: '0.875rem',
-                    cursor: isSavingAccount ? 'not-allowed' : 'pointer',
-                    opacity: isSavingAccount ? 0.75 : 1
-                  }}
-                >
-                  {isSavingAccount ? 'Saving...' : 'Save Changes'}
-                </button>
-              </div>
-            </form>
           </div>
         </div>
       )}

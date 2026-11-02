@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useLanguage } from '../../context/LanguageContext';
+import { useAuth } from '../../context/AuthContext';
 import useDemoResource from '../../hooks/useDemoResource';
 import { supabase } from '../../lib/supabase';
 import {
@@ -105,62 +106,78 @@ const TRACKING_STAGES = [
 export default function CitizenHomeCollection({ lang: propLang }) {
   const { lang: contextLang } = useLanguage();
   const lang = propLang || contextLang || 'en';
+  const { currentUser, activeUHID } = useAuth();
 
-  const defaultBookings = [
-    {
-      id: 'HC-9042',
-      tests: 'Complete Blood Count (CBC), Fasting Blood Sugar',
-      date: '2026-10-18',
-      timeSlot: '07:30 AM - 08:30 AM (Fasting)',
-      address: 'House #42, Sector 14, Gurugram, Haryana - 122001',
-      phlebotomist: {
-        name: 'Suresh Kumar',
-        phone: '+91 98765 43210',
-        badge: 'Vaccinated · NABL Certified',
-        photo: 'https://images.unsplash.com/photo-1622253692010-333f2da6031d?w=150',
-        rating: '4.9 ★ (1,240 pickups)'
-      },
-      assignedLab: {
-        id: 'lab-central',
-        name: 'LabSetu Central Reference Lab',
-        accreditation: 'NABL & ICMR Accredited (ISO 15189)',
-        distanceKm: 1.2
-      },
-      status: 'Out for Collection',
-      stage: 2,
-      prep: 'Strict 10-12 hours overnight fasting required. Plain water permitted.'
-    },
-    {
-      id: 'HC-8819',
-      tests: 'Lipid Profile, Thyroid Profile (T3, T4, TSH)',
-      date: '2026-10-10',
-      timeSlot: '08:00 AM - 09:00 AM',
-      address: 'House #42, Sector 14, Gurugram, Haryana - 122001',
-      phlebotomist: {
-        name: 'Rajesh Sharma',
-        phone: '+91 98111 22334',
-        badge: 'Vaccinated · NABL Certified',
-        photo: 'https://images.unsplash.com/photo-1537368910025-700350fe46c7?w=150',
-        rating: '4.8 ★ (890 pickups)'
-      },
-      assignedLab: {
-        id: 'lab-maxpath',
-        name: 'MaxPath Precision Laboratories',
-        accreditation: 'NABL Certified & CAP Accredited',
-        distanceKm: 2.8
-      },
-      status: 'Report Ready',
-      stage: 6,
-      prep: 'Completed on 10 Oct 2026'
-    }
-  ];
-
-  const { data: bookings, update: setBookings } = useDemoResource('labsetu_home_collections', defaultBookings);
-  const [activeTrackingId, setActiveTrackingId] = useState('HC-9042');
+  const [bookings, setBookings] = useState([]);
+  const [loadingBookings, setLoadingBookings] = useState(true);
+  const [activeTrackingId, setActiveTrackingId] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [notice, setNotice] = useState('');
   const [isSimulating, setIsSimulating] = useState(false);
   const autoSimTimerRef = useRef(null);
+
+  // Fetch live home collection appointments strictly from Supabase
+  const fetchHomeCollections = React.useCallback(async () => {
+    try {
+      setLoadingBookings(true);
+      const { data, error } = await supabase
+        .from('appointments')
+        .select('*')
+        .or('type.eq.home_collection,visit_type.eq.home_collection')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.warn('[CitizenHomeCollection] appointments query warning:', error);
+      }
+
+      const rows = data || [];
+      const mapped = rows.map((row) => {
+        const isFasting = /fasting|sugar|glucose|lipid|cholesterol|kft|lft/i.test(row.purpose || row.department || '');
+        const prepInstruction = row.preparation_instructions || (isFasting ? 'Strict 10-12 hours overnight fasting required. Plain water permitted.' : null);
+
+        const statusStr = row.tracking_status || row.status || 'Order Placed';
+        const matchedIdx = TRACKING_STAGES.findIndex(s => s.key.toLowerCase() === statusStr.toLowerCase() || s.label.toLowerCase() === statusStr.toLowerCase());
+        const stageIdx = matchedIdx !== -1 ? matchedIdx : (statusStr === 'Confirmed' ? 1 : 0);
+
+        return {
+          id: row.id.startsWith('HC-') ? row.id : (row.notes?.match(/Ref:\s*(HC-\w+)/)?.[1] || `HC-${row.id.replace(/\D/g, '').slice(-4) || '1001'}`),
+          rawId: row.id,
+          tests: row.purpose || row.department || 'Blood Sample Collection',
+          date: row.appointment_date || row.date || (row.created_at ? new Date(row.created_at).toISOString().slice(0, 10) : ''),
+          timeSlot: row.time_slot || row.slot || '08:00 AM - 09:00 AM',
+          address: row.notes?.match(/Address:\s*([^,]+(?:,[^,]+)*?)(?:,\s*MatchedLab|$)/)?.[1] || row.address || currentUser?.address || 'Patient Residence',
+          phlebotomist: {
+            name: row.phlebotomist_name || 'Suresh Kumar',
+            phone: row.phlebotomist_phone || '+91 98765 43210',
+            badge: 'Vaccinated · NABL Certified',
+            rating: '4.9 ★'
+          },
+          assignedLab: {
+            id: row.assigned_lab_id || 'lab-central',
+            name: row.notes?.match(/MatchedLab:\s*(.+)$/)?.[1] || 'LabSetu Central Reference Lab',
+            accreditation: 'NABL & ICMR Accredited (ISO 15189)',
+            distanceKm: 1.2
+          },
+          status: TRACKING_STAGES[stageIdx].key,
+          stage: stageIdx,
+          prep: prepInstruction
+        };
+      });
+
+      setBookings(mapped);
+      setActiveTrackingId(prev => (prev && mapped.some(b => b.id === prev)) ? prev : (mapped[0]?.id || null));
+    } catch (err) {
+      console.warn('[CitizenHomeCollection] fetch error:', err);
+      setBookings([]);
+      setActiveTrackingId(null);
+    } finally {
+      setLoadingBookings(false);
+    }
+  }, [currentUser?.address]);
+
+  useEffect(() => {
+    fetchHomeCollections();
+  }, [fetchHomeCollections]);
 
   // Geolocation & Nearest Lab Detection State
   const [geoState, setGeoState] = useState({
@@ -306,7 +323,7 @@ export default function CitizenHomeCollection({ lang: propLang }) {
     instructions: 'Ring doorbell twice'
   });
 
-  const handleCreateBooking = (e) => {
+  const handleCreateBooking = async (e) => {
     e.preventDefault();
     const assignedLab = geoState.matchedLab || {
       id: 'lab-central',
@@ -316,6 +333,9 @@ export default function CitizenHomeCollection({ lang: propLang }) {
     };
 
     const newId = `HC-${Math.floor(1000 + Math.random() * 9000)}`;
+    const isFasting = /fasting|sugar|glucose|lipid|cholesterol|kft|lft/i.test(form.tests);
+    const prepNotice = isFasting ? 'Strict 10-12 hours overnight fasting required. Plain water permitted.' : null;
+
     const created = {
       id: newId,
       tests: form.tests,
@@ -337,27 +357,33 @@ export default function CitizenHomeCollection({ lang: propLang }) {
       },
       status: 'Order Placed',
       stage: 0,
-      prep: 'Overnight fasting (10-12h) recommended. Keep identity document accessible.'
+      prep: prepNotice
     };
 
-    setBookings([created, ...(bookings || [])]);
+    setBookings((prev) => [created, ...(prev || [])]);
     setActiveTrackingId(newId);
 
     try {
-      supabase.from('appointments').insert({
+      await supabase.from('appointments').insert({
         appointment_date: form.date,
         visit_type: 'home_collection',
+        type: 'home_collection',
         status: 'Confirmed',
         tracking_status: 'Order Placed',
         estimated_delivery_time: '30-45 mins',
         assigned_lab_id: assignedLab.id,
+        patient_id: currentUser?.id && currentUser.id.includes('-') ? currentUser.id : null,
+        patient_name: currentUser?.name || 'Citizen Patient',
+        patient_phone: currentUser?.phone || null,
+        patient_email: currentUser?.email || null,
+        uhid: activeUHID || currentUser?.uhid || null,
         patient_latitude: geoState.coords?.latitude,
         patient_longitude: geoState.coords?.longitude,
         purpose: form.tests,
+        preparation_instructions: prepNotice,
         notes: `Ref: ${created.id}, Address: ${form.address}, MatchedLab: ${assignedLab.name}`
-      }).then(({ error }) => {
-        if (error) console.warn('Supabase home collection insert error:', error);
       });
+      fetchHomeCollections();
     } catch (dbErr) {
       console.warn('Supabase insert fallback:', dbErr);
     }
@@ -369,8 +395,27 @@ export default function CitizenHomeCollection({ lang: propLang }) {
     setTimeout(() => setNotice(''), 4000);
   };
 
-  const handleCancel = (id) => {
-    setBookings((bookings || []).filter(b => b.id !== id));
+  const handleCancel = async (id) => {
+    const target = (bookings || []).find(b => b.id === id);
+    const targetRawId = target?.rawId;
+
+    setBookings((prev) => (prev || []).filter(b => b.id !== id));
+    if (activeTrackingId === id) {
+      const remaining = (bookings || []).filter(b => b.id !== id);
+      setActiveTrackingId(remaining[0]?.id || null);
+    }
+
+    try {
+      if (targetRawId) {
+        await supabase
+          .from('appointments')
+          .update({ status: 'Cancelled', tracking_status: 'Cancelled' })
+          .eq('id', targetRawId);
+      }
+    } catch (err) {
+      console.warn('Cancel appointment error:', err);
+    }
+
     setNotice(lang === 'hi' ? 'कलेक्शन रद्द कर दिया गया।' : 'Collection booking cancelled.');
     setTimeout(() => setNotice(''), 3000);
   };
@@ -1014,95 +1059,139 @@ export default function CitizenHomeCollection({ lang: propLang }) {
           {lang === 'hi' ? 'आपके घर से सैंपल कलेक्शन इतिहास' : 'Scheduled & Past Home Collections'}
         </h3>
 
-        {(bookings || []).map((b) => {
-          const isSelected = b.id === activeTrackingId;
-          const stageIdx = Math.min(Math.max(b.stage ?? 0, 0), 6);
-          const stageObj = TRACKING_STAGES[stageIdx];
-
-          return (
-            <div
-              key={b.id}
-              onClick={() => setActiveTrackingId(b.id)}
+        {loadingBookings ? (
+          <div style={{ background: '#ffffff', borderRadius: '12px', border: '1px solid #e2e8f0', padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+            <div style={{ width: '120px', height: '20px', backgroundColor: '#e2e8f0', borderRadius: '4px' }} className="animate-pulse" />
+            <div style={{ width: '260px', height: '24px', backgroundColor: '#f1f5f9', borderRadius: '6px' }} className="animate-pulse" />
+            <div style={{ width: '100%', height: '40px', backgroundColor: '#f8fafc', borderRadius: '6px' }} className="animate-pulse" />
+          </div>
+        ) : (bookings || []).length === 0 ? (
+          <div style={{
+            background: '#ffffff',
+            borderRadius: '12px',
+            border: '1px dashed #cbd5e1',
+            padding: '3rem 2rem',
+            textAlign: 'center',
+            color: '#64748b'
+          }}>
+            <HomeModernIcon style={{ width: '48px', height: '48px', margin: '0 auto 1rem', color: '#94a3b8' }} />
+            <h4 style={{ margin: '0 0 0.5rem', fontSize: '1.1rem', color: '#1e293b' }}>
+              {lang === 'hi' ? 'कोई सक्रिय होम कलेक्शन नहीं है' : 'No Home Collections Scheduled'}
+            </h4>
+            <p style={{ margin: '0 0 1.25rem', fontSize: '0.875rem' }}>
+              {lang === 'hi'
+                ? 'प्रमाणित फ्लेबोटोमिस्ट को अपने घर बुलाने के लिए ऊपर दिए गए बटन पर क्लिक करें।'
+                : 'Book a certified phlebotomist to collect diagnostic samples directly from your doorstep.'}
+            </p>
+            <button
+              onClick={() => setIsModalOpen(true)}
               style={{
-                background: 'white',
-                border: isSelected ? '2px solid #059669' : '1px solid #e2e8f0',
-                borderRadius: '12px',
-                padding: '1.25rem',
-                boxShadow: isSelected ? '0 4px 12px rgba(5, 150, 105, 0.12)' : '0 1px 3px rgba(0,0,0,0.04)',
-                cursor: 'pointer',
-                transition: 'all 0.2s ease'
+                backgroundColor: '#059669',
+                color: '#ffffff',
+                border: 'none',
+                padding: '0.65rem 1.25rem',
+                borderRadius: '8px',
+                fontWeight: '600',
+                fontSize: '0.875rem',
+                cursor: 'pointer'
               }}
             >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '0.75rem' }}>
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <span style={{ fontSize: '0.75rem', fontWeight: '700', color: '#15803d', background: '#dcfce7', padding: '0.2rem 0.5rem', borderRadius: '4px', textTransform: 'uppercase' }}>
-                      {b.id}
-                    </span>
-                    {isSelected && (
-                      <span style={{ fontSize: '0.7rem', color: '#059669', fontWeight: '700', background: '#ecfdf5', padding: '0.15rem 0.45rem', borderRadius: '4px', border: '1px solid #a7f3d0' }}>
-                        ACTIVE TRACKER
+              + {lang === 'hi' ? 'नया कलेक्शन बुक करें' : 'Schedule Doorstep Collection'}
+            </button>
+          </div>
+        ) : (
+          (bookings || []).map((b) => {
+            const isSelected = b.id === activeTrackingId;
+            const stageIdx = Math.min(Math.max(b.stage ?? 0, 0), 6);
+            const stageObj = TRACKING_STAGES[stageIdx] || TRACKING_STAGES[0];
+
+            return (
+              <div
+                key={b.id}
+                onClick={() => setActiveTrackingId(b.id)}
+                style={{
+                  background: 'white',
+                  border: isSelected ? '2px solid #059669' : '1px solid #e2e8f0',
+                  borderRadius: '12px',
+                  padding: '1.25rem',
+                  boxShadow: isSelected ? '0 4px 12px rgba(5, 150, 105, 0.12)' : '0 1px 3px rgba(0,0,0,0.04)',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '0.75rem' }}>
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <span style={{ fontSize: '0.75rem', fontWeight: '700', color: '#15803d', background: '#dcfce7', padding: '0.2rem 0.5rem', borderRadius: '4px', textTransform: 'uppercase' }}>
+                        {b.id}
                       </span>
-                    )}
+                      {isSelected && (
+                        <span style={{ fontSize: '0.7rem', color: '#059669', fontWeight: '700', background: '#ecfdf5', padding: '0.15rem 0.45rem', borderRadius: '4px', border: '1px solid #a7f3d0' }}>
+                          ACTIVE TRACKER
+                        </span>
+                      )}
+                    </div>
+                    <h4 style={{ margin: '0.4rem 0 0.2rem', fontSize: '1.05rem', color: '#0f172a' }}>{b.tests}</h4>
+                    <div style={{ display: 'flex', gap: '1rem', fontSize: '0.85rem', color: '#64748b', flexWrap: 'wrap' }}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                        <CalendarDaysIcon style={{ width: '16px' }} /> {b.date}
+                      </span>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                        <ClockIcon style={{ width: '16px' }} /> {b.timeSlot}
+                      </span>
+                    </div>
                   </div>
-                  <h4 style={{ margin: '0.4rem 0 0.2rem', fontSize: '1.05rem', color: '#0f172a' }}>{b.tests}</h4>
-                  <div style={{ display: 'flex', gap: '1rem', fontSize: '0.85rem', color: '#64748b', flexWrap: 'wrap' }}>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                      <CalendarDaysIcon style={{ width: '16px' }} /> {b.date}
-                    </span>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                      <ClockIcon style={{ width: '16px' }} /> {b.timeSlot}
+
+                  <div style={{ textAlign: 'right' }}>
+                    <span style={{
+                      display: 'inline-block',
+                      padding: '0.35rem 0.8rem',
+                      borderRadius: '20px',
+                      fontSize: '0.8rem',
+                      fontWeight: '700',
+                      background: stageIdx === 6 ? '#dcfce7' : '#fef3c7',
+                      color: stageIdx === 6 ? '#15803d' : '#92400e'
+                    }}>
+                      {stageObj.key}
                     </span>
                   </div>
                 </div>
 
-                <div style={{ textAlign: 'right' }}>
-                  <span style={{
-                    display: 'inline-block',
-                    padding: '0.35rem 0.8rem',
-                    borderRadius: '20px',
-                    fontSize: '0.8rem',
-                    fontWeight: '700',
-                    background: stageIdx === 6 ? '#dcfce7' : '#fef3c7',
-                    color: stageIdx === 6 ? '#15803d' : '#92400e'
-                  }}>
-                    {stageObj.key}
-                  </span>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem', fontSize: '0.85rem', color: '#334155', borderTop: '1px solid #f1f5f9', paddingTop: '0.75rem' }}>
+                  <div>
+                    <strong>{lang === 'hi' ? 'कलेक्शन पता:' : 'Pickup Address:'}</strong>
+                    <p style={{ margin: '0.15rem 0 0', color: '#64748b' }}>{b.address}</p>
+                  </div>
+                  <div>
+                    <strong>{lang === 'hi' ? 'फ्लेबोटोमिस्ट:' : 'Designated Phlebotomist:'}</strong>
+                    <p style={{ margin: '0.15rem 0 0', color: '#64748b' }}>
+                      {typeof b.phlebotomist === 'object' ? b.phlebotomist.name : b.phlebotomist} · {b.phleboPhone || b.phlebotomist?.phone}
+                    </p>
+                  </div>
                 </div>
-              </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem', fontSize: '0.85rem', color: '#334155', borderTop: '1px solid #f1f5f9', paddingTop: '0.75rem' }}>
-                <div>
-                  <strong>{lang === 'hi' ? 'कलेक्शन पता:' : 'Pickup Address:'}</strong>
-                  <p style={{ margin: '0.15rem 0 0', color: '#64748b' }}>{b.address}</p>
-                </div>
-                <div>
-                  <strong>{lang === 'hi' ? 'फ्लेबोटोमिस्ट:' : 'Designated Phlebotomist:'}</strong>
-                  <p style={{ margin: '0.15rem 0 0', color: '#64748b' }}>
-                    {typeof b.phlebotomist === 'object' ? b.phlebotomist.name : b.phlebotomist} · {b.phleboPhone || b.phlebotomist?.phone}
-                  </p>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.75rem', borderTop: '1px solid #f1f5f9', paddingTop: '0.65rem' }}>
+                  {b.prep ? (
+                    <span style={{ fontSize: '0.8rem', color: '#b45309' }}>
+                      ⚠️ <strong>{lang === 'hi' ? 'तैयारी निर्देश:' : 'Test Preparation:'}</strong> {b.prep}
+                    </span>
+                  ) : <span />}
+                  {stageIdx < 3 && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleCancel(b.id);
+                      }}
+                      style={{ background: 'none', border: '1px solid #fca5a5', color: '#dc2626', padding: '0.35rem 0.75rem', borderRadius: '6px', fontSize: '0.8rem', cursor: 'pointer' }}
+                    >
+                      {lang === 'hi' ? 'रद्द करें' : 'Cancel Booking'}
+                    </button>
+                  )}
                 </div>
               </div>
-
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.75rem', borderTop: '1px solid #f1f5f9', paddingTop: '0.65rem' }}>
-                <span style={{ fontSize: '0.8rem', color: '#b45309' }}>
-                  ⚠️ <strong>{lang === 'hi' ? 'तैयारी निर्देश:' : 'Test Preparation:'}</strong> {b.prep}
-                </span>
-                {stageIdx < 3 && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleCancel(b.id);
-                    }}
-                    style={{ background: 'none', border: '1px solid #fca5a5', color: '#dc2626', padding: '0.35rem 0.75rem', borderRadius: '6px', fontSize: '0.8rem', cursor: 'pointer' }}
-                  >
-                    {lang === 'hi' ? 'रद्द करें' : 'Cancel Booking'}
-                  </button>
-                )}
-              </div>
-            </div>
-          );
-        })}
+            );
+          })
+        )}
       </div>
 
       {/* Schedule Doorstep Collection Modal */}

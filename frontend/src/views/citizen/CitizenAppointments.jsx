@@ -204,6 +204,14 @@ export default function CitizenAppointments({ lang: propLang, addNewBooking, onA
   const [newDate, setNewDate] = useState('');
   const [newSlot, setNewSlot] = useState('slot-10am');
   const [notice, setNotice] = useState('');
+  const [printingApptId, setPrintingApptId] = useState(null);
+
+  const handlePrintSlip = (apptId) => {
+    setPrintingApptId(apptId);
+    setTimeout(() => {
+      window.print();
+    }, 150);
+  };
 
   const filteredAppts = (appointments || []).filter(a => {
     if (activeMember && activeMember.relation !== 'Self') {
@@ -359,6 +367,7 @@ export default function CitizenAppointments({ lang: propLang, addNewBooking, onA
             return (
               <div 
                 key={appt.id}
+                className={`appointment-card ${printingApptId === appt.id ? 'print-target' : ''}`}
                 style={{
                   backgroundColor: '#ffffff',
                   borderRadius: '12px',
@@ -453,9 +462,9 @@ export default function CitizenAppointments({ lang: propLang, addNewBooking, onA
                   </div>
                 </div>
 
-                {appt.prep && (
-                  <div style={{ fontSize: '0.8rem', color: '#854d0e', background: '#fef9c3', padding: '0.5rem 0.75rem', borderRadius: '6px', marginBottom: '1rem' }}>
-                    ℹ️ <strong>Preparation Guidelines:</strong> {appt.prep}
+                {appt.preparation_instructions && (
+                  <div style={{ fontSize: '0.8rem', color: '#854d0e', background: '#fef9c3', padding: '0.5rem 0.75rem', borderRadius: '6px', marginBottom: '1rem', border: '1px solid #fde047' }}>
+                    ℹ️ <strong>Preparation Guidelines:</strong> {appt.preparation_instructions}
                   </div>
                 )}
 
@@ -463,7 +472,7 @@ export default function CitizenAppointments({ lang: propLang, addNewBooking, onA
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem', borderTop: '1px solid #f1f5f9', paddingTop: '1rem' }}>
                   <button
                     type="button"
-                    onClick={() => window.print()}
+                    onClick={() => handlePrintSlip(appt.id)}
                     style={{
                       background: 'none',
                       border: '1px solid #cbd5e1',

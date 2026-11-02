@@ -106,7 +106,7 @@ export const authService = {
         phone: profile?.phone || patientRow?.phone || '',
         uhid: resolvedRole === 'citizen' ? resolvedUhid : undefined,
         centerName: 'LabSetu Diagnostics',
-        labId: '61326885'
+        labId: profile?.lab_id || 'LAB-1001'
       };
 
       if (session.access_token) {
@@ -171,7 +171,7 @@ export const authService = {
       }
 
       const assignedUhid = userData.role === 'citizen'
-        ? (userData.uhid || `UHID-${authUser.id.substring(0, 4)}-${new Date().getFullYear()}`)
+        ? (userData.uhid || undefined)
         : undefined;
 
       // 2. Persist to public.profiles table (and patients if citizen)

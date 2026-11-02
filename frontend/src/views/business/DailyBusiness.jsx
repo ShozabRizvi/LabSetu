@@ -13,7 +13,7 @@ export default function DailyBusiness() {
   const [cashierName, setCashierName] = useState('');
   const [cashiers, setCashiers] = useState(['Counter 1 (Main Reception)', 'Dr. Shozab']);
   const [isMonthlyModalOpen, setIsMonthlyModalOpen] = useState(false);
-  const [records, setRecords] = useState([]);
+  const [records, setRecords] = useState(null);
   const [toast, setToast] = useState({ show: false, message: '', isFading: false });
 
   const showToastNotification = (msg) => {
@@ -40,11 +40,11 @@ export default function DailyBusiness() {
         .lte('created_at', endOfDay)
         .order('created_at', { ascending: false });
 
-      if (!error && Array.isArray(data) && data.length > 0) {
+      if (!error && Array.isArray(data)) {
         setRecords(data.map(d => ({
           id: d.id,
           regNo: d.reg_no || 'REG-1049',
-          patient: d.patient,
+          patient: d.patient || 'Walk-in Patient',
           ref: d.ref || 'Self',
           date: new Date(d.created_at).toLocaleDateString(),
           time: new Date(d.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
@@ -55,24 +55,27 @@ export default function DailyBusiness() {
           receivedBy: d.received_by || 'Counter 1'
         })));
       } else {
-        // Fallback for demonstration if no rows inserted today yet
-        setRecords([
-          { id: 'TX-2041', regNo: 'REG-1049', patient: 'Riya Sharma', ref: 'Self', date: 'Today', time: '10:42 AM', dcn: 'D-01', cc: 'Main Lab', amount: 850, method: 'UPI', receivedBy: 'Counter 1' },
-          { id: 'TX-2040', regNo: 'REG-1050', patient: 'Aarav Singh', ref: 'Dr. Smith', date: 'Today', time: '10:15 AM', dcn: 'D-01', cc: 'Main Lab', amount: 600, method: 'Cash', receivedBy: 'Counter 1' },
-          { id: 'TX-2039', regNo: 'REG-1051', patient: 'Meera Verma', ref: 'Dr. Jones', date: 'Today', time: '09:54 AM', dcn: 'D-02', cc: 'Branch A', amount: 250, method: 'Card', receivedBy: 'Counter 2' }
-        ]);
+        setRecords([]);
       }
     } catch (err) {
-      console.warn('Live transactions query fallback:', err);
+      console.warn('Live transactions query error:', err);
+      setRecords([]);
     }
   };
 
   useEffect(() => {
     fetchLiveTransactions(date);
 
-    // Bind Supabase Realtime channel listener
-    const channel = supabase.channel('daily-business-realtime')
+    // Bind Supabase Realtime channel listener on transactions and cashier tables
+    const channel = supabase.channel('custom-insert-channel')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'transactions' }, (payload) => {
+        fetchLiveTransactions(date);
+        showToastNotification(`New live transaction recorded: Rs.${payload.new?.amount || 0}`);
+      })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, () => {
+        fetchLiveTransactions(date);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'cashier' }, () => {
         fetchLiveTransactions(date);
       })
       .subscribe();
@@ -100,17 +103,19 @@ export default function DailyBusiness() {
     }
   };
 
-  const filteredRecords = records.filter(r => 
+  const safeRecords = records || [];
+
+  const filteredRecords = safeRecords.filter(r => 
     !search.trim() || 
     r.patient.toLowerCase().includes(search.toLowerCase()) ||
     r.regNo.toLowerCase().includes(search.toLowerCase()) ||
     r.method.toLowerCase().includes(search.toLowerCase())
   );
 
-  const totalIncome = records.reduce((acc, r) => acc + r.amount, 0);
-  const cashTotal = records.filter(r => r.method === 'Cash').reduce((acc, r) => acc + r.amount, 0);
-  const upiTotal = records.filter(r => r.method === 'UPI').reduce((acc, r) => acc + r.amount, 0);
-  const cardTotal = records.filter(r => r.method === 'Card').reduce((acc, r) => acc + r.amount, 0);
+  const totalIncome = safeRecords.reduce((acc, r) => acc + r.amount, 0);
+  const cashTotal = safeRecords.filter(r => r.method === 'Cash').reduce((acc, r) => acc + r.amount, 0);
+  const upiTotal = safeRecords.filter(r => r.method === 'UPI').reduce((acc, r) => acc + r.amount, 0);
+  const cardTotal = safeRecords.filter(r => r.method === 'Card').reduce((acc, r) => acc + r.amount, 0);
 
   return (
     <div className="daily-business-container">
@@ -189,7 +194,38 @@ export default function DailyBusiness() {
         <button type="button" className="db-arrow-btn" onClick={() => changeDateBy(1)}>&gt;</button>
       </div>
 
-      <div className="db-summary-card">
+      {records === null ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginTop: '1rem' }}>
+          <div style={{
+            backgroundColor: '#ffffff',
+            borderRadius: '12px',
+            border: '1px solid #e2e8f0',
+            padding: '1.5rem',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '1rem'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem' }}>
+              {[1, 2, 3, 4].map(i => (
+                <div key={i} style={{ flex: 1, height: '48px', backgroundColor: '#e2e8f0', borderRadius: '8px' }} className="animate-pulse" />
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: '1rem', borderTop: '1px solid #f1f5f9', paddingTop: '1rem' }}>
+              {[1, 2, 3, 4].map(i => (
+                <div key={i} style={{ flex: 1, height: '28px', backgroundColor: '#f1f5f9', borderRadius: '6px' }} className="animate-pulse" />
+              ))}
+            </div>
+          </div>
+          <div style={{ height: '240px', backgroundColor: '#ffffff', borderRadius: '12px', border: '1px solid #e2e8f0', padding: '1.25rem' }}>
+            <div style={{ height: '36px', backgroundColor: '#f1f5f9', borderRadius: '6px', marginBottom: '1rem' }} className="animate-pulse" />
+            {[1, 2, 3, 4].map(i => (
+              <div key={i} style={{ height: '36px', backgroundColor: '#f8fafc', borderRadius: '6px', marginBottom: '0.5rem' }} className="animate-pulse" />
+            ))}
+          </div>
+        </div>
+      ) : (
+        <>
+          <div className="db-summary-card">
         <div className="db-summary-row">
           <div className="db-summary-item">
             <span className="db-label">Total Income</span>
@@ -293,21 +329,29 @@ export default function DailyBusiness() {
           </tr>
         </thead>
         <tbody>
-          {filteredRecords.map(r => (
-            <tr key={r.id}>
-              <td>{r.id}</td>
-              <td>{r.regNo}</td>
-              <td><strong>{r.patient}</strong></td>
-              <td>{r.ref}</td>
-              <td>{r.date}</td>
-              <td>{r.time}</td>
-              <td>{r.dcn}</td>
-              <td>{r.cc}</td>
-              <td><strong>Rs. {r.amount}</strong></td>
-              <td>{r.method}</td>
-              <td>{r.receivedBy}</td>
+          {filteredRecords.length === 0 ? (
+            <tr>
+              <td colSpan="11" style={{ textAlign: 'center', padding: '2.5rem', color: '#64748b' }}>
+                No live transactions recorded for this calendar date.
+              </td>
             </tr>
-          ))}
+          ) : (
+            filteredRecords.map(r => (
+              <tr key={r.id}>
+                <td>{r.id}</td>
+                <td>{r.regNo}</td>
+                <td><strong>{r.patient}</strong></td>
+                <td>{r.ref}</td>
+                <td>{r.date}</td>
+                <td>{r.time}</td>
+                <td>{r.dcn}</td>
+                <td>{r.cc}</td>
+                <td><strong>Rs. {r.amount}</strong></td>
+                <td>{r.method}</td>
+                <td>{r.receivedBy}</td>
+              </tr>
+            ))
+          )}
           <tr>
             <td colSpan="11" className="db-table-total">
               Total income: <span className="db-total-green">Rs. {totalIncome}</span>
@@ -315,6 +359,8 @@ export default function DailyBusiness() {
           </tr>
         </tbody>
       </table>
+      </>
+      )}
 
       {/* Add Cashier Modal */}
       {isCashierModalOpen && (

@@ -3,6 +3,7 @@ import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
 import { supabase } from './lib/supabase';
 import authService, { PRESET_SECURITY_QUESTIONS } from './services/authService';
+import Footer from './components/common/Footer';
 import './Registration.css';
 import logo from './assets/logo.png';
 import { 
@@ -909,18 +910,7 @@ export default function Registration({ initialMode }) {
         </div>
       </div>
 
-      <footer className="app-global-footer">
-        <div className="footer-links-row">
-          <Link to="/portal/privacy" className="footer-link">Terms &amp; Conditions</Link>
-          <span className="footer-bullet">•</span>
-          <Link to="/portal/privacy" className="footer-link">Privacy Policy</Link>
-          <span className="footer-bullet">•</span>
-          <Link to="/portal/support" className="footer-link">Refund Policy</Link>
-        </div>
-        <p className="footer-copyright">
-          &copy; 2026 LabSetu Healthcare Systems. All rights reserved.
-        </p>
-      </footer>
+      <Footer />
     </div>
   );
 }

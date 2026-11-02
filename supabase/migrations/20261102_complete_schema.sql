@@ -171,24 +171,50 @@ create policy "Reports all operations" on public.reports for all using (true) wi
 drop policy if exists "Bills all operations" on public.bills;
 create policy "Bills all operations" on public.bills for all using (true) with check (true);
 
--- 8. TRIGGER FOR NEW AUTH SIGNUPS
+-- 8. SEQUENCES & TRIGGER FOR COLLISION-PROOF UHID AND LAB ID GENERATION
+create sequence if not exists public.uhid_seq start 1000;
+create sequence if not exists public.lab_id_seq start 1000;
+alter table public.profiles add column if not exists lab_id text;
+
 create or replace function public.handle_new_user()
 returns trigger as $$
+declare
+  v_role text;
+  v_uhid text;
+  v_lab_id text;
 begin
-  insert into public.profiles (id, email, full_name, uhid)
+  v_role := coalesce(new.raw_user_meta_data->>'role', 'citizen');
+
+  if v_role = 'authority' or v_role = 'admin' then
+    v_lab_id := 'LAB-' || nextval('public.lab_id_seq')::text;
+    v_uhid := null;
+  else
+    v_uhid := 'UHID-' || nextval('public.uhid_seq')::text;
+    v_lab_id := null;
+  end if;
+
+  insert into public.profiles (id, email, full_name, role, uhid, lab_id)
   values (
     new.id, 
     new.email, 
-    coalesce(new.raw_user_meta_data->>'full_name', 'Patient'), 
-    'UHID-' || substring(new.id::text from 1 for 4) || '-' || to_char(current_date, 'YYYY')
+    coalesce(new.raw_user_meta_data->>'full_name', case when v_role = 'authority' or v_role = 'admin' then 'Dr. Shozab Rizvi' else 'Patient' end), 
+    case when v_role = 'authority' or v_role = 'admin' then 'admin' else 'citizen' end,
+    v_uhid,
+    v_lab_id
   )
   on conflict (id) do update set
     full_name = coalesce(excluded.full_name, profiles.full_name),
     email = excluded.email,
+    role = coalesce(excluded.role, profiles.role),
     uhid = case 
-      when profiles.uhid is null or profiles.uhid = 'Pending' or trim(profiles.uhid) = '' 
-      then excluded.uhid 
+      when (profiles.role is null or profiles.role = 'citizen') and (profiles.uhid is null or profiles.uhid = 'Pending' or trim(profiles.uhid) = '' or profiles.uhid like 'UHID-____-%')
+      then coalesce(excluded.uhid, 'UHID-' || nextval('public.uhid_seq')::text)
       else profiles.uhid 
+    end,
+    lab_id = case
+      when (profiles.role = 'admin' or profiles.role = 'authority') and (profiles.lab_id is null or trim(profiles.lab_id) = '')
+      then coalesce(excluded.lab_id, 'LAB-' || nextval('public.lab_id_seq')::text)
+      else profiles.lab_id
     end;
   return new;
 end;
@@ -199,10 +225,14 @@ create trigger on_auth_user_created
   after insert on auth.users
   for each row execute procedure public.handle_new_user();
 
--- Retroactive fix for existing accounts with null, empty, or 'Pending' UHID
+-- Retroactive fix for existing accounts using collision-proof sequences
 update public.profiles
-set uhid = 'UHID-' || substring(id::text from 1 for 4) || '-' || to_char(coalesce(created_at, current_date), 'YYYY')
-where uhid is null or uhid = 'Pending' or trim(uhid) = '';
+set uhid = 'UHID-' || nextval('public.uhid_seq')::text
+where (role is null or role = 'citizen') and (uhid is null or uhid = 'Pending' or trim(uhid) = '' or uhid like 'UHID-____-%');
+
+update public.profiles
+set lab_id = 'LAB-' || nextval('public.lab_id_seq')::text
+where (role = 'admin' or role = 'authority') and (lab_id is null or trim(lab_id) = '');
 
 update public.patients
 set patient_code = 'UHID-' || substring(id::text from 1 for 4) || '-' || to_char(coalesce(created_at, current_date), 'YYYY')
@@ -356,3 +386,30 @@ end;
 $$;
 
 grant execute on function public.reset_password_via_security_question(text, text, text) to anon, authenticated, service_role;
+
+
+-- =====================================================================================
+-- 9. OUTSOURCE TRACKING TABLE WITH STATUS ENUM
+-- Stages: Dispatched, Transit, Partner Lab Processing, Report Uploaded
+-- =====================================================================================
+create table if not exists public.outsource_tracking (
+  id uuid primary key default gen_random_uuid(),
+  case_id text not null,
+  reg_no text,
+  patient_name text not null,
+  investigations text not null,
+  partner_lab text not null,
+  status text not null default 'Dispatched' 
+    check (status in ('Dispatched', 'Transit', 'Partner Lab Processing', 'Report Uploaded')),
+  dispatched_at timestamptz default now(),
+  transit_at timestamptz,
+  processing_at timestamptz,
+  report_uploaded_at timestamptz,
+  notes text,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+alter table public.outsource_tracking enable row level security;
+drop policy if exists "Outsource tracking all operations" on public.outsource_tracking;
+create policy "Outsource tracking all operations" on public.outsource_tracking for all using (true) with check (true);

@@ -164,18 +164,22 @@ button, input, select, textarea {
     color: #000000 !important;
   }
 
-  /* Strict Isolation: Make only #printable-report and its contents visible */
-  body:has(#printable-report) * {
+  /* Strict Isolation: Make only #printable-report, .printable-report, or .print-target and their contents visible */
+  body:has(#printable-report) *,
+  body:has(.print-target) * {
     visibility: hidden;
   }
 
   body:has(#printable-report) #printable-report,
-  body:has(#printable-report) #printable-report * {
+  body:has(#printable-report) #printable-report *,
+  body:has(.print-target) .print-target,
+  body:has(.print-target) .print-target * {
     visibility: visible !important;
   }
 
-  /* Dedicated container ID enforcement */
-  #printable-report {
+  /* Dedicated container ID enforcement & appointment print-target */
+  #printable-report,
+  .print-target {
     display: block !important;
     visibility: visible !important;
     position: absolute !important;
@@ -188,8 +192,8 @@ button, input, select, textarea {
     background: #ffffff !important;
     color: #000000 !important;
     box-shadow: none !important;
-    border: none !important;
-    border-radius: 0 !important;
+    border: 1px solid #cbd5e1 !important;
+    border-radius: 8px !important;
     overflow: visible !important;
     z-index: 999999 !important;
   }

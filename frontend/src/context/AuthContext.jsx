@@ -158,6 +158,8 @@ export function AuthProvider({ children }) {
             : null;
         const resolvedUhid = dbUhid || (userRole === 'citizen' && userId ? `UHID-${userId.substring(0, 4)}-${new Date().getFullYear()}` : '');
 
+        const resolvedLabId = profileRow?.lab_id || 'LAB-1001';
+
         if (userRole === 'authority') {
           const updatedAuth = {
             id: userId,
@@ -166,7 +168,7 @@ export function AuthProvider({ children }) {
             name: resolvedName,
             phone: profileRow?.phone || '',
             centerName: 'LabSetu Diagnostics',
-            labId: '61326885'
+            labId: resolvedLabId
           };
           if (isMounted) setAuthorityUser(updatedAuth);
           sessionStorage.setItem('labsetu_authority_session', JSON.stringify(updatedAuth));
@@ -237,6 +239,8 @@ export function AuthProvider({ children }) {
           role: isAuthRole ? 'authority' : 'citizen',
           name: cleanAuthName,
           uhid: resolvedUhid,
+          labId: profile?.lab_id || (isAuthRole ? 'LAB-1001' : undefined),
+          centerName: 'LabSetu Diagnostics',
           phone: profile?.phone || '',
           address: profile?.address || '',
           bloodGroup: profile?.blood_group || '',
