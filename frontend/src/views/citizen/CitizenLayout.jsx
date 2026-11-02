@@ -79,10 +79,15 @@ export default function CitizenLayout() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     setIsUserMenuOpen(false);
-    logout();
-    navigate('/');
+    localStorage.removeItem('labsetu_patient_session');
+    localStorage.removeItem('labsetu_auth');
+    localStorage.removeItem('labsetu_active_uhid');
+    localStorage.removeItem('labsetu_active_member');
+    sessionStorage.clear();
+    await logout('citizen');
+    navigate('/login');
   };
 
   const markAllRead = () => {
@@ -261,7 +266,7 @@ export default function CitizenLayout() {
             >
               <UserCircleIcon className="citizen-user-avatar" />
               <div className="citizen-user-meta">
-                <span className="citizen-user-name">{activeMember?.name || currentUser?.name || 'Ramesh Sharma'}</span>
+                <span className="citizen-user-name">{activeMember?.name || (currentUser?.name && !currentUser.name.includes('@') ? currentUser.name : 'Patient')}</span>
                 <span className="citizen-user-role">{activeMember && activeMember.relation !== 'Self' ? `${activeMember.relation} Profile` : 'Patient / Citizen'}</span>
               </div>
             </button>
@@ -269,8 +274,8 @@ export default function CitizenLayout() {
             {isUserMenuOpen && (
               <div className="citizen-dropdown user-dropdown">
                 <div className="user-dropdown-header">
-                  <strong>{activeMember?.name || currentUser?.name || 'Ramesh Sharma'}</strong>
-                  <span className="user-uhid">{activeUHID || currentUser?.uhid || 'UHID-2026-8901'}</span>
+                  <strong>{activeMember?.name || (currentUser?.name && !currentUser.name.includes('@') ? currentUser.name : 'Patient')}</strong>
+                  <span className="user-uhid">{activeUHID || currentUser?.uhid || '—'}</span>
                   <span className="user-email">{currentUser?.email}</span>
                 </div>
                 <div className="user-dropdown-links">

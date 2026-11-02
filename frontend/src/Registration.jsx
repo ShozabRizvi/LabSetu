@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
+import { supabase } from './lib/supabase';
 import './Registration.css';
 import logo from './assets/logo.png';
 import { 
@@ -186,7 +187,8 @@ export default function Registration({ initialMode }) {
     const result = await login(trimmedEmail, loginPassword, role);
     setIsSubmitting(false);
 
-    if (result.success) {
+    // Gatekeeper Logic: Mathematically locked behind a verified Supabase session object
+    if (result.success && result.session) {
       const fromPath = location.state?.from?.pathname;
       if (fromPath && (
         (result.user.role === 'citizen' && fromPath.startsWith('/portal')) ||
@@ -199,11 +201,11 @@ export default function Registration({ initialMode }) {
         navigate('/app/getting-started');
       }
     } else {
-      setError(result.error || 'Authentication failed. Please check your credentials.');
+      setError(result.error || 'Authentication failed. Invalid credentials or user not found.');
     }
   };
 
-  // Sign up handler - does NOT auto-login, redirects to login
+  // Sign up handler - creates verified record in Supabase auth.users
   const handleSignUp = async (e) => {
     e.preventDefault();
     setError('');
@@ -256,9 +258,12 @@ export default function Registration({ initialMode }) {
     }
 
     setIsSubmitting(true);
+    const userFullName = signUpForm.name.trim();
+
+    // Execute Supabase signUp with required options.data.full_name payload
     const result = await signup({
-      name: signUpForm.name,
-      email: signUpForm.email,
+      name: userFullName,
+      email: signUpForm.email.trim().toLowerCase(),
       phone: cleanPhone,
       dob: signUpForm.dob || '',
       gender: signUpForm.gender || '',
@@ -273,36 +278,42 @@ export default function Registration({ initialMode }) {
     if (result.success) {
       // Do NOT auto-login — redirect to sign in with success message
       setSignUpForm({ name: '', email: '', phone: '', dob: '', gender: '', address: '', centerName: '', designation: '', password: '', confirmPassword: '' });
-      setSuccessMsg('Account created successfully! Please sign in with your credentials.');
+      setSuccessMsg('Account created successfully in database! Please sign in with your credentials.');
       setTimeout(() => {
         switchMode('signin');
       }, 1500);
     } else {
-      setError(result.error || 'Registration failed.');
+      setError(result.error || 'Registration failed with database.');
     }
   };
 
-  // Forgot password - Step 1: Send demo reset code
-  const handleRequestResetCode = (e) => {
+  // Forgot password - Step 1: Send Supabase password reset email
+  const handleRequestResetCode = async (e) => {
     e.preventDefault();
     setError('');
-    if (!forgotEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(forgotEmail)) {
+    const cleanEmail = forgotEmail.trim().toLowerCase();
+    if (!cleanEmail || !EMAIL_REGEX.test(cleanEmail)) {
       setError('Please enter a valid email address.');
       return;
     }
+    setIsSubmitting(true);
+    const { error: resetErr } = await supabase.auth.resetPasswordForEmail(cleanEmail);
+    setIsSubmitting(false);
+
+    if (resetErr) {
+      setError(resetErr.message || 'Could not send recovery link. Please try again.');
+      return;
+    }
+
     setForgotStep(2);
-    setSuccessMsg('If an account with this email exists, a recovery code has been sent. Please check your inbox.');
+    setSuccessMsg(`A password recovery email has been sent to ${cleanEmail}. Please check your inbox.`);
   };
 
-  // Forgot password - Step 2: Verify code and set new password
+  // Forgot password - Step 2: Verify code and set new password in Supabase
   const handleResetPassword = async (e) => {
     e.preventDefault();
     setError('');
 
-    if (resetCode !== '123456') {
-      setError('Invalid recovery code. For this demo flow, use OTP: 123456');
-      return;
-    }
     if (!newPassword || newPassword.length < 6) {
       setError('New password must be at least 6 characters long.');
       return;
@@ -312,12 +323,28 @@ export default function Registration({ initialMode }) {
       return;
     }
 
-    const result = await resetPassword(forgotEmail, newPassword);
-    if (result.success) {
-      setForgotStep(3);
-      setSuccessMsg('Your password has been successfully reset! You can now sign in with your new password.');
+    setIsSubmitting(true);
+    if (resetCode && resetCode.length >= 6) {
+      const { error: verifyErr } = await supabase.auth.verifyOtp({
+        email: forgotEmail.trim().toLowerCase(),
+        token: resetCode.trim(),
+        type: 'recovery'
+      });
+      if (verifyErr) {
+        setIsSubmitting(false);
+        setError(verifyErr.message || 'Invalid or expired recovery code.');
+        return;
+      }
+    }
+
+    const { error: updateErr } = await supabase.auth.updateUser({ password: newPassword });
+    setIsSubmitting(false);
+
+    if (updateErr) {
+      setError(updateErr.message || 'Password update failed.');
     } else {
-      setError(result.error || 'Password reset failed.');
+      setForgotStep(3);
+      setSuccessMsg('Your password has been successfully updated in Supabase! You can now sign in.');
     }
   };
 
@@ -708,8 +735,8 @@ export default function Registration({ initialMode }) {
 
             {forgotStep === 2 && (
               <form className="registration-form" onSubmit={handleResetPassword}>
-                <div className="demo-notice-box">
-                  <strong>Frontend Demo Notice:</strong> Use OTP code <strong>123456</strong> to verify and update your password.
+                <div className="demo-notice-box" style={{ background: '#f0fdf4', borderColor: '#86efac', color: '#166534' }}>
+                  <strong>Supabase Recovery:</strong> If your email came with a 6-digit confirmation code, enter it below with your new password.
                 </div>
 
                 <div className="registration-input-group">

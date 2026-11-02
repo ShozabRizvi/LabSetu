@@ -138,9 +138,9 @@ export default function AppointmentWizard() {
     const record = { 
       id, 
       aptId: id,
-      patientName: (patient.name || activeMember?.name || currentUser?.name || 'Patient').trim(), 
-      mobile: patient.mobile || currentUser?.phone || '9876543210', 
-      uhid: activeUHID || currentUser?.uhid || 'UHID-2026-8901',
+      patientName: (patient.name || activeMember?.name || (currentUser?.name && !currentUser.name.includes('@') ? currentUser.name : 'Patient')).trim(), 
+      mobile: patient.mobile || currentUser?.phone || '', 
+      uhid: activeUHID || currentUser?.uhid || '',
       department, 
       visitType,
       homeAddress: visitType === 'home' ? homeAddress : undefined,
@@ -205,9 +205,9 @@ export default function AppointmentWizard() {
       const record = { 
         id, 
         aptId: id,
-        patientName: (patient.name || activeMember?.name || currentUser?.name || demoPatient?.name || 'Patient').trim(), 
-        mobile: patient.mobile || currentUser?.phone || '9876500000', 
-        uhid: activeUHID || currentUser?.uhid || 'UHID-2026-8901',
+        patientName: (patient.name || activeMember?.name || (currentUser?.name && !currentUser.name.includes('@') ? currentUser.name : null) || 'Patient').trim(), 
+        mobile: patient.mobile || currentUser?.phone || '', 
+        uhid: activeUHID || currentUser?.uhid || '',
         department: department || 'cardiology', 
         visitType,
         homeAddress: visitType === 'home' ? homeAddress : undefined,
@@ -542,7 +542,7 @@ export default function AppointmentWizard() {
                   </div>
                   <div className="receipt-field">
                     <span className="receipt-field-label">PATIENT NAME</span>
-                    <strong className="receipt-field-value">{patient.name || currentUser?.name || demoPatient?.name || 'rshozab64'}</strong>
+                    <strong className="receipt-field-value">{patient.name || activeMember?.name || (currentUser?.name && !currentUser.name.includes('@') ? currentUser.name : null) || 'Patient'}</strong>
                   </div>
                   <div className="receipt-field">
                     <span className="receipt-field-label">MOBILE NUMBER</span>

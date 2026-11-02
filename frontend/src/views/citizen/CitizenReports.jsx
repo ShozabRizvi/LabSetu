@@ -755,9 +755,9 @@ export default function CitizenReports({ lang: propLang }) {
             <div className="report-modal-body" style={{ padding: '1.25rem 1.5rem' }}>
               {/* Patient Demographics Grid */}
               <div className="report-meta-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.65rem', background: '#f8fafc', padding: '0.85rem 1rem', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '0.82rem' }}>
-                <div><span style={{ color: '#64748b' }}>Patient:</span> <strong>{activeMember?.name || currentUser?.name || 'Ramesh Sharma'}</strong></div>
-                <div><span style={{ color: '#64748b' }}>Age / Sex:</span> <strong>{activeMember?.age || (currentUser?.age ? `${currentUser.age}Y` : '28Y')} / {activeMember?.gender || currentUser?.gender || 'Male'}</strong></div>
-                <div><span style={{ color: '#64748b' }}>UHID:</span> <strong>{activeUHID || currentUser?.uhid || 'UHID-2026-8901'}</strong></div>
+                <div><span style={{ color: '#64748b' }}>Patient:</span> <strong>{activeMember?.name || (currentUser?.name && !currentUser.name.includes('@') ? currentUser.name : 'Patient')}</strong></div>
+                <div><span style={{ color: '#64748b' }}>Age / Sex:</span> <strong>{activeMember?.age || (currentUser?.age ? `${currentUser.age}Y` : '—')} / {activeMember?.gender || currentUser?.gender || '—'}</strong></div>
+                <div><span style={{ color: '#64748b' }}>UHID:</span> <strong>{activeUHID || currentUser?.uhid || '—'}</strong></div>
                 <div><span style={{ color: '#64748b' }}>Collection Date:</span> <strong>{selectedReport.date}</strong></div>
                 <div><span style={{ color: '#64748b' }}>Reporting Doctor:</span> <strong>{selectedReport.doctor}</strong></div>
                 <div><span style={{ color: '#64748b' }}>Status:</span> <strong style={{ color: selectedReport.status === 'Ready' ? '#15803d' : '#b45309' }}>✓ {selectedReport.status}</strong></div>

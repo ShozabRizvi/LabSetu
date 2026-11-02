@@ -50,36 +50,40 @@ export default function CitizenFamilyProfiles({ lang: propLang }) {
   const fetchFamilyMembers = useCallback(async () => {
     try {
       setLoading(true);
+      const { data: sessionData } = await supabase.auth.getSession();
+      const sessionUserId = sessionData?.session?.user?.id;
       const primaryUserId = (currentUser?.id && typeof currentUser.id === 'string' && currentUser.id.includes('-'))
         ? currentUser.id
-        : '45370b0a-3a2a-47a6-904e-9040108d5f94';
+        : (sessionUserId || currentUser?.id || null);
 
       // 1. Fetch Primary User Profile for the "Self" Card from profiles & patients
       let profileRow = null;
       let patientSelfRow = null;
 
-      try {
-        const { data: pData } = await supabase.from('profiles').select('*').eq('id', primaryUserId).maybeSingle();
-        if (pData) profileRow = pData;
-      } catch {}
+      if (primaryUserId) {
+        try {
+          const { data: pData } = await supabase.from('profiles').select('*').eq('id', primaryUserId).maybeSingle();
+          if (pData) profileRow = pData;
+        } catch {}
 
-      try {
-        const { data: ptData } = await supabase.from('patients').select('*').eq('id', primaryUserId).maybeSingle();
-        if (ptData) patientSelfRow = ptData;
-      } catch {}
+        try {
+          const { data: ptData } = await supabase.from('patients').select('*').eq('id', primaryUserId).maybeSingle();
+          if (ptData) patientSelfRow = ptData;
+        } catch {}
+      }
 
       const selfCard = {
-        id: primaryUserId,
-        name: profileRow?.full_name || patientSelfRow?.full_name || currentUser?.name || 'Primary User',
+        id: primaryUserId || 'self',
+        name: profileRow?.full_name || patientSelfRow?.full_name || (currentUser?.name && !currentUser.name.includes('@') ? currentUser.name : 'Patient'),
         relation: 'Self',
         age: patientSelfRow?.age_years !== null && patientSelfRow?.age_years !== undefined
           ? `${patientSelfRow.age_years} yrs`
-          : (currentUser?.age ? `${currentUser.age} yrs` : '28 yrs'),
+          : (currentUser?.age ? `${currentUser.age} yrs` : '—'),
         gender: patientSelfRow?.sex
           ? (patientSelfRow.sex.charAt(0).toUpperCase() + patientSelfRow.sex.slice(1))
-          : (currentUser?.gender || 'Male'),
-        bloodGroup: patientSelfRow?.blood_group || currentUser?.bloodGroup || 'B+',
-        uhid: patientSelfRow?.patient_code || currentUser?.uhid || 'UHID-2026-8901',
+          : (currentUser?.gender || '—'),
+        bloodGroup: patientSelfRow?.blood_group || currentUser?.bloodGroup || '—',
+        uhid: patientSelfRow?.patient_code || currentUser?.uhid || '—',
         isSelf: true
       };
 
@@ -100,7 +104,7 @@ export default function CitizenFamilyProfiles({ lang: propLang }) {
             age: typeof f.age === 'number' ? `${f.age} yrs` : (String(f.age).includes('yrs') ? f.age : `${f.age || 30} yrs`),
             gender: f.gender || 'Other',
             bloodGroup: f.blood_group || f.bloodGroup || 'O+',
-            uhid: f.uhid || `UHID-2026-${Math.floor(1000 + Math.random() * 9000)}`,
+            uhid: f.uhid || ('DEP-' + Math.floor(Math.random() * 90000 + 10000)),
             isSelf: false
           }));
         }
@@ -121,7 +125,7 @@ export default function CitizenFamilyProfiles({ lang: propLang }) {
               age: typeof f.age === 'number' ? `${f.age} yrs` : (String(f.age).includes('yrs') ? f.age : `${f.age || 30} yrs`),
               gender: f.gender || 'Other',
               bloodGroup: f.blood_group || f.bloodGroup || 'O+',
-              uhid: f.uhid || `UHID-2026-${Math.floor(1000 + Math.random() * 9000)}`,
+              uhid: f.uhid || ('DEP-' + Math.floor(Math.random() * 90000 + 10000)),
               isSelf: false
             }));
           }
@@ -151,7 +155,7 @@ export default function CitizenFamilyProfiles({ lang: propLang }) {
                 age: p.age_years ? `${p.age_years} yrs` : '35 yrs',
                 gender: p.sex ? (p.sex.charAt(0).toUpperCase() + p.sex.slice(1)) : 'Other',
                 bloodGroup: p.blood_group || 'O+',
-                uhid: p.patient_code,
+                uhid: p.patient_code || ('DEP-' + Math.floor(Math.random() * 90000 + 10000)),
                 isSelf: false
               };
             });
@@ -166,7 +170,15 @@ export default function CitizenFamilyProfiles({ lang: propLang }) {
           if (cached) {
             const parsed = JSON.parse(cached);
             if (Array.isArray(parsed) && parsed.length > 0) {
-              fetchedDependents = parsed.filter(m => m.relation !== 'Self');
+              // Ensure dependent cards never inherit parent UHID and filter out stale mock names
+              fetchedDependents = parsed
+                .filter(m => m.relation !== 'Self' && !['Dev', 'Sunita', 'Om Prakash'].includes(m.name))
+                .map(m => ({
+                  ...m,
+                  uhid: (m.uhid && m.uhid !== selfCard.uhid && m.uhid !== currentUser?.uhid)
+                    ? m.uhid
+                    : ('DEP-' + Math.floor(Math.random() * 90000 + 10000))
+                }));
             }
           }
         } catch {}
@@ -205,11 +217,13 @@ export default function CitizenFamilyProfiles({ lang: propLang }) {
 
     try {
       setIsSubmitting(true);
+      const { data: sessionData } = await supabase.auth.getSession();
+      const sessionUserId = sessionData?.session?.user?.id;
       const primaryUserId = (currentUser?.id && typeof currentUser.id === 'string' && currentUser.id.includes('-'))
         ? currentUser.id
-        : '45370b0a-3a2a-47a6-904e-9040108d5f94';
+        : (sessionUserId || currentUser?.id || 'primary');
 
-      const assignedUhid = `UHID-2026-${Math.floor(1000 + Math.random() * 9000)}`;
+      const assignedUhid = 'DEP-' + Math.floor(Math.random() * 90000 + 10000);
       const memberUuid = (typeof crypto !== 'undefined' && crypto.randomUUID)
         ? crypto.randomUUID()
         : 'fam-' + Math.random().toString(36).substring(2, 9);
@@ -387,12 +401,12 @@ export default function CitizenFamilyProfiles({ lang: propLang }) {
 
       {/* Profiles Grid */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.25rem' }}>
-        {members.map((m) => {
-          const isActive = (m.uhid === activeUHID) || (m.isSelf && !activeUHID);
+        {members.map((member) => {
+          const isActive = (member.uhid === activeUHID) || (member.isSelf && !activeUHID);
 
           return (
             <div
-              key={m.id || m.uhid}
+              key={member.id || member.uhid}
               className={`hover:shadow-md transition-shadow duration-200 bg-white rounded-xl p-4 ${
                 isActive ? 'border-2 border-emerald-500 bg-emerald-50/20' : 'border border-gray-200'
               }`}
@@ -440,10 +454,10 @@ export default function CitizenFamilyProfiles({ lang: propLang }) {
                 </div>
                 <div>
                   <h3 style={{ margin: 0, fontSize: '1.1rem', color: '#0f172a', fontWeight: '700' }}>
-                    {m.name}
+                    {member.name}
                   </h3>
                   <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: '500' }}>
-                    {m.relation} · {m.gender} ({m.age})
+                    {member.relation} · {member.gender} ({member.age})
                   </span>
                 </div>
               </div>
@@ -451,11 +465,11 @@ export default function CitizenFamilyProfiles({ lang: propLang }) {
               <div style={{ background: '#f8fafc', padding: '0.75rem', borderRadius: '8px', fontSize: '0.85rem', marginBottom: '1rem', border: '1px solid #f1f5f9' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
                   <span style={{ color: '#64748b' }}>UHID Number:</span>
-                  <strong style={{ fontFamily: 'monospace', color: '#0f172a' }}>{m.uhid}</strong>
+                  <strong style={{ fontFamily: 'monospace', color: '#0f172a' }}>{member.uhid}</strong>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                   <span style={{ color: '#64748b' }}>Blood Group:</span>
-                  <strong style={{ color: '#dc2626' }}>{m.bloodGroup}</strong>
+                  <strong style={{ color: '#dc2626' }}>{member.bloodGroup}</strong>
                 </div>
               </div>
 
@@ -463,7 +477,7 @@ export default function CitizenFamilyProfiles({ lang: propLang }) {
                 {!isActive ? (
                   <button
                     type="button"
-                    onClick={() => handleSwitchProfile(m)}
+                    onClick={() => handleSwitchProfile(member)}
                     className="text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 font-medium rounded-lg text-xs px-3 py-1.5 transition-colors cursor-pointer"
                     style={{
                       background: '#ffffff',
@@ -485,10 +499,10 @@ export default function CitizenFamilyProfiles({ lang: propLang }) {
                   </span>
                 )}
 
-                {!m.isSelf && (
+                {!member.isSelf && (
                   <button
                     type="button"
-                    onClick={() => setPendingDeleteMember(m)}
+                    onClick={() => setPendingDeleteMember(member)}
                     className="p-1.5 rounded-lg text-red-500 hover:text-red-700 hover:bg-red-50 transition-colors cursor-pointer"
                     style={{
                       background: 'none',
@@ -502,7 +516,7 @@ export default function CitizenFamilyProfiles({ lang: propLang }) {
                       justifyContent: 'center'
                     }}
                     title="Remove Profile"
-                    aria-label={`Remove profile for ${m.name}`}
+                    aria-label={`Remove profile for ${member.name}`}
                   >
                     <TrashIcon style={{ width: '18px', height: '18px' }} />
                   </button>

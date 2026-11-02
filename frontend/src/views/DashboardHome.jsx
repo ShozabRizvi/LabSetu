@@ -7,8 +7,7 @@ import {
   DocumentTextIcon,
   ClockIcon,
   ChevronDownIcon,
-  ChatBubbleLeftEllipsisIcon,
-  XMarkIcon
+  ChatBubbleLeftEllipsisIcon
 } from '@heroicons/react/24/outline';
 
 import './DashboardHome.css';
@@ -23,17 +22,19 @@ export default function DashboardHome() {
   const { currentUser } = useAuth();
   const { data } = useDemoResource('dashboard', demoDashboardData);
   const { data: activities } = useDemoResource('labsetu_activities', demoActivitiesData);
-  const [legalModal, setLegalModal] = useState(null); // 'terms' | 'privacy' | 'refund'
   const [liveAppointments, setLiveAppointments] = useState([]);
   const [updatingId, setUpdatingId] = useState(null);
   const [dbDues, setDbDues] = useState(null);
 
   const fetchLiveAppointments = async () => {
     try {
-      const [{ data: dbAppts }, { data: dbBills }] = await Promise.all([
-        supabase.from('appointments').select('*').order('created_at', { ascending: false }).limit(6),
-        supabase.from('bills').select('due_amount').eq('payment_status', 'due')
+      const [apptsRes, billsRes] = await Promise.all([
+        supabase.from('appointments').select('*').order('created_at', { ascending: false }).limit(6).then(r => r).catch(() => ({ data: null })),
+        supabase.from('bills').select('due_amount').eq('payment_status', 'due').then(r => r).catch(() => ({ data: null }))
       ]);
+
+      const dbAppts = apptsRes?.data;
+      const dbBills = billsRes?.data;
 
       if (dbAppts && dbAppts.length > 0) {
         setLiveAppointments(dbAppts);
@@ -505,81 +506,8 @@ export default function DashboardHome() {
             <ChevronDownIcon className="dashboard-home-sms-icon" />
           </Link>
 
-          {/* Legal Links */}
-          <div className="dashboard-home-legal-links">
-            <button
-              onClick={() => setLegalModal('terms')}
-              style={{ background: 'none', border: 'none', color: '#15803d', cursor: 'pointer', padding: 0, font: 'inherit', textDecoration: 'underline' }}
-            >
-              Terms &amp; Conditions
-            </button>
-            <button
-              onClick={() => setLegalModal('privacy')}
-              style={{ background: 'none', border: 'none', color: '#15803d', cursor: 'pointer', padding: 0, font: 'inherit', textDecoration: 'underline' }}
-            >
-              Privacy Policy
-            </button>
-            <button
-              onClick={() => setLegalModal('refund')}
-              style={{ background: 'none', border: 'none', color: '#15803d', cursor: 'pointer', padding: 0, font: 'inherit', textDecoration: 'underline' }}
-            >
-              Refund Policy
-            </button>
-          </div>
-
         </div>
       </div>
-
-      {/* Legal Information Modal */}
-      {legalModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '1rem' }}>
-          <div style={{ background: 'white', borderRadius: '8px', padding: '1.5rem', width: '100%', maxWidth: '560px', maxHeight: '85vh', overflowY: 'auto' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', borderBottom: '1px solid #e2e8f0', paddingBottom: '0.75rem' }}>
-              <h3 style={{ margin: 0, fontSize: '1.2rem', color: '#1e293b' }}>
-                {legalModal === 'terms' && 'Terms & Conditions'}
-                {legalModal === 'privacy' && 'Privacy Policy'}
-                {legalModal === 'refund' && 'Refund & Cancellation Policy'}
-              </h3>
-              <button onClick={() => setLegalModal(null)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#64748b' }}>
-                <XMarkIcon style={{ width: '20px' }} />
-              </button>
-            </div>
-
-            <div style={{ fontSize: '0.9rem', color: '#334155', lineHeight: 1.6 }}>
-              {legalModal === 'terms' && (
-                <>
-                  <p>Welcome to LabSetu Diagnostic Laboratory Information Management System (LIMS).</p>
-                  <p>1. <strong>Authorized Usage:</strong> This portal is provided for certified laboratory staff, clinical pathologists, and authorized medical administrators. User credentials must remain confidential.</p>
-                  <p>2. <strong>Data Compliance:</strong> Clinical findings, pathology specimen records, and diagnostic values must adhere to National Accreditation Board for Testing and Calibration Laboratories (NABL) guidelines.</p>
-                  <p>3. <strong>Audit Trail:</strong> All record alterations, billing adjustments, and report print operations are recorded in an immutable audit ledger.</p>
-                </>
-              )}
-              {legalModal === 'privacy' && (
-                <>
-                  <p>LabSetu takes patient medical confidentiality and diagnostic data privacy with utmost priority.</p>
-                  <p>1. <strong>Protected Health Information:</strong> All patient identifiers (UHID, mobile number, clinical history) are protected and transmitted via encrypted channels.</p>
-                  <p>2. <strong>Patient Consent:</strong> SMS reports and WhatsApp notifications are dispatched only with patient verification and explicit authorization.</p>
-                  <p>3. <strong>Third-party Disclosures:</strong> Diagnostic data is never sold, leased, or disclosed to unauthorized marketing third parties.</p>
-                </>
-              )}
-              {legalModal === 'refund' && (
-                <>
-                  <p>LabSetu Diagnostic Billing & Refund Standards:</p>
-                  <p>1. <strong>Pre-collection Cancellation:</strong> Patients may cancel diagnostic appointments before phlebotomy specimen collection with a 100% refund.</p>
-                  <p>2. <strong>Processing Status:</strong> Once biological samples have entered centrifugation, biochemical analyzer processing, or imaging acquisition, bill adjustments require authorized medical supervisor approval.</p>
-                  <p>3. <strong>Settlement:</strong> Approved refunds are credited back to the original source payment method within 3–5 working days.</p>
-                </>
-              )}
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1.25rem' }}>
-              <button onClick={() => setLegalModal(null)} className="setup-btn-blue">
-                Understood & Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
     </div>
   );

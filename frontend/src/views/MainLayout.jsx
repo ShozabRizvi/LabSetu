@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import logo from '../assets/logo.png';
 import { useAuth } from '../context/AuthContext';
+import { supabase } from '../lib/supabase';
 import LabSetuVideoPlayer from '../components/common/LabSetuVideoPlayer';
 import './MainLayout.css';
 import { 
@@ -57,7 +58,7 @@ import {
 } from '@heroicons/react/24/outline';
 
 export default function MainLayout() {
-  const { currentUser, logout } = useAuth();
+  const { currentUser, logout, updateCurrentUser } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -74,11 +75,71 @@ export default function MainLayout() {
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [isVideoOpen, setIsVideoOpen] = useState(false);
   const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
+  const [accountName, setAccountName] = useState(currentUser?.name || '');
+  const [isSavingAccount, setIsSavingAccount] = useState(false);
+  const [accountNotice, setAccountNotice] = useState('');
+  const [legalModal, setLegalModal] = useState(null);
   const [isNewLabModalOpen, setIsNewLabModalOpen] = useState(false);
   const [isEmailPrefModalOpen, setIsEmailPrefModalOpen] = useState(false);
   const [isNewNavEnabled, setIsNewNavEnabled] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [copiedLabId, setCopiedLabId] = useState(false);
+
+  useEffect(() => {
+    if (isAccountModalOpen && currentUser) {
+      setAccountName(currentUser.name || '');
+      setAccountNotice('');
+    }
+  }, [isAccountModalOpen, currentUser]);
+
+  const handleSaveAccount = async (e) => {
+    e.preventDefault();
+    if (!accountName.trim()) return;
+
+    try {
+      setIsSavingAccount(true);
+      setAccountNotice('');
+      const newName = accountName.trim();
+      const targetUserId = currentUser?.id || '6296e1a6-8a20-4fa7-b26a-883b53800335';
+
+      // 1. Commit update to Supabase database
+      try {
+        let updateRes = await supabase
+          .from('profiles')
+          .update({ full_name: newName, display_name: newName })
+          .eq('id', targetUserId);
+
+        if (updateRes.error && updateRes.error.message?.includes('display_name')) {
+          updateRes = await supabase
+            .from('profiles')
+            .update({ full_name: newName })
+            .eq('id', targetUserId);
+        }
+      } catch (dbErr) {
+        console.warn('Supabase profile update warning:', dbErr);
+      }
+
+      // 2. Immediately update local auth state / user context
+      const updatedUser = {
+        ...(currentUser || {}),
+        id: targetUserId,
+        name: newName,
+        role: 'authority'
+      };
+      updateCurrentUser(updatedUser);
+
+      setAccountNotice('Profile updated successfully!');
+      setTimeout(() => {
+        setIsAccountModalOpen(false);
+        setAccountNotice('');
+      }, 700);
+    } catch (err) {
+      console.error('Account update error:', err);
+      setAccountNotice('Error updating profile. Please try again.');
+    } finally {
+      setIsSavingAccount(false);
+    }
+  };
 
   const [notifications, setNotifications] = useState([
     { id: 1, title: 'Sample Collected', desc: 'Sample collected for Patient Riya Sharma (CBC).', time: '10 mins ago', read: false },
@@ -125,9 +186,12 @@ export default function MainLayout() {
     setTimeout(() => setCopiedLabId(false), 2000);
   };
 
-  const handleLogout = () => {
-    logout();
-    navigate('/');
+  const handleLogout = async () => {
+    localStorage.removeItem('labsetu_authority_session');
+    localStorage.removeItem('labsetu_auth');
+    sessionStorage.clear();
+    await logout('authority');
+    navigate('/login');
   };
 
   const handleSearchSubmit = (e) => {
@@ -159,7 +223,7 @@ export default function MainLayout() {
           </button>
           <img src={logo} alt="LabSetu Logo" className="layout-logo" />
           <span className="layout-brand">Lab<span className="layout-brand-highlight">Setu</span></span>
-          <span className="layout-badge">Authority Portal</span>
+          <span className="layout-badge" title="Laboratory Information Management System">LIMS</span>
         </div>
 
         <div className="layout-header-center">
@@ -560,6 +624,17 @@ export default function MainLayout() {
           <div key={location.pathname} className="layout-slide-wrapper layout-fade-wrapper">
             <Outlet />
           </div>
+
+          <footer className="w-full text-center text-sm text-gray-500 mt-10 pb-6">
+            <div className="flex justify-center gap-6 mb-1">
+              <a href="/terms" onClick={(e) => { e.preventDefault(); setLegalModal('terms'); }} className="hover:text-emerald-600">Terms &amp; Conditions</a>
+              <a href="/privacy" onClick={(e) => { e.preventDefault(); setLegalModal('privacy'); }} className="hover:text-emerald-600">Privacy Policy</a>
+            </div>
+            <div className="mb-4">
+              <a href="/refund" onClick={(e) => { e.preventDefault(); setLegalModal('refund'); }} className="hover:text-emerald-600">Refund Policy</a>
+            </div>
+            <p>&copy; 2026 LabSetu LIMS. All rights reserved.</p>
+          </footer>
         </main>
       </div>
 
@@ -624,22 +699,142 @@ export default function MainLayout() {
       {isAccountModalOpen && (
         <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '1rem' }} onClick={() => setIsAccountModalOpen(false)}>
           <div style={{ backgroundColor: '#ffffff', borderRadius: '12px', maxWidth: '480px', width: '100%', padding: '1.5rem', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)' }} onClick={e => e.stopPropagation()}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-              <h3 style={{ margin: 0, fontSize: '1.25rem' }}>Account Owner Profile</h3>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+              <h3 style={{ margin: 0, fontSize: '1.25rem', color: '#0f172a' }}>Account Owner Profile</h3>
               <button type="button" onClick={() => setIsAccountModalOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
                 <XMarkIcon style={{ width: '20px', color: '#64748b' }} />
               </button>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', fontSize: '0.875rem' }}>
-              <div><span style={{ color: '#64748b' }}>Owner Name:</span> <strong>{currentUser?.name || 'Dr. Shozab Rizvi'}</strong></div>
-              <div><span style={{ color: '#64748b' }}>Role:</span> <strong style={{ color: '#15803d' }}>Authority / Center Admin</strong></div>
-              <div><span style={{ color: '#64748b' }}>Registered Email:</span> <strong>{currentUser?.email}</strong></div>
-              <div><span style={{ color: '#64748b' }}>Associated Center:</span> <strong>{currentUser?.centerName || 'LabSetu Diagnostics'}</strong></div>
-              <div><span style={{ color: '#64748b' }}>Lab ID #:</span> <strong>{currentUser?.labId || '61326885'}</strong></div>
+
+            <form onSubmit={handleSaveAccount} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div>
+                <label style={{ display: 'block', marginBottom: '0.4rem', fontSize: '0.85rem', fontWeight: '600', color: '#334155' }}>
+                  Full Name
+                </label>
+                <input
+                  type="text"
+                  value={accountName}
+                  onChange={(e) => setAccountName(e.target.value)}
+                  required
+                  placeholder="e.g. Dr. Shozab Rizvi"
+                  style={{
+                    width: '100%',
+                    padding: '0.65rem 0.85rem',
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '8px',
+                    fontSize: '0.9rem',
+                    boxSizing: 'border-box',
+                    outline: 'none',
+                    color: '#0f172a'
+                  }}
+                />
+              </div>
+
+              <div style={{ backgroundColor: '#f8fafc', borderRadius: '8px', padding: '0.85rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', fontSize: '0.85rem', border: '1px solid #e2e8f0' }}>
+                <div><span style={{ color: '#64748b' }}>Role:</span> <strong style={{ color: '#15803d' }}>Authority / Center Admin</strong></div>
+                <div><span style={{ color: '#64748b' }}>Registered Email:</span> <strong>{currentUser?.email || 'admin@labsetu.com'}</strong></div>
+                <div><span style={{ color: '#64748b' }}>Associated Center:</span> <strong>{currentUser?.centerName || 'LabSetu Diagnostics'}</strong></div>
+                <div><span style={{ color: '#64748b' }}>Lab ID #:</span> <strong>{currentUser?.labId || '61326885'}</strong></div>
+              </div>
+
+              {accountNotice && (
+                <div style={{
+                  padding: '0.55rem 0.85rem',
+                  borderRadius: '6px',
+                  backgroundColor: accountNotice.includes('Error') ? '#fef2f2' : '#f0fdf4',
+                  color: accountNotice.includes('Error') ? '#dc2626' : '#15803d',
+                  fontSize: '0.85rem',
+                  fontWeight: '500'
+                }}>
+                  {accountNotice}
+                </div>
+              )}
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '0.5rem' }}>
+                <button
+                  type="button"
+                  onClick={() => setIsAccountModalOpen(false)}
+                  style={{
+                    padding: '0.55rem 1rem',
+                    borderRadius: '6px',
+                    border: '1px solid #cbd5e1',
+                    backgroundColor: '#ffffff',
+                    color: '#475569',
+                    fontSize: '0.875rem',
+                    fontWeight: '500',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingAccount}
+                  style={{
+                    padding: '0.55rem 1.25rem',
+                    borderRadius: '6px',
+                    border: 'none',
+                    backgroundColor: '#15803d',
+                    color: '#ffffff',
+                    fontWeight: '600',
+                    fontSize: '0.875rem',
+                    cursor: isSavingAccount ? 'not-allowed' : 'pointer',
+                    opacity: isSavingAccount ? 0.75 : 1
+                  }}
+                >
+                  {isSavingAccount ? 'Saving...' : 'Save Changes'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Centralized Legal Information Modal */}
+      {legalModal && (
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '1rem' }} onClick={() => setLegalModal(null)}>
+          <div style={{ backgroundColor: '#ffffff', borderRadius: '12px', padding: '1.5rem', width: '100%', maxWidth: '560px', maxHeight: '85vh', overflowY: 'auto', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)' }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', borderBottom: '1px solid #e2e8f0', paddingBottom: '0.75rem' }}>
+              <h3 style={{ margin: 0, fontSize: '1.2rem', color: '#1e293b' }}>
+                {legalModal === 'terms' && 'Terms & Conditions'}
+                {legalModal === 'privacy' && 'Privacy Policy'}
+                {legalModal === 'refund' && 'Refund & Cancellation Policy'}
+              </h3>
+              <button onClick={() => setLegalModal(null)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#64748b' }}>
+                <XMarkIcon style={{ width: '20px' }} />
+              </button>
             </div>
+
+            <div style={{ fontSize: '0.9rem', color: '#334155', lineHeight: 1.6 }}>
+              {legalModal === 'terms' && (
+                <>
+                  <p>Welcome to LabSetu Diagnostic Laboratory Information Management System (LIMS).</p>
+                  <p>1. <strong>Authorized Usage:</strong> This portal is provided for certified laboratory staff, clinical pathologists, and authorized medical administrators. User credentials must remain confidential.</p>
+                  <p>2. <strong>Data Compliance:</strong> Clinical findings, pathology specimen records, and diagnostic values must adhere to National Accreditation Board for Testing and Calibration Laboratories (NABL) guidelines.</p>
+                  <p>3. <strong>Audit Trail:</strong> All record alterations, billing adjustments, and report print operations are recorded in an immutable audit ledger.</p>
+                </>
+              )}
+              {legalModal === 'privacy' && (
+                <>
+                  <p>LabSetu takes patient medical confidentiality and diagnostic data privacy with utmost priority.</p>
+                  <p>1. <strong>Protected Health Information:</strong> All patient identifiers (UHID, mobile number, clinical history) are protected and transmitted via encrypted channels.</p>
+                  <p>2. <strong>Patient Consent:</strong> SMS reports and WhatsApp notifications are dispatched only with patient verification and explicit authorization.</p>
+                  <p>3. <strong>Third-party Disclosures:</strong> Diagnostic data is never sold, leased, or disclosed to unauthorized marketing third parties.</p>
+                </>
+              )}
+              {legalModal === 'refund' && (
+                <>
+                  <p>LabSetu Diagnostic Billing & Refund Standards:</p>
+                  <p>1. <strong>Pre-collection Cancellation:</strong> Patients may cancel diagnostic appointments before phlebotomy specimen collection with a 100% refund.</p>
+                  <p>2. <strong>Processing Status:</strong> Once biological samples have entered centrifugation, biochemical analyzer processing, or imaging acquisition, bill adjustments require authorized medical supervisor approval.</p>
+                  <p>3. <strong>Settlement:</strong> Approved refunds are credited back to the original source payment method within 3–5 working days.</p>
+                </>
+              )}
+            </div>
+
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1.25rem' }}>
-              <button type="button" onClick={() => setIsAccountModalOpen(false)} style={{ padding: '0.55rem 1rem', borderRadius: '6px', border: 'none', backgroundColor: '#15803d', color: '#ffffff', fontWeight: '600', cursor: 'pointer' }}>
-                Done
+              <button onClick={() => setLegalModal(null)} style={{ padding: '0.55rem 1rem', borderRadius: '6px', border: 'none', backgroundColor: '#15803d', color: '#ffffff', fontWeight: '600', cursor: 'pointer' }}>
+                Understood &amp; Close
               </button>
             </div>
           </div>

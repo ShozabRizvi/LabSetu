@@ -1,17 +1,50 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { supabase } from '../../lib/supabase';
 
 /**
- * Route protection for authenticated users by role.
- * - If not authenticated: redirects to /login
- * - If role does not match allowedRoles: redirects to their respective authorized home
+ * Route protection acting as an absolute firewall:
+ * Access to protected routes is mathematically locked behind a verified Supabase session.
+ * On every route change, supabase.auth.getSession() is queried.
+ * If the session is null, the user is instantly redirected to /login. No exceptions.
  */
 export function ProtectedRoute({ allowedRoles, children }) {
-  const { authorityUser, patientUser, currentUser, loading } = useAuth();
+  const { authorityUser, patientUser, currentUser, loading: authContextLoading } = useAuth();
   const location = useLocation();
 
-  if (loading) {
+  const [verifyingSession, setVerifyingSession] = useState(true);
+  const [supabaseSession, setSupabaseSession] = useState(null);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function checkSessionFirewall() {
+      try {
+        setVerifyingSession(true);
+        const { data: { session }, error } = await supabase.auth.getSession();
+        if (!isMounted) return;
+
+        if (error || !session || !session.user) {
+          setSupabaseSession(null);
+        } else {
+          setSupabaseSession(session);
+        }
+      } catch (err) {
+        if (isMounted) setSupabaseSession(null);
+      } finally {
+        if (isMounted) setVerifyingSession(false);
+      }
+    }
+
+    checkSessionFirewall();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [location.pathname]);
+
+  if (authContextLoading || verifyingSession) {
     return (
       <div style={{
         display: 'flex', 
@@ -19,7 +52,8 @@ export function ProtectedRoute({ allowedRoles, children }) {
         alignItems: 'center', 
         minHeight: '100vh',
         fontFamily: 'inherit',
-        color: '#15803d'
+        color: '#15803d',
+        backgroundColor: '#f8fafc'
       }}>
         <div style={{ textAlign: 'center' }}>
           <div style={{
@@ -32,13 +66,20 @@ export function ProtectedRoute({ allowedRoles, children }) {
             margin: '0 auto 1rem auto'
           }}></div>
           <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
-          <p style={{ color: '#4b5563', fontSize: '0.95rem' }}>Loading LabSetu...</p>
+          <p style={{ color: '#4b5563', fontSize: '0.95rem', fontWeight: '500' }}>Verifying security session...</p>
         </div>
       </div>
     );
   }
 
-  // Determine the active session user for the requested role boundary
+  const defaultRole = allowedRoles?.includes('citizen') ? 'citizen' : 'authority';
+
+  // Absolute Firewall: Mathematically locked behind a verified Supabase session object
+  if (!supabaseSession || !supabaseSession.user) {
+    return <Navigate to={`/login?role=${defaultRole}`} state={{ from: location, defaultRole }} replace />;
+  }
+
+  // Determine the active user for the role boundary
   let activeUser = currentUser;
   if (allowedRoles?.includes('authority') && !allowedRoles?.includes('citizen')) {
     activeUser = authorityUser;
@@ -47,12 +88,11 @@ export function ProtectedRoute({ allowedRoles, children }) {
   }
 
   if (!activeUser) {
-    const defaultRole = allowedRoles?.includes('citizen') ? 'citizen' : 'authority';
     return <Navigate to={`/login?role=${defaultRole}`} state={{ from: location, defaultRole }} replace />;
   }
 
+  // Cross-portal role enforcement
   if (allowedRoles && !allowedRoles.includes(activeUser.role)) {
-    // Redirect to the appropriate home for their role
     if (activeUser.role === 'citizen') {
       return <Navigate to="/portal/dashboard" replace />;
     }
@@ -64,6 +104,7 @@ export function ProtectedRoute({ allowedRoles, children }) {
 
 /**
  * Public only route (e.g., login / signup).
+ * Authenticated users are prevented from seeing login/signup screens.
  */
 export function PublicOnlyRoute({ children }) {
   const { authorityUser, patientUser, loading } = useAuth();
@@ -73,8 +114,6 @@ export function PublicOnlyRoute({ children }) {
     return null;
   }
 
-  // If user navigates explicitly to /login or /signup, allow them to view and switch accounts
-  // Only redirect if no query role is specified and user is already at the root
   const params = new URLSearchParams(location.search);
   const targetRole = params.get('role');
   if (targetRole === 'authority' && authorityUser) {

@@ -14,31 +14,33 @@ export default function CitizenProfile() {
   const { currentUser, updateCurrentUser } = useAuth();
   const { t, lang } = useTranslation();
 
+  // All states initialized to empty strings / null - strictly mapped to authenticated user
   const [profile, setProfile] = useState({
-    name: currentUser?.name || '',
-    email: currentUser?.email || '',
-    phone: currentUser?.phone || '',
-    uhid: currentUser?.uhid || '',
-    age: currentUser?.age || '',
-    gender: currentUser?.gender || '',
-    bloodGroup: currentUser?.bloodGroup || '',
-    emergencyContact: currentUser?.emergencyContact || '',
-    address: currentUser?.address || ''
+    name: '',
+    email: '',
+    phone: '',
+    uhid: '',
+    age: '',
+    gender: '',
+    bloodGroup: '',
+    emergencyContact: '',
+    address: ''
   });
+  const [loading, setLoading] = useState(true);
 
   const isProfileIncomplete = !profile.name?.trim() || !profile.phone?.trim() || !profile.address?.trim();
   const [isToastDismissed, setIsToastDismissed] = useState(false);
 
   // Auto-hide popup after 5000ms
   useEffect(() => {
-    if (isProfileIncomplete) {
+    if (isProfileIncomplete && !loading) {
       setIsToastDismissed(false);
       const timer = setTimeout(() => {
         setIsToastDismissed(true);
       }, 5000);
       return () => clearTimeout(timer);
     }
-  }, [isProfileIncomplete]);
+  }, [isProfileIncomplete, loading]);
 
   const saveButtonRef = useRef(null);
 
@@ -47,68 +49,72 @@ export default function CitizenProfile() {
     saveButtonRef.current?.focus();
   };
 
-  // On Load (Hydration): SELECT directly from profiles table to populate inputs
+  // On Load (Hydration): SELECT directly from profiles & patients strictly for session user.id
   useEffect(() => {
     let isMounted = true;
     async function hydrateProfileFromDb() {
       try {
-        const user = currentUser || {};
-        const targetId = (user.id && typeof user.id === 'string' && user.id.includes('-')) ? user.id : '45370b0a-3a2a-47a6-904e-9040108d5f94';
-        const targetEmail = user.email || 'patient@labsetu.com';
+        setLoading(true);
+        // Grab current authenticated session user.id
+        const { data: sessionData } = await supabase.auth.getSession();
+        const sessionUser = sessionData?.session?.user;
+        const currentUserId = sessionUser?.id || currentUser?.id || null;
+        const currentUserEmail = sessionUser?.email || currentUser?.email || null;
 
         let profileRow = null;
         let patientRow = null;
 
-        // 1. SELECT from profiles table
-        if (targetId) {
-          const { data } = await supabase.from('profiles').select('*').eq('id', targetId).maybeSingle();
-          if (data) profileRow = data;
-        }
-        if (!profileRow && targetEmail) {
-          const { data } = await supabase.from('profiles').select('*').eq('email', targetEmail.toLowerCase()).maybeSingle();
+        // 1. SELECT from profiles table strictly for authenticated user (never by email)
+        if (currentUserId && typeof currentUserId === 'string' && currentUserId.includes('-')) {
+          const { data } = await supabase.from('profiles').select('*').eq('id', currentUserId).maybeSingle();
           if (data) profileRow = data;
         }
 
-        // 2. SELECT from patients table for clinical demographics
-        if (targetId) {
-          const { data } = await supabase.from('patients').select('*').eq('id', targetId).maybeSingle();
-          if (data) patientRow = data;
-        }
-        if (!patientRow && targetEmail) {
-          const { data } = await supabase.from('patients').select('*').eq('email', targetEmail.toLowerCase()).maybeSingle();
+        // 2. SELECT from patients table for clinical demographics strictly for authenticated user (never by email)
+        if (currentUserId && typeof currentUserId === 'string' && currentUserId.includes('-')) {
+          const { data } = await supabase.from('patients').select('*').eq('id', currentUserId).maybeSingle();
           if (data) patientRow = data;
         }
 
-        if (isMounted && (profileRow || patientRow)) {
-          const loadedName = profileRow?.full_name || patientRow?.full_name || '';
-          const loadedPhone = profileRow?.phone || patientRow?.phone || '';
-          const loadedEmail = profileRow?.email || patientRow?.email || targetEmail;
-          const loadedUhid = patientRow?.patient_code || 'UHID-2026-8901';
+        if (isMounted) {
+          const loadedName = profileRow?.full_name || patientRow?.full_name || sessionUser?.user_metadata?.full_name || (currentUser?.name && !currentUser.name.includes('@') ? currentUser.name : '');
+          const loadedEmail = profileRow?.email || patientRow?.email || currentUserEmail || '';
+          const loadedPhone = profileRow?.phone || patientRow?.phone || currentUser?.phone || '';
+          const loadedUhid = patientRow?.patient_code || profileRow?.uhid || currentUser?.uhid || '';
+          const loadedAddress = patientRow?.address || currentUser?.address || '';
+          const loadedBloodGroup = patientRow?.blood_group || currentUser?.bloodGroup || '';
+          const loadedGender = patientRow?.sex ? (patientRow.sex.charAt(0).toUpperCase() + patientRow.sex.slice(1)) : (currentUser?.gender || '');
+          const loadedAge = patientRow?.age_years !== null && patientRow?.age_years !== undefined ? String(patientRow.age_years) : (currentUser?.age ? String(currentUser.age) : '');
+          const loadedEmergency = patientRow?.emergency_contact || currentUser?.emergencyContact || '';
 
-          setProfile(prev => ({
-            ...prev,
-            name: loadedName || prev.name,
-            phone: loadedPhone || prev.phone,
-            email: loadedEmail || prev.email,
-            uhid: loadedUhid || prev.uhid,
-            address: patientRow?.address || prev.address,
-            bloodGroup: patientRow?.blood_group || prev.bloodGroup,
-            gender: patientRow?.sex ? (patientRow.sex.charAt(0).toUpperCase() + patientRow.sex.slice(1)) : prev.gender,
-            age: patientRow?.age_years !== null && patientRow?.age_years !== undefined ? String(patientRow.age_years) : prev.age,
-            emergencyContact: patientRow?.emergency_contact || prev.emergencyContact
-          }));
+          setProfile({
+            name: loadedName,
+            email: loadedEmail,
+            phone: loadedPhone,
+            uhid: loadedUhid,
+            age: loadedAge,
+            gender: loadedGender,
+            bloodGroup: loadedBloodGroup,
+            emergencyContact: loadedEmergency,
+            address: loadedAddress
+          });
 
-          if (typeof updateCurrentUser === 'function') {
+          if (typeof updateCurrentUser === 'function' && (loadedName || loadedUhid || loadedPhone)) {
             updateCurrentUser({
-              ...user,
-              name: loadedName || user.name,
-              phone: loadedPhone || user.phone,
-              uhid: loadedUhid || user.uhid
+              ...(currentUser || {}),
+              id: currentUserId || currentUser?.id,
+              name: loadedName || currentUser?.name,
+              phone: loadedPhone || currentUser?.phone,
+              uhid: loadedUhid || currentUser?.uhid
             });
           }
         }
       } catch (err) {
         console.warn('[CitizenProfile] Direct DB hydration error:', err);
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
       }
     }
 
@@ -127,7 +133,8 @@ export default function CitizenProfile() {
     const user = currentUser || {};
 
     try {
-      const targetId = (user.id && typeof user.id === 'string' && user.id.includes('-')) ? user.id : '45370b0a-3a2a-47a6-904e-9040108d5f94';
+      const { data: sessionData } = await supabase.auth.getSession();
+      const currentUserId = sessionData?.session?.user?.id || user.id;
 
       // 1. MUST execute Supabase update on profiles table
       const profileUpdates = {
@@ -136,7 +143,9 @@ export default function CitizenProfile() {
         updated_at: new Date().toISOString()
       };
 
-      await supabase.from('profiles').update(profileUpdates).eq('id', targetId);
+      if (currentUserId && typeof currentUserId === 'string' && currentUserId.includes('-')) {
+        await supabase.from('profiles').update(profileUpdates).eq('id', currentUserId);
+      }
 
       const patientUpdate = {
         full_name: newName,
@@ -148,16 +157,18 @@ export default function CitizenProfile() {
         sex: profile.gender ? profile.gender.toLowerCase() : null,
         updated_at: new Date().toISOString()
       };
-      await supabase.from('patients').update(patientUpdate).eq('id', targetId);
-
-      // Also update by email in profiles and patients to ensure sync
-      if (user.email) {
-        await supabase.from('profiles').update(profileUpdates).eq('email', user.email.toLowerCase());
-        await supabase.from('patients').update(patientUpdate).eq('email', user.email.toLowerCase());
+      if (currentUserId && typeof currentUserId === 'string' && currentUserId.includes('-')) {
+        await supabase.from('patients').update(patientUpdate).eq('id', currentUserId);
       }
 
       // 2. Update local state and global auth state
-      const updatedUser = { ...user, ...profile, name: newName, phone: newPhone };
+      const updatedUser = {
+        ...user,
+        ...profile,
+        id: currentUserId || user.id,
+        name: newName,
+        phone: newPhone
+      };
       if (typeof updateCurrentUser === 'function') {
         updateCurrentUser(updatedUser);
       }
@@ -182,6 +193,59 @@ export default function CitizenProfile() {
       setTimeout(() => setSavedNotice(false), 2500);
     }
   };
+
+  // Hydration Flash Guard: Render professional skeleton loader while fetching profile
+  if (loading) {
+    return (
+      <div style={{ maxWidth: '800px', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+        <div>
+          <div style={{ width: '220px', height: '28px', backgroundColor: '#e2e8f0', borderRadius: '6px', marginBottom: '0.5rem' }} className="animate-pulse" />
+          <div style={{ width: '340px', height: '16px', backgroundColor: '#f1f5f9', borderRadius: '4px' }} className="animate-pulse" />
+        </div>
+
+        <div style={{
+          backgroundColor: '#ffffff',
+          borderRadius: '12px',
+          border: '1px solid #e2e8f0',
+          padding: '1.75rem',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
+        }}>
+          {/* Header Skeleton */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', paddingBottom: '1.25rem', borderBottom: '1px solid #e2e8f0', marginBottom: '1.5rem' }}>
+            <div style={{ width: '64px', height: '64px', borderRadius: '50%', backgroundColor: '#e2e8f0' }} className="animate-pulse" />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              <div style={{ width: '180px', height: '20px', backgroundColor: '#e2e8f0', borderRadius: '4px' }} className="animate-pulse" />
+              <div style={{ width: '240px', height: '14px', backgroundColor: '#f1f5f9', borderRadius: '4px' }} className="animate-pulse" />
+            </div>
+          </div>
+
+          {/* Form Grid Skeleton */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
+            {[1, 2, 3, 4, 5, 6].map((i) => (
+              <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                <div style={{ width: '90px', height: '14px', backgroundColor: '#e2e8f0', borderRadius: '4px' }} className="animate-pulse" />
+                <div style={{ width: '100%', height: '38px', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px' }} className="animate-pulse" />
+              </div>
+            ))}
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginBottom: '1rem' }}>
+            <div style={{ width: '130px', height: '14px', backgroundColor: '#e2e8f0', borderRadius: '4px' }} className="animate-pulse" />
+            <div style={{ width: '100%', height: '38px', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px' }} className="animate-pulse" />
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginBottom: '1.5rem' }}>
+            <div style={{ width: '100px', height: '14px', backgroundColor: '#e2e8f0', borderRadius: '4px' }} className="animate-pulse" />
+            <div style={{ width: '100%', height: '72px', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px' }} className="animate-pulse" />
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <div style={{ width: '150px', height: '42px', backgroundColor: '#e2e8f0', borderRadius: '8px' }} className="animate-pulse" />
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ maxWidth: '800px', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>

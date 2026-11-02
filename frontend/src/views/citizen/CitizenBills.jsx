@@ -394,7 +394,7 @@ export default function CitizenBills() {
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                   <span style={{ color: '#64748b' }}>Patient:</span>
-                  <strong>{activeMember?.name || currentUser?.name || 'Shozab Rizvi'}</strong>
+                  <strong>{activeMember?.name || (currentUser?.name && !currentUser.name.includes('@') ? currentUser.name : 'Patient')}</strong>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                   <span style={{ color: '#64748b' }}>Payment Mode:</span>

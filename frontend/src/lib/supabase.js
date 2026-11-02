@@ -2,8 +2,9 @@ import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://tghjbfeadohczaaanlhe.supabase.co';
 const supabaseKey =
+  import.meta.env.VITE_SUPABASE_ANON_KEY ||
   import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY ||
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRnaGpiZmVhZG9oY3phYWFubGhlIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc5MjE2OTMzOCwiZXhwIjoyMTA3NzQ1MzM4fQ.Y8cn5RpQ1arU392mYkBirc1hzznA_CAytxCVJ9fTtoQ';
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRnaGpiZmVhZG9oY3phYWFubGhlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIxNjkzMzgsImV4cCI6MjEwNzc0NTMzOH0.4l3AoMe9R2IvipNuWwKlckwTYhmNfCaYGYqCvlY-dRw';
 
 /**
  * Supabase client instance configured with full project privileges

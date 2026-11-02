@@ -35,9 +35,55 @@ export default function CitizenDashboard({ lang: propLang }) {
   const { data: appointments, update: setAppointments } = useDemoResource('appointments', []);
   const [selectedReport, setSelectedReport] = useState(null);
 
+  // Patient Name State - never default to email
+  const [patientName, setPatientName] = useState(
+    activeMember?.name || (currentUser?.name && !currentUser.name.includes('@') ? currentUser.name : '')
+  );
+
   const readyReports = demoCitizenReports.filter(r => r.status === 'Ready');
   const safeAppts = Array.isArray(appointments) ? appointments : [];
   const upcomingAppts = safeAppts.filter(a => a.status === 'Confirmed');
+
+  // Fetch patient full_name by querying the profiles table
+  useEffect(() => {
+    let isMounted = true;
+    async function loadPatientName() {
+      if (activeMember?.name) {
+        setPatientName(activeMember.name);
+        return;
+      }
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        const sessionUser = sessionData?.session?.user;
+        const targetUserId = sessionUser?.id || currentUser?.id;
+
+        let dbName = null;
+
+        // Query profiles table strictly by authenticated user ID (never by email)
+        if (targetUserId && typeof targetUserId === 'string' && targetUserId.includes('-')) {
+          const { data: profileRow } = await supabase
+            .from('profiles')
+            .select('full_name')
+            .eq('id', targetUserId)
+            .maybeSingle();
+          if (profileRow?.full_name && !profileRow.full_name.includes('@')) {
+            dbName = profileRow.full_name;
+          }
+        }
+
+        if (isMounted && dbName) {
+          setPatientName(dbName);
+        }
+      } catch (err) {
+        console.warn('[CitizenDashboard] Could not fetch profile name:', err);
+      }
+    }
+
+    loadPatientName();
+    return () => {
+      isMounted = false;
+    };
+  }, [currentUser?.id, activeMember?.name]);
 
   const [dbMetrics, setDbMetrics] = useState({
     publishedReports: null,
@@ -48,17 +94,17 @@ export default function CitizenDashboard({ lang: propLang }) {
   const fetchMetrics = async () => {
     try {
       const [reportsRes, apptsRes, billsRes] = await Promise.all([
-        supabase.from('reports').select('*', { count: 'exact', head: true }).eq('status', 'signed'),
-        supabase.from('appointments').select('*', { count: 'exact', head: true }).neq('status', 'Cancelled'),
-        supabase.from('bills').select('due_amount').eq('payment_status', 'due'),
+        supabase.from('reports').select('*', { count: 'exact', head: true }).eq('status', 'signed').then(r => r).catch(() => ({ count: null })),
+        supabase.from('appointments').select('*', { count: 'exact', head: true }).neq('status', 'Cancelled').then(r => r).catch(() => ({ count: null })),
+        supabase.from('bills').select('due_amount').eq('payment_status', 'due').then(r => r).catch(() => ({ data: [] })),
       ]);
 
-      const totalDues = (billsRes.data || []).reduce((acc, curr) => acc + (Number(curr.due_amount) || 0), 0);
+      const totalDues = (billsRes?.data || []).reduce((acc, curr) => acc + (Number(curr.due_amount) || 0), 0);
 
       setDbMetrics({
-        publishedReports: reportsRes.count !== null ? reportsRes.count : readyReports.length,
-        upcomingAppointments: apptsRes.count !== null ? apptsRes.count : upcomingAppts.length,
-        outstandingInvoices: billsRes.data && billsRes.data.length > 0 ? `₹${totalDues}` : (billsRes.count !== null && billsRes.count === 0 ? '₹0' : '₹550'),
+        publishedReports: reportsRes?.count !== null && reportsRes?.count !== undefined ? reportsRes.count : readyReports.length,
+        upcomingAppointments: apptsRes?.count !== null && apptsRes?.count !== undefined ? apptsRes.count : upcomingAppts.length,
+        outstandingInvoices: billsRes?.data && billsRes.data.length > 0 ? `₹${totalDues}` : (billsRes?.count !== null && billsRes?.count === 0 ? '₹0' : '₹550'),
       });
     } catch (err) {
       console.warn('Metrics query fallback:', err);
@@ -121,7 +167,7 @@ export default function CitizenDashboard({ lang: propLang }) {
       <div className="citizen-welcome-hero">
         <div className="hero-text">
           <h1>
-            {t('dashboard.welcome')}, {activeMember?.name || currentUser?.name || 'Patient'}
+            {t('dashboard.welcome')}, {activeMember?.name || patientName || 'Patient'}
             {activeMember && activeMember.relation !== 'Self' && (
               <span style={{ marginLeft: '0.5rem', fontSize: '0.75rem', fontWeight: 600, backgroundColor: '#ecfdf5', color: '#065f46', padding: '0.2rem 0.6rem', borderRadius: '9999px', border: '1px solid #a7f3d0' }}>
                 {activeMember.relation}
@@ -129,7 +175,7 @@ export default function CitizenDashboard({ lang: propLang }) {
             )}
           </h1>
           <p>
-            {t('dashboard.uhid')}: <strong>{activeUHID || currentUser?.uhid || 'UHID-2026-8901'}</strong> · {t('dashboard.centre')}:{' '}
+            {t('dashboard.uhid')}: <strong>{activeUHID || currentUser?.uhid || '—'}</strong> · {t('dashboard.centre')}:{' '}
             <strong>LabSetu Diagnostics</strong>
           </p>
         </div>
@@ -465,9 +511,9 @@ export default function CitizenDashboard({ lang: propLang }) {
             <div className="report-modal-body" style={{ padding: '1.25rem 1.5rem' }}>
               {/* Patient Demographics Grid */}
               <div className="report-meta-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.65rem', background: '#f8fafc', padding: '0.85rem 1rem', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '0.82rem' }}>
-                <div><span style={{ color: '#64748b' }}>Patient:</span> <strong>{activeMember?.name || currentUser?.name || 'Shozab Rizvi'}</strong></div>
-                <div><span style={{ color: '#64748b' }}>Age / Sex:</span> <strong>{activeMember?.age || (currentUser?.age ? `${currentUser.age}Y` : '28Y')} / {activeMember?.gender || currentUser?.gender || 'Male'}</strong></div>
-                <div><span style={{ color: '#64748b' }}>UHID:</span> <strong>{activeUHID || currentUser?.uhid || 'UHID-2026-8901'}</strong></div>
+                <div><span style={{ color: '#64748b' }}>Patient:</span> <strong>{activeMember?.name || patientName || 'Patient'}</strong></div>
+                <div><span style={{ color: '#64748b' }}>Age / Sex:</span> <strong>{activeMember?.age || (currentUser?.age ? `${currentUser.age}Y` : '—')} / {activeMember?.gender || currentUser?.gender || '—'}</strong></div>
+                <div><span style={{ color: '#64748b' }}>UHID:</span> <strong>{activeUHID || currentUser?.uhid || '—'}</strong></div>
                 <div><span style={{ color: '#64748b' }}>Collection Date:</span> <strong>{selectedReport.date}</strong></div>
                 <div><span style={{ color: '#64748b' }}>Reporting Doctor:</span> <strong>{selectedReport.doctor}</strong></div>
                 <div><span style={{ color: '#64748b' }}>Status:</span> <strong style={{ color: selectedReport.status === 'Ready' ? '#15803d' : '#b45309' }}>✓ {selectedReport.status}</strong></div>

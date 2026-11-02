@@ -126,24 +126,30 @@ export function createAuthRouter() {
       try {
         const sb = getSupabase();
         if (sb) {
+          const effectiveId = userData.id || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : undefined);
+          const profileData = {
+            full_name: userData.name,
+            email: userData.email?.toLowerCase(),
+            phone: userData.phone || null,
+            role: userData.role === 'authority' ? 'admin' : 'employee',
+            center_id: 'cb17e71d-cb76-49e6-a202-4a82c94de5d8',
+            is_active: true
+          };
+          if (effectiveId) profileData.id = effectiveId;
+
+          await sb.from('profiles').insert(profileData);
+
           if (userData.role === 'citizen') {
-            await sb.from('patients').insert({
+            const patientData = {
               patient_code: uhid,
               full_name: userData.name,
               phone: userData.phone || null,
               email: userData.email?.toLowerCase(),
               center_id: 'cb17e71d-cb76-49e6-a202-4a82c94de5d8',
               is_active: true
-            });
-          } else {
-            await sb.from('profiles').insert({
-              full_name: userData.name,
-              email: userData.email?.toLowerCase(),
-              phone: userData.phone || null,
-              role: 'employee',
-              center_id: 'cb17e71d-cb76-49e6-a202-4a82c94de5d8',
-              is_active: true
-            });
+            };
+            if (effectiveId) patientData.id = effectiveId;
+            await sb.from('patients').insert(patientData);
           }
         }
       } catch (dbErr) {

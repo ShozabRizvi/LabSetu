@@ -1,253 +1,250 @@
 /**
- * LabSetu Authentication Service
+ * LabSetu Authentication Service - Supabase Database Auth Integration
  * 
- * Endpoints:
- * - POST /api/auth/login        -> Login with email, phone, or name
- * - POST /api/auth/register     -> Register new citizen or authority user
- * - GET  /api/auth/me           -> Get current authenticated user session
- * - POST /api/auth/logout       -> Invalidate session / token
- * - POST /api/auth/reset-password -> Reset forgotten password
+ * Strict Database-Only Authentication:
+ * All authentications, registrations, and session verifications are strictly
+ * executed against Supabase Database Auth (auth.users and public.profiles).
+ * Zero mock users, zero mock tokens, zero local bypasses.
  */
 
-import apiClient from './apiClient';
 import { supabase } from '../lib/supabase';
-
-const DEFAULT_USERS = [
-  {
-    email: 'admin@labsetu.com',
-    password: 'password123',
-    name: 'Dr. Shozab Rizvi',
-    role: 'authority',
-    phone: '9876543210',
-    centerName: 'LabSetu Diagnostics',
-    labId: '61326885'
-  },
-  {
-    email: 'patient@labsetu.com',
-    password: 'password123',
-    name: 'Shozab Rizvi',
-    role: 'citizen',
-    phone: '9876501234',
-    uhid: 'UHID-2026-8901',
-    age: 28,
-    gender: 'Male',
-    bloodGroup: 'B+'
-  }
-];
-
-const getLocalUsers = () => {
-  try {
-    const raw = localStorage.getItem('labsetu_users');
-    return raw ? JSON.parse(raw) : DEFAULT_USERS;
-  } catch {
-    return DEFAULT_USERS;
-  }
-};
+import apiClient from './apiClient';
 
 export const authService = {
   /**
-   * Log in user by email, phone, or name
-   * @param {string} identifier - Email, 10-digit phone number, patient name, or organisation name
+   * Log in user exclusively using Supabase Auth signInWithPassword
+   * @param {string} identifier - User email
    * @param {string} password - User password
-   * @param {'citizen' | 'authority'} role - Intended role
+   * @param {'citizen' | 'authority'} role - Intended portal role
    */
   async login(identifier, password, role) {
-    const fallbackFn = async () => {
-      const users = getLocalUsers();
-      const cleanInput = identifier.trim().toLowerCase();
-      const isPhoneInput = /^\d{10}$/.test(cleanInput.replace(/\D/g, ''));
+    const cleanEmail = (identifier || '').trim().toLowerCase();
 
-      let existing = null;
-      if (isPhoneInput) {
-        existing = users.find(u => u.phone === cleanInput.replace(/\D/g, ''));
-      } else {
-        existing = users.find(u => u.email.toLowerCase() === cleanInput) ||
-                   users.find(u => u.name && u.name.toLowerCase() === cleanInput) ||
-                   users.find(u => u.centerName && u.centerName.toLowerCase() === cleanInput);
-      }
+    if (!cleanEmail) {
+      return { success: false, error: 'Please enter your email address.' };
+    }
+    if (!password) {
+      return { success: false, error: 'Please enter your password.' };
+    }
 
-      if (!existing) {
-        return { success: false, error: 'No account found with these credentials. Please sign up first.' };
-      }
+    try {
+      // 1. Mathematically authenticate with Supabase Auth
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: cleanEmail,
+        password
+      });
 
-      if (existing.password !== password) {
-        return { success: false, error: 'Incorrect password. Please try again.' };
-      }
-
-      if (existing.role !== role) {
+      if (error || !data?.session || !data?.user) {
         return {
           success: false,
-          error: `This account is registered as ${existing.role === 'authority' ? 'Authority / Staff' : 'Patient / Citizen'}. Please select the correct role tab.`
+          error: error?.message || 'Invalid login credentials. Please check your email and password.'
         };
       }
 
-      // Database-Driven Identity: Read profile & uhid directly from Supabase / static records
-      let dbName = existing.name;
-      let dbUhid = existing.uhid;
+      const authUser = data.user;
+      const session = data.session;
 
+      // 2. Query user profile from profiles table strictly by authenticated user ID
+      let profile = null;
       try {
-        const { data: dbProfile } = await supabase.from('profiles').select('*').eq('email', existing.email.toLowerCase()).maybeSingle();
-        const { data: dbPatient } = await supabase.from('patients').select('*').eq('email', existing.email.toLowerCase()).maybeSingle();
-        if (dbProfile) {
-          dbName = dbProfile.display_name || dbProfile.full_name || dbName;
-          if (dbProfile.uhid) dbUhid = dbProfile.uhid;
-        }
-        if (dbPatient) {
-          dbName = dbPatient.full_name || dbName;
-          if (dbPatient.patient_code) dbUhid = dbPatient.patient_code;
-        }
-      } catch (err) {
-        console.warn('[authService.login] DB sync notice:', err);
+        const { data: pData } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', authUser.id)
+          .maybeSingle();
+        if (pData) profile = pData;
+      } catch (dbErr) {
+        console.warn('[authService.login] Profile lookup notice:', dbErr);
       }
 
+      // 3. Query patients table if citizen
+      let patientRow = null;
+      try {
+        const { data: ptData } = await supabase
+          .from('patients')
+          .select('*')
+          .eq('id', authUser.id)
+          .maybeSingle();
+        if (ptData) patientRow = ptData;
+      } catch (ptErr) {
+        console.warn('[authService.login] Patient lookup notice:', ptErr);
+      }
+
+      const resolvedRole = authUser.user_metadata?.role || (profile?.role === 'admin' ? 'authority' : role) || role;
+
+      // Role boundary validation: warn if logging into citizen portal with authority account or vice versa
+      if (role && resolvedRole && role !== resolvedRole && resolvedRole !== 'admin') {
+        return {
+          success: false,
+          error: `This account is registered as ${resolvedRole === 'authority' ? 'Authority / Staff' : 'Patient / Citizen'}. Please select the ${resolvedRole === 'authority' ? 'Authority' : 'Patient'} tab.`
+        };
+      }
+
+      const resolvedName = profile?.display_name || profile?.full_name || patientRow?.full_name || authUser.user_metadata?.full_name || 'Patient';
+      const resolvedUhid = profile?.uhid || patientRow?.patient_code || 'Pending';
+
       const user = {
-        id: existing.id || (existing.role === 'citizen' ? 'USR-002' : 'USR-001'),
-        email: existing.email,
-        name: dbName,
-        role: existing.role,
-        phone: existing.phone || '',
-        uhid: existing.role === 'citizen' ? (dbUhid || 'UHID-2026-8901') : undefined,
-        labId: existing.labId || '61326885',
-        centerName: existing.centerName || 'LabSetu Diagnostics',
-        dob: existing.dob || '',
-        gender: existing.gender || '',
-        address: existing.address || '',
-        designation: existing.designation || ''
+        id: authUser.id,
+        email: authUser.email,
+        name: resolvedName,
+        role: resolvedRole,
+        phone: profile?.phone || patientRow?.phone || '',
+        uhid: resolvedRole === 'citizen' ? resolvedUhid : undefined,
+        centerName: 'LabSetu Diagnostics',
+        labId: '61326885'
       };
 
-      const mockToken = `mock-jwt-token-${Date.now()}`;
-      apiClient.setToken(mockToken);
+      if (session.access_token) {
+        apiClient.setToken(session.access_token);
+      }
 
       return {
         success: true,
         user,
-        token: mockToken
+        session
       };
-    };
-
-    const res = await apiClient.post('/auth/login', { identifier, password, role }, {}, fallbackFn);
-
-    if (res.success) {
-      const token = res.data?.token || res.token;
-      if (token) apiClient.setToken(token);
+    } catch (err) {
+      console.error('[authService.login] Authentication exception:', err);
       return {
-        success: true,
-        user: res.data?.user || res.user || res.data,
-        token
+        success: false,
+        error: err.message || 'Unable to connect to authentication server. Please try again.'
       };
     }
-
-    return {
-      success: false,
-      error: res.error || 'Authentication failed'
-    };
   },
 
   /**
-   * Register a new user
+   * Register a new user in Supabase auth.users with metadata and database profile
    */
   async register(userData) {
-    const fallbackFn = async () => {
-      const users = getLocalUsers();
-      const cleanEmail = userData.email.trim().toLowerCase();
-      const cleanPhone = (userData.phone || '').replace(/\D/g, '');
+    const cleanEmail = (userData.email || '').trim().toLowerCase();
+    const fullName = (userData.name || '').trim();
+    const cleanPhone = (userData.phone || '').replace(/\D/g, '');
 
-      if (users.some(u => u.email.toLowerCase() === cleanEmail)) {
-        return { success: false, error: 'An account with this email already exists. Please sign in.' };
-      }
-      if (cleanPhone && users.some(u => u.phone === cleanPhone)) {
-        return { success: false, error: 'An account with this phone number already exists. Please sign in.' };
+    if (!cleanEmail) {
+      return { success: false, error: 'Please enter a valid email address.' };
+    }
+    if (!userData.password || userData.password.length < 6) {
+      return { success: false, error: 'Password must be at least 6 characters long.' };
+    }
+
+    try {
+      // 1. Create real record in Supabase auth.users with full_name in metadata payload
+      const { data, error } = await supabase.auth.signUp({
+        email: cleanEmail,
+        password: userData.password,
+        options: {
+          data: {
+            full_name: fullName,
+            role: userData.role
+          }
+        }
+      });
+
+      if (error) {
+        return {
+          success: false,
+          error: error.message || 'Registration failed with Supabase.'
+        };
       }
 
-      // Database-Driven UHID: Generated exactly once during signup/registration
+      const authUser = data?.user;
+      if (!authUser?.id) {
+        return {
+          success: false,
+          error: 'User creation failed. No user object returned by database.'
+        };
+      }
+
       const assignedUhid = userData.role === 'citizen'
         ? (userData.uhid || `UHID-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`)
         : undefined;
 
-      const newUser = {
-        id: `USR-${Math.floor(1000 + Math.random() * 9000)}`,
-        email: cleanEmail,
-        password: userData.password,
-        name: userData.name.trim(),
-        role: userData.role,
-        phone: cleanPhone,
-        dob: userData.dob || '',
-        gender: userData.gender || '',
-        address: userData.address || '',
-        designation: userData.designation || '',
-        uhid: assignedUhid,
-        labId: userData.role === 'authority' ? '61326885' : undefined,
-        centerName: userData.centerName || 'LabSetu Diagnostics'
-      };
-
-      // Persist to Supabase database so database is single source of truth
+      // 2. Persist to public.profiles table (and patients if citizen)
       try {
+        await supabase.from('profiles').upsert({
+          id: authUser.id,
+          email: cleanEmail,
+          full_name: fullName,
+          phone: cleanPhone || null,
+          role: userData.role === 'authority' ? 'admin' : 'citizen',
+          uhid: assignedUhid,
+          is_active: true
+        });
+
         if (userData.role === 'citizen') {
-          await supabase.from('patients').insert({
+          await supabase.from('patients').upsert({
+            id: authUser.id,
             patient_code: assignedUhid,
-            full_name: newUser.name,
-            phone: cleanPhone,
+            full_name: fullName,
+            phone: cleanPhone || null,
             email: cleanEmail,
-            center_id: 'cb17e71d-cb76-49e6-a202-4a82c94de5d8',
-            is_active: true
-          });
-        } else {
-          await supabase.from('profiles').insert({
-            full_name: newUser.name,
-            email: cleanEmail,
-            phone: cleanPhone,
-            role: 'employee',
-            center_id: 'cb17e71d-cb76-49e6-a202-4a82c94de5d8',
             is_active: true
           });
         }
       } catch (dbErr) {
-        console.warn('[authService.register] Supabase persist warning:', dbErr);
+        console.warn('[authService.register] Direct profile persist note:', dbErr);
       }
 
-      users.push(newUser);
-      localStorage.setItem('labsetu_users', JSON.stringify(users));
-
-      return { success: true, user: newUser };
-    };
-
-    const res = await apiClient.post('/auth/register', userData, {}, fallbackFn);
-    if (res.success) {
-      return { success: true, user: res.data?.user || res.user || res.data };
+      return {
+        success: true,
+        user: {
+          id: authUser.id,
+          email: cleanEmail,
+          name: fullName,
+          role: userData.role,
+          uhid: assignedUhid
+        },
+        session: data.session
+      };
+    } catch (err) {
+      console.error('[authService.register] Registration exception:', err);
+      return {
+        success: false,
+        error: err.message || 'Registration failed. Please check network connectivity.'
+      };
     }
-    return { success: false, error: res.error || 'Registration failed' };
   },
 
   /**
-   * Get current authenticated user profile
+   * Get current authenticated user profile from active Supabase session
    */
   async getCurrentUser() {
-    const fallbackFn = async () => {
-      try {
-        const path = typeof window !== 'undefined' ? window.location.pathname : '';
-        const key = path.startsWith('/portal') ? 'labsetu_patient_session' : (path.startsWith('/app') ? 'labsetu_authority_session' : 'labsetu_auth');
-        const saved = sessionStorage.getItem(key) || localStorage.getItem(key) || sessionStorage.getItem('labsetu_auth') || localStorage.getItem('labsetu_auth');
-        return saved ? { success: true, user: JSON.parse(saved) } : { success: false, user: null };
-      } catch {
+    try {
+      const { data: { session }, error } = await supabase.auth.getSession();
+      if (error || !session?.user) {
         return { success: false, user: null };
       }
-    };
 
-    const res = await apiClient.get('/auth/me', {}, fallbackFn);
-    if (res.success) {
-      return { success: true, user: res.data?.user || res.user || res.data };
+      const authUser = session.user;
+      let profile = null;
+      try {
+        const { data } = await supabase.from('profiles').select('*').eq('id', authUser.id).maybeSingle();
+        if (data) profile = data;
+      } catch {}
+
+      return {
+        success: true,
+        user: {
+          id: authUser.id,
+          email: authUser.email,
+          name: profile?.full_name || authUser.user_metadata?.full_name || 'Patient',
+          role: profile?.role === 'admin' ? 'authority' : (authUser.user_metadata?.role || 'citizen'),
+          uhid: profile?.uhid || 'Pending'
+        }
+      };
+    } catch {
+      return { success: false, user: null };
     }
-    return { success: false, error: res.error };
   },
 
   /**
-   * Logout user and clear tokens
+   * Invalidate session and sign out from Supabase
    */
   async logout() {
     try {
-      await apiClient.post('/auth/logout', {}, {}, async () => ({ success: true }));
-    } catch {
-      // Ignore network errors on logout
+      await supabase.auth.signOut();
+    } catch (err) {
+      console.warn('[authService.logout] Supabase signOut note:', err);
     } finally {
       apiClient.setToken(null);
     }
@@ -255,22 +252,22 @@ export const authService = {
   },
 
   /**
-   * Reset password
+   * Reset password via Supabase
    */
   async resetPassword(email, newPassword) {
-    const fallbackFn = async () => {
-      const users = getLocalUsers();
-      const cleanEmail = email.trim().toLowerCase();
-      const idx = users.findIndex(u => u.email.toLowerCase() === cleanEmail);
-      if (idx !== -1) {
-        users[idx].password = newPassword;
-        localStorage.setItem('labsetu_users', JSON.stringify(users));
+    try {
+      if (newPassword) {
+        const { error } = await supabase.auth.updateUser({ password: newPassword });
+        if (error) return { success: false, error: error.message };
+        return { success: true, message: 'Password updated successfully' };
       }
-      return { success: true, message: 'Password updated successfully' };
-    };
 
-    const res = await apiClient.post('/auth/reset-password', { email, newPassword }, {}, fallbackFn);
-    return res.success ? { success: true, message: res.data?.message || 'Password updated' } : { success: false, error: res.error };
+      const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase());
+      if (error) return { success: false, error: error.message };
+      return { success: true, message: 'Password reset link sent to your email.' };
+    } catch (err) {
+      return { success: false, error: err.message || 'Password reset request failed.' };
+    }
   }
 };
 

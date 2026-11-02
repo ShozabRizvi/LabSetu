@@ -374,6 +374,9 @@
   border-radius: 12px;
   text-decoration: none;
   transition: all 0.2s ease;
+  height: auto;
+  max-height: 56px;
+  box-sizing: border-box;
 }
 
 .dashboard-home-sms-card:hover {
