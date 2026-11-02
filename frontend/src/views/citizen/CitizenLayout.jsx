@@ -41,7 +41,6 @@ export default function CitizenLayout() {
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isHelpModalOpen, setIsHelpModalOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [isVoiceListening, setIsVoiceListening] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [notifications, setNotifications] = useState([
     { id: 1, title: 'Lab Report Ready', desc: 'Your Complete Blood Count (CBC) report has been published.', time: '2 hours ago', read: false },
@@ -102,15 +101,6 @@ export default function CitizenLayout() {
     }
   };
 
-  const handleVoiceSearch = () => {
-    setIsVoiceListening(true);
-    setTimeout(() => {
-      setIsVoiceListening(false);
-      setSearchQuery('Complete Blood Count');
-      navigate('/portal/tests');
-    }, 2000);
-  };
-
   const unreadCount = notifications.filter(n => !n.read).length;
 
   return (
@@ -136,15 +126,13 @@ export default function CitizenLayout() {
           </span>
         </div>
 
-        {/* Global Search with Voice Assistant Simulation */}
+        {/* Search and voice assistant entry */}
         <div className="citizen-header-center">
           <form onSubmit={handleGlobalSearch} className="citizen-search-wrapper" style={{ position: 'relative' }}>
             <MagnifyingGlassIcon className="citizen-search-icon" />
             <input
               type="text"
-              placeholder={isVoiceListening 
-                ? (lang === 'hi' ? '🎙️ सुन रहे हैं... बोलिए (उदा. "सीबीसी टेस्ट")' : '🎙️ Listening... speak test name...') 
-                : (lang === 'hi' ? 'टेस्ट रिपोर्ट, बिल, जांच खोजें...' : 'Search test reports, diagnostic scans, bills...')}
+              placeholder={lang === 'hi' ? 'टेस्ट रिपोर्ट, बिल, जांच खोजें...' : 'Search test reports, diagnostic scans, bills...'}
               className="citizen-search-input"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -152,17 +140,18 @@ export default function CitizenLayout() {
             />
             <button
               type="button"
-              onClick={handleVoiceSearch}
-              title={lang === 'hi' ? 'आवाज़ द्वारा खोजें' : 'Voice Search'}
+              onClick={() => navigate('/portal/assistant')}
+              aria-label={lang === 'hi' ? 'लैबसेतु AI वॉइस असिस्टेंट खोलें' : 'Open LabSetu AI voice assistant'}
+              title={lang === 'hi' ? 'लैबसेतु AI से बात करें' : 'Talk to LabSetu AI'}
               style={{
                 position: 'absolute',
                 right: '0.6rem',
                 top: '50%',
                 transform: 'translateY(-50%)',
-                background: isVoiceListening ? '#fee2e2' : 'none',
+                background: 'none',
                 border: 'none',
                 cursor: 'pointer',
-                color: isVoiceListening ? '#ef4444' : '#64748b',
+                color: '#15803d',
                 padding: '0.2rem',
                 borderRadius: '50%',
                 display: 'flex',
@@ -334,6 +323,14 @@ export default function CitizenLayout() {
           </NavLink>
 
           <nav className="citizen-nav">
+            <NavLink
+              to="/portal/assistant"
+              className={({ isActive }) => `citizen-nav-item ${isActive ? 'active' : ''}`}
+              onClick={() => setIsMobileMenuOpen(false)}
+            >
+              <SparklesIcon className="citizen-nav-icon" />
+              {lang === 'hi' ? 'जाँच सहायक' : 'LabSetu Assistant'}
+            </NavLink>
             <NavLink 
               to="/portal/dashboard" 
               className={({ isActive }) => `citizen-nav-item ${isActive ? 'active' : ''}`}

@@ -437,6 +437,13 @@ export default function MainLayout() {
             + New bill
           </NavLink>
           <nav className="layout-nav">
+            <NavLink
+              to="/app/lab/assistant-workflow"
+              className={({isActive}) => `layout-nav-item ${isActive ? 'layout-nav-active' : ''}`}
+              onClick={() => setIsMobileNavOpen(false)}
+            >
+              Assistant Workflow
+            </NavLink>
             <NavLink 
               to="/app/getting-started" 
               className={({isActive}) => `layout-nav-item ${isActive ? 'layout-nav-active' : ''}`}

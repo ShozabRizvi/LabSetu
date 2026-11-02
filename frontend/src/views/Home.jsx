@@ -1,6 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import logo from '../assets/logo.png';
+import { useAuth } from '../context/AuthContext';
+import VoiceAssistantPanel from '../components/assistant/VoiceAssistantPanel';
 import {
   ShieldCheckIcon,
   ClockIcon,
@@ -10,11 +12,17 @@ import {
   BuildingOffice2Icon,
   UserCircleIcon,
   ArrowRightIcon,
-  CheckBadgeIcon
+  CheckBadgeIcon,
+  MicrophoneIcon,
+  ChatBubbleLeftRightIcon
 } from '@heroicons/react/24/outline';
 import './Home.css';
 
 export default function Home() {
+  const { currentUser } = useAuth();
+  const [assistantOpen, setAssistantOpen] = useState(false);
+  const authenticatedPatient = currentUser?.role === 'citizen';
+
   return (
     <div className="home-container">
       {/* Top Center Logo (Header Removed) */}
@@ -46,6 +54,14 @@ export default function Home() {
           </p>
 
           <div className="home-hero-cta-group">
+            <button type="button" className="home-cta-btn home-cta-ai" onClick={() => setAssistantOpen(true)}>
+              <MicrophoneIcon aria-hidden="true" style={{ width: '20px' }} />
+              Talk to LabSetu AI
+            </button>
+            <button type="button" className="home-cta-btn home-cta-text" onClick={() => setAssistantOpen(true)}>
+              <ChatBubbleLeftRightIcon aria-hidden="true" style={{ width: '19px' }} />
+              Ask LabSetu
+            </button>
             <Link 
               to="/login?role=citizen" 
               state={{ defaultRole: 'citizen' }} 
@@ -86,6 +102,8 @@ export default function Home() {
           </div>
         </div>
       </section>
+
+      {assistantOpen && <VoiceAssistantPanel authenticated={authenticatedPatient} onClose={() => setAssistantOpen(false)} />}
 
       {/* Role Choice Cards Section */}
       <section className="home-roles-section">

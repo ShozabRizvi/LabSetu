@@ -83,6 +83,9 @@ import CitizenFamilyProfiles from './views/citizen/CitizenFamilyProfiles';
 import CitizenSupport from './views/citizen/CitizenSupport';
 import CitizenPrivacy from './views/citizen/CitizenPrivacy';
 import CitizenProfile from './views/citizen/CitizenProfile';
+import CitizenAssistant from './views/citizen/CitizenAssistant';
+import AssistantWorkflow from './views/lab/AssistantWorkflow';
+import AssistantDemo from './views/AssistantDemo';
 import NotFound from './views/NotFound';
 import SplashScreen from './components/common/SplashScreen';
 import ErrorBoundary from './components/common/ErrorBoundary';
@@ -97,6 +100,7 @@ function App() {
           <Routes>
             {/* Public Homepage with visible Login Button */}
             <Route path="/" element={<Home />} />
+            <Route path="/assistant-demo" element={<AssistantDemo />} />
 
             {/* Direct Accessible Authentication Routes */}
             <Route 
@@ -137,6 +141,7 @@ function App() {
             >
               <Route index element={<Navigate to="/portal/dashboard" replace />} />
               <Route path="dashboard" element={<CitizenDashboard />} />
+              <Route path="assistant" element={<CitizenAssistant />} />
               <Route path="appointments" element={<CitizenAppointments />} />
               <Route path="bookings" element={<CitizenAppointments />} />
               <Route path="appointments/book" element={<AppointmentWizard />} />
@@ -210,6 +215,7 @@ function App() {
 
             {/* Lab Sub-routes */}
             <Route path="lab/todays-reports" element={<TodaysReports />} />
+            <Route path="lab/assistant-workflow" element={<AssistantWorkflow />} />
             <Route path="lab/search-reports" element={<SearchReports />} />
             <Route path="lab/test-packages" element={<TestPackages />} />
             <Route path="lab/analytics" element={<LabAnalytics />} />

@@ -2,6 +2,10 @@
 node_modules/
 dist/
 dist-ssr/
+backend/data/
+backend/.npm-cache/
+tmp/
+output/
 
 # Environment files
 .env

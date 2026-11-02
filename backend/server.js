@@ -11,6 +11,9 @@ import { createImagingRouter, createOutsourceRouter } from './src/imaging.js';
 import { createAiRouter } from './src/aiSimulationEngine.js';
 import resourcesRouter from './src/routes/resources.js';
 import authRouter from './src/routes/auth.js';
+import { createAssistantRouter } from './src/assistant/router.js';
+import { assistantConfig } from './src/assistant/config.js';
+import { createPatientAuthentication } from './src/assistant/auth.js';
 
 // ─── Multi-origin CORS helper ─────────────────────────────────────────────────
 // Accepts requests from both the local dev server and any configured production
@@ -54,7 +57,8 @@ const corsOptions = {
 export function createApp({
   pool = null,
   jwtSecret = process.env.SUPABASE_JWT_SECRET || process.env.JWT_SECRET,
-  authContractVerified = false
+  authContractVerified = false,
+  assistantOptions = {}
 } = {}) {
   const app = express();
   const requireAuthority = createAuthorityMiddleware(jwtSecret, authContractVerified);
@@ -62,6 +66,8 @@ export function createApp({
   // ── Middleware ───────────────────────────────────────────────────────────────
   app.use(cors(corsOptions));
   app.options('*', cors(corsOptions));           // Pre-flight for all routes
+  // Mount before JSON middleware so Razorpay signatures use the original webhook body.
+  app.use('/api/assistant', createAssistantRouter({ pool, ...assistantOptions }));
   app.use(express.json({ limit: '2mb' }));
 
   // ── Health check ─────────────────────────────────────────────────────────────
@@ -86,115 +92,14 @@ export function createApp({
   // ── Protected & demo-ready auth router (wrapped in try/catch to eliminate 503 errors) ──
   app.use('/api/auth', authRouter);
 // ── Free Xist-Style Patient AI Assistant Analysis Endpoint ────────────────
-  app.post('/api/ai/analyze', async (req, res) => {
-    try {
-      const { query = '', lang = 'en', fileBase64, fileMimeType } = req.body || {};
-      const isHi = lang === 'hi';
-      const geminiKey = process.env.GEMINI_API_KEY;
-
-      if (geminiKey) {
-        try {
-          const contents = [];
-          const parts = [];
-
-          if (fileBase64 && fileMimeType) {
-            parts.push({
-              inline_data: {
-                mime_type: fileMimeType,
-                data: fileBase64
-              }
-            });
-          }
-
-          const systemInstruction = `You are the clinical AI assistant for LabSetu. Provide a professional, clean, and concise clinical breakdown of the user's diagnostic report query in ${isHi ? 'Hindi (हिंदी)' : 'English'}.
-
-STRICT FORMATTING RULES:
-1. NO EMOJIS WHATSOEVER. Do not use any emojis, icons, or decorative symbols.
-2. NO CODE ARTIFACTS OR HEAVY SYMBOLS. Do not use JSON syntax, curly braces, quotation marks for emphasis, or excessive markdown symbols like hash tags (#).
-3. PROFESSIONAL CLINICAL TONE: Write like a senior medical consultant explaining results clearly and objectively to a patient.
-4. TECHNICAL TERMS IN BRACKETS: Whenever a technical medical term is necessary, write the simple explanation first and put the official medical term in brackets right after (e.g., red blood cells [Erythrocytes] or average 3-month blood sugar [HbA1c]).
-
-CONTENT REQUIREMENTS:
-- Explicitly reference the exact parameter names, numbers, and units provided in the user input.
-- Structure the response into clean sections using plain text headings without hashes:
-
-SUMMARY
-[1 or 2 clear sentences explaining what this specific test measures]
-
-DETAILED PARAMETER ANALYSIS
-- [Parameter Name] ([Exact Value & Unit]): [1-sentence plain English meaning of this specific number]
-
-GENERAL GUIDANCE
-- [1-2 practical lifestyle, hydration, or wellness recommendations]
-
-QUESTIONS FOR YOUR DOCTOR
-1. [Relevant follow-up question based on these specific results]
-2. [Question regarding routine health tracking]
-
-MEDICAL DISCLAIMER
-This educational summary is provided for informational purposes only. Please consult a qualified medical doctor or healthcare professional for clinical diagnosis, interpretation, and treatment decisions.
-
-Query / Report: ${query}`;
-
-          parts.push({
-            text: systemInstruction
-          });
-
-          contents.push({ role: 'user', parts });
-
-          const geminiResp = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`,
-            {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ contents }),
-              signal: AbortSignal.timeout(15000)
-            }
-          );
-
-          if (geminiResp.ok) {
-            const data = await geminiResp.json();
-            const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-            if (text) {
-              return res.status(200).json({
-                success: true,
-                data: { explanation: text, source: 'gemini-live' }
-              });
-            } else {
-              console.warn('[AI Analyze] Gemini responded OK, but text path was empty:', JSON.stringify(data));
-            }
-          } else {
-            // THIS WILL PRINT THE EXACT GOOGLE API ERROR IN RENDER LOGS
-            const errorBody = await geminiResp.text();
-            console.error('[AI Analyze] Gemini API Error Status:', geminiResp.status, errorBody);
-          }
-        } catch (geminiErr) {
-          console.warn('[AI Analyze] Gemini API call warning:', geminiErr.message);
-        }
-      }
-
-      // Professional non-technical fallback matching the clean heading format (No emojis, no #)
-      const fallbackExplanation = isHi
-        ? `सारांश\nयह परीक्षण आपके रक्त और शरीर के मुख्य स्वास्थ्य संकेतों की जाँच करता है ताकि यह पता चले कि आपके अंग कितनी अच्छी तरह काम कर रहे हैं।\n\nविस्तृत पैरामीटर विश्लेषण\n- सामान्य स्वास्थ्य सूचकांक: सभी मान मानक स्वस्थ सीमाओं के भीतर हैं।\n\nसामान्य मार्गदर्शन\n- पर्याप्त पानी पिएं, नियमित रूप से 7 से 8 घंटे की नींद लें और संतुलित भोजन करें।\n\nडॉक्टर से पूछने योग्य प्रश्न\n1. क्या मेरे इन परिणामों के आधार पर मुझे किसी आहार या दिनचर्या में बदलाव की ज़रूरत है?\n2. मुझे यह परीक्षण दोबारा कब करवाना चाहिए?\n\nचिकित्सीय अस्वीकरण\nयह केवल शैक्षिक सारांश है। किसी भी चिकित्सीय निर्णय के लिए हमेशा अपने डॉक्टर से परामर्श करें।`
-        : `SUMMARY\nThe Complete Blood Count evaluates the cellular composition of your bloodstream, assessing cells responsible for oxygen transport, immune defense, and blood clotting. It provides an objective baseline measurement of your overall hematologic health and physiological vitality.\n\nDETAILED PARAMETER ANALYSIS\n- General Health Metrics: Observed parameters reflect standard healthy reference intervals.\n\nGENERAL GUIDANCE\n- Maintain consistent daily fluid intake and a balanced diet rich in essential nutrients.\n\nQUESTIONS FOR YOUR DOCTOR\n1. Based on these baseline values, do you recommend continuing with standard annual health screenings?\n2. Are there any particular lifestyle adjustments you advise to sustain these results?\n\nMEDICAL DISCLAIMER\nThis educational summary is provided for informational purposes only. Please consult a qualified medical doctor or healthcare professional for clinical diagnosis, interpretation, and treatment decisions.`;
-
-      return res.status(200).json({
-        success: true,
-        data: { explanation: fallbackExplanation, source: 'labsetu-clinical-engine' }
-      });
-    } catch (err) {
-      console.warn('[AI Analyze error]:', err.message);
-      return res.status(200).json({
-        success: true,
-        data: {
-          explanation: 'Please share your diagnostic values directly with your treating physician for personalized consultation.',
-          source: 'error-safe-fallback'
-        }
-      });
-    }
+  app.post('/api/ai/analyze', createPatientAuthentication(assistantConfig()).authenticate, (_req, res) => {
+    res.json({ success: true, data: {
+      explanation: 'A reference interval is the range configured by the laboratory for a specific test and population. A flag means a result needs professional review; it does not establish a diagnosis. Open your approved report in the assistant and discuss your results with a qualified clinician.',
+      source: 'educational-glossary',
+      notice: 'Individual result interpretation and treatment recommendations require a qualified clinician.'
+    } });
   });
 
-  // ── Catch-all 404 for unknown /api/* paths ────────────────────────────────
   app.use('/api', (_req, res) =>
     res.status(404).json({ success: false, error: 'API route not found.' })
   );
@@ -208,7 +113,7 @@ Query / Report: ${query}`;
     if (error.message?.startsWith('CORS:')) {
       return res.status(403).json({ success: false, error: error.message });
     }
-    console.error('[Server Error]', error);
+    console.error('[Server Error]', error.name || 'Error');
     return res.status(500).json({ success: false, error: 'Unexpected server error.' });
   });
 
@@ -226,10 +131,13 @@ if (isMain) {
 
   const app = createApp({ pool });
   const port = Number(process.env.PORT) || 5000;
-  app.listen(port, () => {
+  const host = process.env.HOST || (process.env.DEMO_MODE === 'true' ? '127.0.0.1' : null);
+  const onListening = () => {
     console.log(`LabSetu backend APIs listening on port ${port}`);
     console.log(`  Supabase: ${process.env.SUPABASE_URL ? 'configured' : 'NOT configured'}`);
     console.log(`  Database: ${pool ? 'pg pool active' : 'no pg pool'}`);
     console.log(`  CORS: ${[...ALLOWED_ORIGINS].join(', ')}`);
-  });
+  };
+  if (host) app.listen(port, host, onListening);
+  else app.listen(port, onListening);
 }
