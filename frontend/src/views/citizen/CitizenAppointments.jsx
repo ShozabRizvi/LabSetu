@@ -7,10 +7,6 @@ import { departments, appointmentSlots } from '../../data/mockLabData';
 import {
   CalendarDaysIcon,
   ClockIcon,
-  BuildingOffice2Icon,
-  CheckCircleIcon,
-  XCircleIcon,
-  ArrowPathIcon,
   PlusIcon,
   PrinterIcon,
   XMarkIcon
@@ -21,7 +17,6 @@ export default function CitizenAppointments({ lang: propLang, addNewBooking, onA
   const { lang: contextLang } = useLanguage();
   const lang = propLang || contextLang || 'en';
 
-  // Smart Lazy Initialization: load from localStorage if clean, otherwise initialize empty
   const [bookings, setBookings] = useState(() => {
     try {
       const stored = typeof window !== 'undefined' && window.localStorage
@@ -34,7 +29,7 @@ export default function CitizenAppointments({ lang: propLang, addNewBooking, onA
           return clean;
         }
       }
-    } catch {}
+    } catch { }
     return [];
   });
 
@@ -46,47 +41,63 @@ export default function CitizenAppointments({ lang: propLang, addNewBooking, onA
         if (typeof window !== 'undefined' && window.localStorage) {
           window.localStorage.setItem('labsetu_user_bookings', JSON.stringify(updated));
         }
-      } catch {
-        // Safe failover
-      }
+      } catch { }
       return updated;
     });
   };
 
-  // Safe State Updater: instantly purge any object where isMock === true and prepend new appointment
-  const handleAddNewBooking = (newAppointment) => {
+  // Synchronize new bookings to Supabase so Authority LIMS (shozab64@gmail.com host) receives it live
+  const handleAddNewBooking = async (newAppointment) => {
     if (!newAppointment) return;
+
+    const aptId = newAppointment.aptId || newAppointment.id || `APT-${Date.now().toString().slice(-7)}`;
+    const payload = {
+      patient_name: newAppointment.patientName || currentUser?.name || 'Patient',
+      patient_phone: newAppointment.mobile || currentUser?.phone || '',
+      purpose: newAppointment.department || 'dept-pathology',
+      appointment_date: newAppointment.date || new Date().toISOString().slice(0, 10),
+      time_slot: newAppointment.slot || 'slot-10am',
+      status: 'Confirmed',
+      tracking_status: 'Order Placed',
+      uhid: activeUHID || currentUser?.uhid,
+      preparation_instructions: newAppointment.prep || 'Standard laboratory visit.',
+      assistant_data: { source: 'patient_portal', host: 'shozab64@gmail.com' }
+    };
+
+    try {
+      const { error } = await supabase.from('appointments').insert([payload]);
+      if (error) {
+        console.error('[CitizenAppointments] Supabase insert error:', error);
+      }
+    } catch (err) {
+      console.warn('Booking sync exception:', err);
+    }
+
+    const formattedAppt = {
+      id: aptId,
+      aptId: aptId,
+      patientName: payload.patient_name,
+      mobile: payload.patient_phone,
+      department: payload.purpose,
+      date: payload.appointment_date,
+      slot: payload.time_slot,
+      status: 'Confirmed',
+      stage: 1,
+      createdAt: new Date().toISOString(),
+      prep: payload.preparation_instructions,
+      ...newAppointment
+    };
+    delete formattedAppt.isMock;
+
     setBookings((prev) => {
       const prevArray = Array.isArray(prev) ? prev : [];
       const filtered = prevArray.filter((item) => !item?.isMock);
-
-      const aptId = newAppointment.aptId || newAppointment.id || `APT-${Date.now().toString().slice(-7)}`;
-      const formattedAppt = {
-        id: aptId,
-        aptId: aptId,
-        patientName: newAppointment.patientName || '',
-        mobile: newAppointment.mobile || '',
-        department: newAppointment.department || 'dept-pathology',
-        date: newAppointment.date || '',
-        slot: newAppointment.slot || 'slot-10am',
-        status: newAppointment.status || 'Confirmed',
-        stage: newAppointment.stage !== undefined ? newAppointment.stage : 1,
-        createdAt: newAppointment.createdAt || new Date().toISOString(),
-        prep: newAppointment.prep || 'Standard laboratory visit.',
-        ...newAppointment
-      };
-      formattedAppt.id = formattedAppt.id || aptId;
-      formattedAppt.aptId = formattedAppt.aptId || formattedAppt.id;
-      delete formattedAppt.isMock;
-
       const updatedBookings = [formattedAppt, ...filtered];
       try {
         if (typeof window !== 'undefined' && window.localStorage) {
           window.localStorage.setItem('labsetu_user_bookings', JSON.stringify(updatedBookings));
         }
-      } catch {
-        // Safe failover for quota/incognito mode
-      }
+      } catch { }
       return updatedBookings;
     });
   };
@@ -147,16 +158,20 @@ export default function CitizenAppointments({ lang: propLang, addNewBooking, onA
     window.addEventListener('labsetu:addNewBooking', handleCustomAdd);
 
     // Live Supabase Realtime synchronization for authority updates
-    const channel = supabase.channel('patient-tracker-live')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments' }, (payload) => {
+    const channelName = `patient-tracker-live-${Date.now()}`;
+    const channel = supabase.channel(channelName);
+
+    channel.on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'appointments' },
+      (payload) => {
         if (payload.new) {
           const updatedRow = payload.new;
           setBookings((prev) => {
             const list = Array.isArray(prev) ? prev : [];
-            const index = list.findIndex(b => 
-              b.id === updatedRow.id || 
-              b.rawId === updatedRow.id || 
-              (updatedRow.notes && updatedRow.notes.includes(b.id))
+            const index = list.findIndex(b =>
+              b.id === updatedRow.id ||
+              b.rawId === updatedRow.id
             );
             if (index !== -1) {
               const current = list[index];
@@ -188,21 +203,26 @@ export default function CitizenAppointments({ lang: propLang, addNewBooking, onA
                 if (window.localStorage) {
                   window.localStorage.setItem('labsetu_user_bookings', JSON.stringify(copy));
                 }
-              } catch {}
+              } catch { }
               return copy;
             }
             fetchAppointments();
             return list;
           });
         }
-      })
-      .subscribe();
+      }
+    );
+
+    channel.subscribe((status) => {
+      console.log('[Realtime Citizen] Subscription status:', status);
+    });
 
     return () => {
       window.removeEventListener('labsetu:addNewBooking', handleCustomAdd);
       supabase.removeChannel(channel);
     };
   }, [onAddNewBooking, addNewBooking]);
+
   const [filter, setFilter] = useState('all');
   const [rescheduleItem, setRescheduleItem] = useState(null);
   const [newDate, setNewDate] = useState('');
@@ -280,7 +300,7 @@ export default function CitizenAppointments({ lang: propLang, addNewBooking, onA
             {lang === 'hi' ? 'मेरी बुकिंग एवं जांच स्थिति' : 'My Bookings & Sample Tracking'}
           </h1>
           <p style={{ margin: 0, fontSize: '0.9rem', color: '#64748b' }}>
-            {lang === 'hi' 
+            {lang === 'hi'
               ? 'कलेक्शन, लैबोरेटरी प्रोसेसिंग और रिपोर्ट रेडी स्थिति का रीयल-टाइम 4-चरणीय ट्रैकर'
               : 'Real-time 4-stage tracking from appointment confirmation to final report publication'}
           </p>
@@ -291,7 +311,7 @@ export default function CitizenAppointments({ lang: propLang, addNewBooking, onA
             </div>
           )}
         </div>
-        <Link 
+        <Link
           to="/portal/appointments/book"
           style={{
             display: 'inline-flex',
@@ -381,12 +401,12 @@ export default function CitizenAppointments({ lang: propLang, addNewBooking, onA
             const ts = (appt.tracking_status || appt.status || '').toLowerCase();
             const currentStage = appt.stage || (
               (ts.includes('ready') || ts.includes('signed') || ts.includes('completed')) ? 4 :
-              (ts.includes('processing') || ts.includes('transit') || ts.includes('lab')) ? 3 :
-              (ts.includes('collected') || ts.includes('sample') || ts.includes('assigned') || ts.includes('phlebotomist')) ? 2 : 1
+                (ts.includes('processing') || ts.includes('transit') || ts.includes('lab')) ? 3 :
+                  (ts.includes('collected') || ts.includes('sample') || ts.includes('assigned') || ts.includes('phlebotomist')) ? 2 : 1
             );
 
             return (
-              <div 
+              <div
                 key={appt.id}
                 className={`appointment-card ${printingApptId === appt.id ? 'print-target' : ''}`}
                 style={{
@@ -483,9 +503,9 @@ export default function CitizenAppointments({ lang: propLang, addNewBooking, onA
                   </div>
                 </div>
 
-                {appt.preparation_instructions && (
+                {appt.prep && (
                   <div style={{ fontSize: '0.8rem', color: '#854d0e', background: '#fef9c3', padding: '0.5rem 0.75rem', borderRadius: '6px', marginBottom: '1rem', border: '1px solid #fde047' }}>
-                    ℹ️ <strong>Preparation Guidelines:</strong> {appt.preparation_instructions}
+                    ℹ️ <strong>Preparation Guidelines:</strong> {appt.prep}
                   </div>
                 )}
 
