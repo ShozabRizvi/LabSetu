@@ -90,78 +90,34 @@ export default function CitizenFamilyProfiles({ lang: propLang }) {
       // 2. Query Supabase for family members / dependents
       let fetchedDependents = [];
 
-      // A: Try family_members table
+      // Query patients table where emergency_contact = primaryUserId
       try {
-        const { data: famData, error: famErr } = await supabase
-          .from('family_members')
+        const { data: patData } = await supabase
+          .from('patients')
           .select('*')
-          .eq('primary_user_id', primaryUserId);
-        if (!famErr && Array.isArray(famData) && famData.length > 0) {
-          fetchedDependents = famData.map(f => ({
-            id: f.id,
-            name: f.full_name || f.name,
-            relation: f.relation || 'Dependent',
-            age: typeof f.age === 'number' ? `${f.age} yrs` : (String(f.age).includes('yrs') ? f.age : `${f.age || 30} yrs`),
-            gender: f.gender || 'Other',
-            bloodGroup: f.blood_group || f.bloodGroup || 'O+',
-            uhid: f.uhid || ('DEP-' + Math.floor(Math.random() * 90000 + 10000)),
-            isSelf: false
-          }));
+          .eq('emergency_contact', primaryUserId);
+        if (Array.isArray(patData) && patData.length > 0) {
+          fetchedDependents = patData.map(p => {
+            let rel = 'Family Member';
+            try {
+              if (p.notes) {
+                const parsed = JSON.parse(p.notes);
+                if (parsed.relation) rel = parsed.relation;
+              }
+            } catch {}
+            return {
+              id: p.id,
+              name: p.full_name,
+              relation: rel,
+              age: p.age_years ? `${p.age_years} yrs` : '35 yrs',
+              gender: p.sex ? (p.sex.charAt(0).toUpperCase() + p.sex.slice(1)) : 'Other',
+              bloodGroup: p.blood_group || 'O+',
+              uhid: p.patient_code || ('DEP-' + Math.floor(Math.random() * 90000 + 10000)),
+              isSelf: false
+            };
+          });
         }
       } catch {}
-
-      // B: Try dependents table if empty
-      if (fetchedDependents.length === 0) {
-        try {
-          const { data: depData, error: depErr } = await supabase
-            .from('dependents')
-            .select('*')
-            .eq('primary_user_id', primaryUserId);
-          if (!depErr && Array.isArray(depData) && depData.length > 0) {
-            fetchedDependents = depData.map(f => ({
-              id: f.id,
-              name: f.full_name || f.name,
-              relation: f.relation || 'Dependent',
-              age: typeof f.age === 'number' ? `${f.age} yrs` : (String(f.age).includes('yrs') ? f.age : `${f.age || 30} yrs`),
-              gender: f.gender || 'Other',
-              bloodGroup: f.blood_group || f.bloodGroup || 'O+',
-              uhid: f.uhid || ('DEP-' + Math.floor(Math.random() * 90000 + 10000)),
-              isSelf: false
-            }));
-          }
-        } catch {}
-      }
-
-      // C: Try patients table where emergency_contact = primaryUserId
-      if (fetchedDependents.length === 0) {
-        try {
-          const { data: patData } = await supabase
-            .from('patients')
-            .select('*')
-            .eq('emergency_contact', primaryUserId);
-          if (Array.isArray(patData) && patData.length > 0) {
-            fetchedDependents = patData.map(p => {
-              let rel = 'Family Member';
-              try {
-                if (p.notes) {
-                  const parsed = JSON.parse(p.notes);
-                  if (parsed.relation) rel = parsed.relation;
-                }
-              } catch {}
-              return {
-                id: p.id,
-                name: p.full_name,
-                relation: rel,
-                age: p.age_years ? `${p.age_years} yrs` : '35 yrs',
-                gender: p.sex ? (p.sex.charAt(0).toUpperCase() + p.sex.slice(1)) : 'Other',
-                bloodGroup: p.blood_group || 'O+',
-                uhid: p.patient_code || ('DEP-' + Math.floor(Math.random() * 90000 + 10000)),
-                isSelf: false
-              };
-            });
-          }
-        } catch {}
-      }
 
       // D: Check local cache for newly added members if remote returned empty
       if (fetchedDependents.length === 0) {
@@ -244,35 +200,7 @@ export default function CitizenFamilyProfiles({ lang: propLang }) {
         isSelf: false
       };
 
-      // 1. Try INSERT into family_members
-      try {
-        await supabase.from('family_members').insert({
-          id: memberUuid,
-          primary_user_id: primaryUserId,
-          full_name: newMember.name,
-          relation: newMember.relation,
-          gender: newMember.gender,
-          age: parsedAge,
-          uhid: assignedUhid,
-          blood_group: newMember.bloodGroup
-        });
-      } catch {}
-
-      // 2. Try INSERT into dependents
-      try {
-        await supabase.from('dependents').insert({
-          id: memberUuid,
-          primary_user_id: primaryUserId,
-          full_name: newMember.name,
-          relation: newMember.relation,
-          gender: newMember.gender,
-          age: parsedAge,
-          uhid: assignedUhid,
-          blood_group: newMember.bloodGroup
-        });
-      } catch {}
-
-      // 3. Sync to Supabase patients table
+      // 1. Sync to Supabase patients table (family dependent with primaryUserId reference)
       try {
         await supabase.from('patients').insert({
           id: memberUuid,
@@ -318,13 +246,7 @@ export default function CitizenFamilyProfiles({ lang: propLang }) {
     try {
       setIsDeleting(true);
 
-      // 1. DELETE from family_members & dependents
-      try {
-        await supabase.from('family_members').delete().eq('id', memberToDelete.id);
-      } catch {}
-      try {
-        await supabase.from('dependents').delete().eq('id', memberToDelete.id);
-      } catch {}
+      // 1. DELETE from patients table
       try {
         await supabase.from('patients').delete().eq('id', memberToDelete.id);
       } catch {}

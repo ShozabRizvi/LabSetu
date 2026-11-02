@@ -109,16 +109,16 @@ export function getCurrentCoordinates() {
 
 /**
  * Matches closest NABL-accredited lab based on user coordinates.
- * Queries Supabase `labs` table first, falls back to pre-seeded catalog.
+ * Queries Supabase `lab_centers` table first, falls back to pre-seeded catalog.
  */
 export async function matchNearestNablLab(userCoords, testType = null) {
   let labsList = DEFAULT_ACCREDITED_LABS;
 
   try {
     const { data, error } = await supabase
-      .from('labs')
+      .from('lab_centers')
       .select('*')
-      .eq('nabl', true);
+      .eq('is_active', true);
 
     if (!error && Array.isArray(data) && data.length > 0) {
       labsList = data;
@@ -132,7 +132,7 @@ export async function matchNearestNablLab(userCoords, testType = null) {
 
   // Filter accredited labs and calculate distance
   const evaluatedLabs = labsList
-    .filter((lab) => lab.nabl !== false)
+    .filter((lab) => lab.is_active !== false && lab.nabl !== false)
     .map((lab) => {
       const distance = calculateHaversineDistance(
         userLat,

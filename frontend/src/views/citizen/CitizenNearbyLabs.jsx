@@ -132,16 +132,20 @@ export default function CitizenNearbyLabs({ lang: propLang }) {
       const coords = await getCurrentCoordinates();
       setPatientCoords(coords);
 
-      // Query live labs table from Supabase
+      // Query live lab_centers table from Supabase
       let fetchedLabs = [];
       try {
-        const { data: dbLabs, error: labsErr } = await supabase.from('labs').select('*');
+        const { data: dbLabs, error: labsErr } = await supabase
+          .from('lab_centers')
+          .select('*')
+          .eq('is_active', true);
         if (!labsErr && Array.isArray(dbLabs) && dbLabs.length > 0) {
           fetchedLabs = dbLabs.map(l => ({
             id: l.id,
-            name: l.name,
-            accreditation: l.accreditation || (l.nabl ? 'NABL Accredited' : 'Registered Lab'),
+            name: l.name || l.center_name,
+            accreditation: l.accreditation || 'NABL Accredited',
             nabl: Boolean(l.nabl ?? l.nabl_certified ?? true),
+            is_active: Boolean(l.is_active ?? true),
             latitude: Number(l.latitude),
             longitude: Number(l.longitude),
             address: l.address,
@@ -156,7 +160,7 @@ export default function CitizenNearbyLabs({ lang: propLang }) {
           }));
         }
       } catch (err) {
-        console.warn('[CitizenNearbyLabs] Supabase labs query notice:', err);
+        console.warn('[CitizenNearbyLabs] Supabase lab_centers query notice:', err);
       }
 
       const labsToProcess = fetchedLabs.length > 0 ? fetchedLabs : PARTNER_LABS;

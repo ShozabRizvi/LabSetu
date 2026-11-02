@@ -121,7 +121,7 @@ export default function CitizenHomeCollection({ lang: propLang }) {
       const { data, error } = await supabase
         .from('appointments')
         .select('*')
-        .or('type.eq.home_collection,visit_type.eq.home_collection')
+        .eq('visit_type', 'home_collection')
         .order('created_at', { ascending: false });
 
       if (error) {
@@ -288,7 +288,6 @@ export default function CitizenHomeCollection({ lang: propLang }) {
     const appointmentPayload = {
       appointment_date: form.date,
       visit_type: 'home_collection',
-      type: 'home_collection',
       status: 'Confirmed',
       tracking_status: 'Order Placed',
       estimated_delivery_time: '30-45 mins',
