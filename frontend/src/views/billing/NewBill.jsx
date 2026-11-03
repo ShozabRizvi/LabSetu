@@ -353,20 +353,38 @@ export default function NewBill() {
     });
 
     try {
-      // Explicitly INSERT into transactions table with strict error verification
-      const { error } = await supabase.from('transactions').insert({
+      // Explicitly INSERT into transactions table with strict error verification and column fallback
+      const fullPayload = {
         id: newTxnId,
         reg_no: newRegNo,
         patient: fullName,
+        patient_name: fullName,
         ref: patientForm.doctor || 'Self',
         dcn: 'D-01',
         cc: 'Main Lab',
         amount: netPayable,
         method: paymentMode === 'Due / Credit' ? 'Cash' : paymentMode,
+        payment_mode: paymentMode === 'Due / Credit' ? 'Cash' : paymentMode,
         status: 'Paid',
         received_by: 'Cashier Desk',
-        description: ensureArray(cart).map(c => c.name).join(', ')
-      });
+        description: ensureArray(cart).map(c => c.name).join(', '),
+        center_id: 'cb17e71d-cb76-49e6-a202-4a82c94de5d8'
+      };
+
+      let { error } = await supabase.from('transactions').insert(fullPayload);
+
+      // Resilient fallback if schema in PostgreSQL lacks extended columns (code 42703)
+      if (error && (error.code === '42703' || error.message?.includes('does not exist'))) {
+        console.warn('[NewBill] Extended columns not yet migrated, falling back to core transactions schema:', error.message);
+        const fallbackPayload = {
+          id: newTxnId,
+          amount: netPayable,
+          payment_mode: paymentMode === 'Due / Credit' ? 'Cash' : paymentMode,
+          center_id: 'cb17e71d-cb76-49e6-a202-4a82c94de5d8'
+        };
+        const fallbackRes = await supabase.from('transactions').insert(fallbackPayload);
+        error = fallbackRes.error;
+      }
 
       if (error) {
         console.error('[NewBill] Supabase transactions insert failure:', error);

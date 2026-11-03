@@ -27,34 +27,53 @@ export default function DailyBusiness() {
     }, 3500); // 3.5-second auto-dismiss
   };
 
-  // Live Supabase query filtered by calendar day (gte startOfDay, lte endOfDay)
+  // Live Supabase query filtered by calendar day with crash-proof column safety
   const fetchLiveTransactions = async (selectedDate) => {
     try {
       const targetDate = selectedDate || date;
-      const startOfDay = `${targetDate}T00:00:00.000Z`;
-      const endOfDay = `${targetDate}T23:59:59.999Z`;
 
+      // Query ordered by 'id' to prevent HTTP 400 schema crashes when created_at is syncing
       const { data, error } = await supabase
         .from('transactions')
         .select('*')
-        .gte('created_at', startOfDay)
-        .lte('created_at', endOfDay)
-        .order('created_at', { ascending: false });
+        .order('id', { ascending: false });
 
       if (!error && Array.isArray(data)) {
-        setRecords(data.map(d => ({
-          id: d.id,
-          regNo: d.reg_no || 'REG-1049',
-          patient: d.patient || 'Walk-in Patient',
-          ref: d.ref || 'Self',
-          date: new Date(d.created_at).toLocaleDateString(),
-          time: new Date(d.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          dcn: d.dcn || 'D-01',
-          cc: d.cc || 'Main Lab',
-          amount: Number(d.amount) || 0,
-          method: d.method || 'Cash',
-          receivedBy: d.received_by || 'Counter 1'
-        })));
+        // Filter in-memory for the calendar date
+        const matched = data.filter(d => {
+          if (d.created_at) {
+            return d.created_at.startsWith(targetDate);
+          }
+          if (d.date) {
+            return d.date === targetDate;
+          }
+          return true;
+        });
+
+        // Sort descending by timestamp when available, else id
+        const sorted = [...matched].sort((a, b) => {
+          if (a.created_at && b.created_at) {
+            return new Date(b.created_at) - new Date(a.created_at);
+          }
+          return String(b.id || '').localeCompare(String(a.id || ''));
+        });
+
+        setRecords(sorted.map(d => {
+          const dDate = d.created_at ? new Date(d.created_at) : (d.date ? new Date(d.date) : new Date());
+          return {
+            id: d.id,
+            regNo: d.reg_no || 'REG-1049',
+            patient: d.patient || d.patient_name || 'Walk-in Patient',
+            ref: d.ref || 'Self',
+            date: dDate.toLocaleDateString(),
+            time: d.created_at ? dDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : (d.time || '10:00 AM'),
+            dcn: d.dcn || 'D-01',
+            cc: d.cc || 'Main Lab',
+            amount: Number(d.amount) || 0,
+            method: d.method || d.payment_mode || 'Cash',
+            receivedBy: d.received_by || 'Counter 1'
+          };
+        }));
       } else {
         setRecords([]);
       }

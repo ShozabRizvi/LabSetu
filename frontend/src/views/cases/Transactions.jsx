@@ -13,18 +13,18 @@ export default function Transactions() {
 
   // Map database transaction row to UI display object
   const mapDbTransaction = (row) => {
-    const createdDate = row.created_at ? new Date(row.created_at) : new Date();
+    const createdDate = row.created_at ? new Date(row.created_at) : (row.date ? new Date(row.date) : new Date());
     return {
       id: row.id,
       regNo: row.reg_no || 'REG-1001',
-      patient: row.patient || 'Walk-in Patient',
+      patient: row.patient || row.patient_name || 'Walk-in Patient',
       ref: row.ref || 'Self',
-      date: createdDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
-      time: createdDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      date: row.date || createdDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
+      time: row.time || createdDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       dcn: row.dcn || 'D-01',
       cc: row.cc || 'Main Lab',
       amount: Number(row.amount || 0),
-      method: row.method || 'Cash',
+      method: row.method || row.payment_mode || 'Cash',
       receivedBy: row.received_by || 'Cashier Desk'
     };
   };
@@ -35,14 +35,20 @@ export default function Transactions() {
       const { data, error } = await supabase
         .from('transactions')
         .select('*')
-        .order('created_at', { ascending: false });
+        .order('id', { ascending: false });
 
       if (error) {
         console.warn('[Transactions] Supabase query notice:', error);
       }
 
       if (data && data.length > 0) {
-        setTransactions(data.map(mapDbTransaction));
+        const sorted = [...data].sort((a, b) => {
+          if (a.created_at && b.created_at) {
+            return new Date(b.created_at) - new Date(a.created_at);
+          }
+          return String(b.id || '').localeCompare(String(a.id || ''));
+        });
+        setTransactions(sorted.map(mapDbTransaction));
       } else {
         setTransactions([]);
       }
