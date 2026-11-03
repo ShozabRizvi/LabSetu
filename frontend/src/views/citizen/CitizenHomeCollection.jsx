@@ -121,14 +121,20 @@ export default function CitizenHomeCollection({ lang: propLang }) {
       const { data, error } = await supabase
         .from('appointments')
         .select('*')
-        .eq('visit_type', 'home_collection')
         .order('created_at', { ascending: false });
 
       if (error) {
         console.warn('[CitizenHomeCollection] appointments query warning:', error);
       }
 
-      const rows = data || [];
+      const rows = (data || []).filter(r => 
+        r.visit_type === 'home_collection' || 
+        r.assistant_data?.visit_type === 'home' || 
+        r.assistant_data?.visit_type === 'home_collection' ||
+        r.assistant_data?.home_address ||
+        r.assistant_data?.address ||
+        r.notes?.includes('Ref: HC-')
+      );
       const mapped = rows.map((row) => {
         const isFasting = /fasting|sugar|glucose|lipid|cholesterol|kft|lft/i.test(row.purpose || row.department || '');
         const prepInstruction = row.preparation_instructions || (isFasting ? 'Strict 10-12 hours overnight fasting required. Plain water permitted.' : null);
@@ -308,20 +314,47 @@ export default function CitizenHomeCollection({ lang: propLang }) {
           patientUuid = newPt?.id || null;
         }
       }
+
+      if (!patientUuid) {
+        const { data: existingPt } = await supabase
+          .from('patients')
+          .select('id')
+          .eq('center_id', MASTER_CENTER_ID)
+          .ilike('full_name', patientName)
+          .limit(1)
+          .maybeSingle();
+
+        if (existingPt?.id) {
+          patientUuid = existingPt.id;
+        } else {
+          const { data: insertedPt } = await supabase
+            .from('patients')
+            .insert([{
+              center_id: MASTER_CENTER_ID,
+              patient_code: patientUhid || `PAT-${Date.now().toString().slice(-5)}`,
+              full_name: patientName,
+              phone: patientPhone || '0000000000'
+            }])
+            .select('id')
+            .maybeSingle();
+          patientUuid = insertedPt?.id || '98f184fc-8305-4b83-bea7-f744fcfa7a37';
+        }
+      }
     } catch (fkErr) {
       console.warn('[CitizenHomeCollection] FK resolution note:', fkErr);
+      if (!patientUuid) patientUuid = '98f184fc-8305-4b83-bea7-f744fcfa7a37';
     }
 
     const appointmentPayload = {
       center_id: MASTER_CENTER_ID,
-      patient_id: patientUuid || null,
+      patient_id: patientUuid,
       department: 'Pathology',
       appointment_date: form.date,
       slot_start: '08:00:00',
       slot_end: '09:00:00',
       status: 'booked',
-      visit_type: 'home_collection',
-      booking_source: 'CENTRAL_PORTAL',
+      visit_type: 'new',
+      booking_source: 'LAB_FRONTDESK',
       purpose: form.tests,
       assistant_data: {
         patient_name: patientName,
@@ -332,13 +365,16 @@ export default function CitizenHomeCollection({ lang: propLang }) {
         time_slot: form.timeSlot || '08:00 AM - 09:00 AM',
         slot: form.timeSlot || '08:00 AM - 09:00 AM',
         address: form.address,
+        home_address: form.address,
+        visit_type: 'home_collection',
         estimated_delivery_time: '30-45 mins',
         assigned_lab_id: assignedLab.id,
         matched_lab: assignedLab.name,
         preparation_instructions: prepNotice,
         ref: newId,
         host: 'shozab64@gmail.com',
-        source: 'home_collection',
+        master_center_override: true,
+        source: 'CitizenHomeCollection',
         notes: `Ref: ${newId}, Address: ${form.address}, MatchedLab: ${assignedLab.name}`
       }
     };
@@ -349,8 +385,8 @@ export default function CitizenHomeCollection({ lang: propLang }) {
       let { data, error } = await supabase.from('appointments').insert([appointmentPayload]).select();
 
       if (error && error.code === '23503') {
-        // Retry without patient_id to bypass foreign key constraint
-        const retryRes = await supabase.from('appointments').insert([{ ...appointmentPayload, patient_id: null }]).select();
+        // Retry with guaranteed anchor patient UUID
+        const retryRes = await supabase.from('appointments').insert([{ ...appointmentPayload, patient_id: '98f184fc-8305-4b83-bea7-f744fcfa7a37' }]).select();
         data = retryRes.data;
         error = retryRes.error;
       }

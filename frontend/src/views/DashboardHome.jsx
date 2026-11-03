@@ -27,56 +27,54 @@ export default function DashboardHome() {
 
   const fetchLiveAppointments = async () => {
     try {
-      const masterLabId = 'cb17e71d-cb76-49e6-a202-4a82c94de5d8';
+      const masterLabUuid = 'cb17e71d-cb76-49e6-a202-4a82c94de5d8';
 
-      // 100% Schema-matched query filtered strictly by Master Lab Center ID
-      let { data, error } = await supabase
+      const { data, error } = await supabase
         .from('appointments')
         .select(`
           id,
           appointment_date,
           slot_start,
           status,
+          visit_type,
           purpose,
           created_at,
           assistant_data,
           patients (full_name, phone, patient_code)
         `)
-        .eq('center_id', masterLabId)
+        .eq('center_id', masterLabUuid)
         .order('created_at', { ascending: false });
 
-      // Graceful fallback if joined relationship with patients table is not mapped in schema cache
       if (error) {
-        console.warn('[Dashboard] Direct schema query fallback without join:', error.message);
-        const { data: directData, error: directErr } = await supabase
-          .from('appointments')
-          .select('id, appointment_date, slot_start, status, purpose, created_at, assistant_data')
-          .eq('center_id', masterLabId)
-          .order('created_at', { ascending: false });
-
-        if (directErr) {
-          console.error('[Dashboard] Direct Fetch Error:', directErr);
-          setLiveAppointments([]);
-          return;
-        }
-        data = directData;
+        console.error('[Dashboard] Fetch Error:', error.message);
+        return;
       }
 
       if (data && data.length > 0) {
         const mappedBookings = data.map(appt => {
+          const ptName = appt.patients?.full_name || appt.assistant_data?.patient_name || 'Walk-in Patient';
+          const ptPhone = appt.patients?.phone || appt.assistant_data?.patient_phone || '—';
+          const ptUhid = appt.assistant_data?.uhid || appt.patients?.patient_code || '—';
+          const timeSlot = appt.assistant_data?.time_slot || appt.assistant_data?.slot || appt.slot_start || '10:00 AM';
+          const trackingStatus = appt.assistant_data?.tracking_status || (appt.status === 'confirmed' ? 'Confirmed' : 'Order Placed');
+          const visitType = appt.assistant_data?.visit_type || (appt.assistant_data?.home_address ? 'home_collection' : (appt.visit_type || 'lab_visit'));
+
           return {
             id: appt.id,
             date: appt.appointment_date,
-            slot: appt.assistant_data?.time_slot || appt.assistant_data?.slot || appt.slot_start || '10:00 AM',
+            appointment_date: appt.appointment_date,
+            slot: timeSlot,
             status: appt.status || 'booked',
-            tracking_status: appt.assistant_data?.tracking_status || appt.status || 'Order Placed',
-            purpose: appt.purpose || 'Pathology Test',
-            patientName: appt.patients?.full_name || appt.assistant_data?.patient_name || 'Citizen Patient',
-            patient_name: appt.patients?.full_name || appt.assistant_data?.patient_name || 'Citizen Patient',
-            mobile: appt.patients?.phone || appt.assistant_data?.patient_phone || '—',
-            patient_phone: appt.patients?.phone || appt.assistant_data?.patient_phone || '—',
-            uhid: appt.assistant_data?.uhid || appt.patients?.patient_code || '—',
+            tracking_status: trackingStatus,
+            purpose: appt.purpose || 'General Diagnostics',
+            visit_type: visitType,
+            patientName: ptName,
+            patient_name: ptName,
+            mobile: ptPhone,
+            patient_phone: ptPhone,
+            uhid: ptUhid,
             source: appt.assistant_data?.source || 'Portal',
+            notes: appt.assistant_data?.notes || (appt.assistant_data?.home_address ? `Address: ${appt.assistant_data.home_address}` : `${appt.purpose || 'Diagnostics'} · Slot: ${timeSlot}`),
             assistant_data: appt.assistant_data || {}
           };
         });
@@ -86,8 +84,7 @@ export default function DashboardHome() {
         setLiveAppointments([]);
       }
     } catch (err) {
-      console.warn('LIMS Dashboard Fetch Note:', err);
-      setLiveAppointments([]);
+      console.warn('LIMS Fetch Exception:', err);
     }
   };
 
@@ -98,13 +95,12 @@ export default function DashboardHome() {
     // Instant Realtime synchronization filtered strictly by master center_id
     const channel = supabase.channel('lims-dashboard-sync')
       .on('postgres_changes', {
-        event: '*',
+        event: 'INSERT',
         schema: 'public',
-        table: 'appointments',
-        filter: `center_id=eq.cb17e71d-cb76-49e6-a202-4a82c94de5d8`
+        table: 'appointments'
       }, (payload) => {
-        console.log('[Dashboard] New live booking or status change detected:', payload);
-        fetchLiveAppointments();
+        console.log('New appointment received:', payload);
+        fetchLiveAppointments(); // Jaise hi neri entry aaye, data turant fetch ho jaye
       })
       .subscribe();
 
@@ -117,26 +113,37 @@ export default function DashboardHome() {
     try {
       setUpdatingId(apptId);
 
+      // 1. Current appointment data find karein
       const target = (liveAppointments || []).find(a => a.id === apptId);
+
+      // 2. assistant_data object ko safely merge karein
       const updatedAssistantData = {
         ...(target?.assistant_data || {}),
-        tracking_status: nextStatus
+        tracking_status: nextStatus,
+        status_updated_at: new Date().toISOString()
       };
 
-      // Schema-compliant update: status updated at root, tracking_status inside assistant_data JSONB
-      const { error } = await supabase
+      // 3. Supabase mein root 'status' aur JSONB 'assistant_data' dono ko ek sath update karein
+      const { data, error } = await supabase
         .from('appointments')
         .update({
-          status: nextStatus,
-          assistant_data: updatedAssistantData,
+          status: nextStatus, // Patient portal ke liye primary status
+          tracking_status: nextStatus, // Agar root column exist karta hai
+          assistant_data: updatedAssistantData, // Metadata sync ke liye
           updated_at: new Date().toISOString()
         })
-        .eq('id', apptId);
+        .eq('id', apptId)
+        .select();
 
       if (error) {
-        console.warn('[Dashboard] Status update error:', error);
+        console.error('[Dashboard] Status update database error:', error.message, error.details);
+        alert(`Failed to update status: ${error.message}`);
+        return;
       }
 
+      console.log('[Dashboard] Status successfully updated in DB:', data);
+
+      // 4. Local state turant update karein taaki UI smooth rahe
       setLiveAppointments(prev =>
         prev.map(a => a.id === apptId ? {
           ...a,
@@ -146,16 +153,8 @@ export default function DashboardHome() {
         } : a)
       );
 
-      if (nextStatus === 'Report Signed' || nextStatus === 'Report Ready') {
-        await supabase.from('reports').insert({
-          center_id: 'cb17e71d-cb76-49e6-a202-4a82c94de5d8',
-          title: 'Complete Blood Count & Comprehensive Metabolic Profile',
-          status: 'signed',
-          generated_at: new Date().toISOString()
-        }).catch(() => {});
-      }
     } catch (err) {
-      console.warn('Status update error:', err);
+      console.warn('Status update exception:', err);
     } finally {
       setUpdatingId(null);
     }

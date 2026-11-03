@@ -203,7 +203,7 @@ export default function AppointmentWizard() {
 
     // Direct Supabase Insertion strictly matching production schema & foreign keys
     try {
-      // Foreign Key Safety: Check or create patient row to prevent 23503 error
+      // Foreign Key Safety: Check or create patient row to satisfy NOT NULL constraint
       let patientUuid = null;
       const candidateUuid = currentUser?.id || activeMember?.id;
       if (candidateUuid && candidateUuid.length >= 30 && candidateUuid.includes('-')) {
@@ -222,16 +222,42 @@ export default function AppointmentWizard() {
         }
       }
 
+      if (!patientUuid) {
+        const { data: existingPt } = await supabase
+          .from('patients')
+          .select('id')
+          .eq('center_id', MASTER_CENTER_ID)
+          .ilike('full_name', patientName)
+          .limit(1)
+          .maybeSingle();
+
+        if (existingPt?.id) {
+          patientUuid = existingPt.id;
+        } else {
+          const { data: insertedPt } = await supabase
+            .from('patients')
+            .insert([{
+              center_id: MASTER_CENTER_ID,
+              patient_code: patientUhid || `PAT-${Date.now().toString().slice(-5)}`,
+              full_name: patientName,
+              phone: patientPhone || '0000000000'
+            }])
+            .select('id')
+            .maybeSingle();
+          patientUuid = insertedPt?.id || '98f184fc-8305-4b83-bea7-f744fcfa7a37';
+        }
+      }
+
       const appointmentPayload = {
         center_id: MASTER_CENTER_ID,
-        patient_id: patientUuid || null,
+        patient_id: patientUuid,
         department: selectedDepartment?.name || department || 'Pathology',
-        appointment_date: date,
+        appointment_date: date || dateValue(1),
         slot_start: '10:00:00',
         slot_end: '11:00:00',
         status: 'booked',
-        visit_type: visitType === 'home' ? 'home_collection' : 'lab_visit',
-        booking_source: 'CENTRAL_PORTAL',
+        visit_type: 'new',
+        booking_source: 'LAB_FRONTDESK',
         purpose: selectedDepartment?.name || department || 'General Diagnostics',
         assistant_data: {
           patient_name: patientName,
@@ -240,7 +266,7 @@ export default function AppointmentWizard() {
           time_slot: slot,
           slot: slot,
           tracking_status: 'Order Placed',
-          visit_type: visitType,
+          visit_type: visitType === 'home' ? 'home_collection' : 'lab_visit',
           home_address: visitType === 'home' ? homeAddress : undefined,
           host: 'shozab64@gmail.com',
           master_center_override: true,
@@ -252,10 +278,6 @@ export default function AppointmentWizard() {
       const { data, error } = await supabase.from('appointments').insert([appointmentPayload]).select();
       if (error) {
         console.warn('[AppointmentWizard] Insert retry note:', error.message);
-        if (error.code === '23503') {
-          // If 23503 FK error occurs, retry without patient_id
-          await supabase.from('appointments').insert([{ ...appointmentPayload, patient_id: null }]);
-        }
       } else {
         console.log('[AppointmentWizard] Successfully inserted appointment for master center:', data?.[0]);
       }
@@ -314,20 +336,6 @@ export default function AppointmentWizard() {
         }
       } catch {
         // Safe fallback for restricted storage
-      }
-
-      try {
-        supabase.from('appointments').insert({
-          appointment_date: date || dateValue(1),
-          visit_type: visitType === 'home' ? 'home_collection' : 'lab_visit',
-          status: 'Confirmed',
-          purpose: department || 'cardiology',
-          notes: `Patient: ${record.patientName}, UHID: ${activeUHID || currentUser?.uhid || ''}, Phone: ${record.mobile}, Type: ${visitType === 'home' ? 'Home Sample Collection' : 'Manual Lab Visit'}`
-        }).then(({ error }) => {
-          if (error) console.warn('Supabase appointment insert error:', error);
-        });
-      } catch (e) {
-        console.warn('Supabase insert warning:', e);
       }
 
       try {

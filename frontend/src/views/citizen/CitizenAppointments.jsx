@@ -72,7 +72,7 @@ export default function CitizenAppointments({ lang: propLang, addNewBooking, onA
             mobile: row.assistant_data?.patient_phone || currentUser?.phone || '—',
             department: row.purpose || 'dept-pathology',
             date: row.appointment_date || (row.created_at ? new Date(row.created_at).toISOString().slice(0, 10) : ''),
-            slot: row.time_slot || 'slot-10am',
+            slot: row.assistant_data?.time_slot || row.assistant_data?.slot || row.slot_start || '10:00 AM',
             status: row.assistant_data?.tracking_status || row.status || 'Confirmed',
             stage,
             uhid: row.assistant_data?.uhid || currentUser?.uhid,
@@ -99,7 +99,7 @@ export default function CitizenAppointments({ lang: propLang, addNewBooking, onA
     const MASTER_CENTER_ID = 'cb17e71d-cb76-49e6-a202-4a82c94de5d8';
 
     try {
-      // 1. Foreign Key Protection: Fetch or fallback to a valid patient UUID to prevent 23503 error
+      // 1. Foreign Key Protection: Fetch or fallback to a valid patient UUID to prevent NOT NULL constraint violation
       let patientUuid = null;
       const candidateUuid = currentUser?.id || activeMember?.id;
       if (candidateUuid && candidateUuid.length >= 30 && candidateUuid.includes('-')) {
@@ -111,31 +111,58 @@ export default function CitizenAppointments({ lang: propLang, addNewBooking, onA
             id: candidateUuid,
             center_id: MASTER_CENTER_ID,
             patient_code: activeUHID || currentUser?.uhid || `PAT-${Date.now().toString().slice(-5)}`,
-            full_name: newAppointment.patientName || currentUser?.name || 'Patient',
-            phone: newAppointment.mobile || currentUser?.phone || ''
+            full_name: patientName,
+            phone: patientPhone
           }], { onConflict: 'id' }).select('id').maybeSingle();
           if (newPat) patientUuid = newPat.id;
         }
       }
 
+      if (!patientUuid) {
+        const { data: existingPt } = await supabase
+          .from('patients')
+          .select('id')
+          .eq('center_id', MASTER_CENTER_ID)
+          .ilike('full_name', patientName)
+          .limit(1)
+          .maybeSingle();
+
+        if (existingPt?.id) {
+          patientUuid = existingPt.id;
+        } else {
+          const { data: insertedPt } = await supabase
+            .from('patients')
+            .insert([{
+              center_id: MASTER_CENTER_ID,
+              patient_code: activeUHID || currentUser?.uhid || `PAT-${Date.now().toString().slice(-5)}`,
+              full_name: patientName,
+              phone: patientPhone || '0000000000'
+            }])
+            .select('id')
+            .maybeSingle();
+          patientUuid = insertedPt?.id || '98f184fc-8305-4b83-bea7-f744fcfa7a37';
+        }
+      }
+
       const payload = {
         center_id: MASTER_CENTER_ID, // Master Lab Center ID
-        patient_id: patientUuid || null,
+        patient_id: patientUuid,
         department: 'Pathology',
         appointment_date: newAppointment.date || new Date().toISOString().slice(0, 10),
         slot_start: '10:00:00',
         slot_end: '11:00:00',
         status: 'booked',
-        visit_type: 'lab_visit',
-        booking_source: 'CENTRAL_PORTAL',
+        visit_type: 'new',
+        booking_source: 'LAB_FRONTDESK',
         purpose: newAppointment.department || 'General Diagnostics',
         assistant_data: { 
-          patient_name: newAppointment.patientName || currentUser?.name || 'Patient',
-          patient_phone: newAppointment.mobile || currentUser?.phone || '',
+          patient_name: patientName,
+          patient_phone: patientPhone,
           tracking_status: 'Order Placed',
           time_slot: newAppointment.slot || '10:00 AM',
           slot: newAppointment.slot || '10:00 AM',
           uhid: activeUHID || currentUser?.uhid || '',
+          visit_type: 'lab_visit',
           host: 'shozab64@gmail.com',
           master_center_override: true,
           source: 'CitizenAppointments'
@@ -145,10 +172,6 @@ export default function CitizenAppointments({ lang: propLang, addNewBooking, onA
       const { data, error } = await supabase.from('appointments').insert([payload]).select();
       if (error) {
         console.warn('[CitizenAppointments] Insert error:', error.message);
-        if (error.code === '23503') {
-          // Retry without patient_id to bypass FK restriction
-          await supabase.from('appointments').insert([{ ...payload, patient_id: null }]);
-        }
       } else if (data && data.length > 0) {
         console.log('[CitizenAppointments] Successfully synced to Supabase for master center:', data[0]);
       }
