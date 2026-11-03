@@ -39,6 +39,43 @@ function testIdsChecked(state, ids) {
   });
 }
 const requireCitizen = (actor) => { requireActor(actor); if (actor.role !== 'citizen') fail(403, 'patient_only', 'This action requires a patient account.'); };
+const requireStaff = (actor) => { requireActor(actor); if (actor.role !== 'authority') fail(403, 'staff_only', 'Authorised laboratory staff access is required.'); };
+function publishingRequest(body, fields) {
+  if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).some((key) => !fields.includes(key) && key !== 'confirmed')) fail(400, 'invalid_publication', 'Send only the supported catalogue or slot fields.');
+  if (body.confirmed !== true) fail(409, 'confirmation_required', 'Review the laboratory details and explicitly confirm publication.');
+}
+function publishText(value, field, maximum, { empty = false, multiline = false } = {}) {
+  if (typeof value !== 'string' || value.length > maximum || (!empty && !value.trim()) || (multiline ? /[\x00-\x08\x0b\x0c\x0e-\x1f]/ : /[\x00-\x1f]/).test(value)) fail(400, 'invalid_publication', `${field} must be valid text of at most ${maximum} characters.`);
+  return value.trim();
+}
+function testPublication(body) {
+  publishingRequest(body, ['name', 'code', 'aliases', 'pricePaise', 'currency', 'parameters', 'description', 'active']);
+  const name = publishText(body.name, 'name', 160);
+  const code = publishText(body.code, 'code', 60);
+  if (!/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(code)) fail(400, 'invalid_publication', 'Use a laboratory code containing letters, digits, periods, underscores or hyphens.');
+  if (!Number.isSafeInteger(body.pricePaise) || body.pricePaise < 1 || body.pricePaise > 1_000_000_000 || body.currency !== 'INR') fail(400, 'invalid_price', 'Provide an INR price as an integer from 1 to 1000000000 paise.');
+  if (typeof body.active !== 'boolean' || !Array.isArray(body.aliases) || body.aliases.length > 30 || !Array.isArray(body.parameters) || body.parameters.length > 100) fail(400, 'invalid_publication', 'Specify active status, up to 30 aliases and up to 100 laboratory parameters.');
+  const aliases = body.aliases.map((alias) => publishText(alias, 'alias', 160));
+  if (new Set(aliases.map(normalise)).size !== aliases.length) fail(400, 'duplicate_alias', 'Laboratory aliases must be distinct.');
+  const parameters = body.parameters.map((parameter) => {
+    if (!parameter || typeof parameter !== 'object' || Array.isArray(parameter) || Object.keys(parameter).some((key) => !['name', 'unit', 'referenceRange'].includes(key))) fail(400, 'invalid_parameter', 'Provide only each parameter name, recorded unit and optional laboratory reference range.');
+    return { name: publishText(parameter.name, 'parameter name', 160), unit: publishText(parameter.unit, 'parameter unit', 80, { empty: true }), ...(parameter.referenceRange === undefined ? {} : { referenceRange: publishText(parameter.referenceRange, 'reference range', 500, { empty: true }) }) };
+  });
+  if (new Set(parameters.map((parameter) => normalise(parameter.name))).size !== parameters.length) fail(400, 'duplicate_parameter', 'Laboratory parameter names must be distinct.');
+  return { name, code, aliases, parameters, pricePaise: body.pricePaise, currency: body.currency, active: body.active, description: publishText(body.description ?? '', 'description', 2000, { empty: true, multiline: true }) };
+}
+function slotPublication(body, creating) {
+  publishingRequest(body, ['date', 'startTime', 'endTime', 'startsAt', 'capacity', 'active']);
+  const date = body.date;
+  const parsedDate = new Date(`${date}T00:00:00Z`);
+  if (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date) || date.startsWith('0000') || !Number.isFinite(parsedDate.getTime()) || parsedDate.toISOString().slice(0, 10) !== date) fail(400, 'invalid_date', 'Use a valid slot date in YYYY-MM-DD format.');
+  if (![body.startTime, body.endTime].every((time) => typeof time === 'string' && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(time)) || body.endTime <= body.startTime) fail(400, 'invalid_slot_time', 'Publish a start and later end time on the same day in HH:mm format.');
+  if (typeof body.startsAt !== 'string' || !/^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d:00(?:\.000)?[+-](?:0\d|1[0-4]):[0-5]\d$/.test(body.startsAt) || body.startsAt.slice(0, 16) !== `${date}T${body.startTime}` || (body.startsAt.slice(-5, -3) === '14' && body.startsAt.slice(-2) !== '00')) fail(400, 'invalid_slot_time', 'startsAt must match the date/start time and include an explicit ISO timezone offset.');
+  const starts = Date.parse(body.startsAt);
+  if (!Number.isFinite(starts) || ((creating || body.active === true) && starts <= Date.now())) fail(400, 'slot_in_past', 'Publish a future collection slot.');
+  if (!Number.isSafeInteger(body.capacity) || body.capacity < 1 || body.capacity > 1000 || typeof body.active !== 'boolean') fail(400, 'invalid_capacity', 'Specify active status and an integer slot capacity from 1 to 1000.');
+  return { date, startTime: body.startTime, endTime: body.endTime, startsAt: body.startsAt, capacity: body.capacity, active: body.active };
+}
 function bookingFromState(state, actor, id) { requireId(id, 'bookingId'); return owns(actor, state.appointments[id]); }
 function bookedTests(state, booking) { return booking.bookedTests || booking.testIds.map((id) => state.tests[id]).filter(Boolean); }
 function aggregate(state, booking) {
@@ -100,10 +137,52 @@ export function createWorkflowService({ store, config = {} }) {
   return {
     store,
     config: { paymentTiming, requirePaymentForReport },
+    async staffCatalogue(actor) {
+      requireStaff(actor);
+      return store.read((state) => ({ tests: Object.values(state.tests).filter((test) => test.labId === actor.labId), slots: Object.values(state.slots).filter((slot) => slot.labId === actor.labId).sort((a, b) => `${a.date}${a.startTime}`.localeCompare(`${b.date}${b.startTime}`)) }));
+    },
+    async publishTest(actor, body, testId) {
+      requireStaff(actor);
+      if (testId !== undefined) requireId(testId, 'testId');
+      const data = testPublication(body);
+      return store.transaction((state) => {
+        const previous = testId === undefined ? undefined : state.tests[testId];
+        if (testId !== undefined && (!previous || previous.labId !== actor.labId)) fail(404, 'test_not_found', 'This catalogue test was not found in your laboratory.');
+        if (Object.values(state.tests).some((test) => test.id !== testId && test.labId === actor.labId && (normalise(test.code) === normalise(data.code) || normalise(test.name) === normalise(data.name)))) fail(409, 'duplicate_test', 'Your laboratory already has a test with this code or name. Update its existing record.');
+        const id = previous?.id || randomUUID();
+        const test = { ...previous, ...data, id, labId: actor.labId, synthetic: previous?.synthetic === true || config.demoMode === true || actor.demo === true, createdAt: previous?.createdAt || nowIso(), updatedAt: nowIso(), updatedBy: actor.id };
+        state.tests[id] = test;
+        recordAudit(state, actor, previous ? 'catalogue.test_updated' : 'catalogue.test_published', id);
+        return test;
+      });
+    },
+    async publishSlot(actor, body, slotId) {
+      requireStaff(actor);
+      if (slotId !== undefined) requireId(slotId, 'slotId');
+      const data = slotPublication(body, slotId === undefined);
+      return store.transaction((state) => {
+        const previous = slotId === undefined ? undefined : state.slots[slotId];
+        if (slotId !== undefined && (!previous || previous.labId !== actor.labId)) fail(404, 'slot_not_found', 'This collection slot was not found in your laboratory.');
+        if (previous && (previous.date !== data.date || previous.startTime !== data.startTime || previous.endTime !== data.endTime || Date.parse(previous.startsAt) !== Date.parse(data.startsAt))) fail(409, 'slot_schedule_immutable', 'An existing slot schedule cannot be moved. Publish a separate slot and deactivate the old slot if needed.');
+        if (Object.values(state.slots).some((slot) => slot.id !== slotId && slot.labId === actor.labId && Date.parse(slot.startsAt || `${slot.date}T${slot.startTime}:00+05:30`) === Date.parse(data.startsAt))) fail(409, 'duplicate_slot', 'Your laboratory already has a slot at this time. Update its existing record.');
+        const reserved = Object.values(state.appointments).filter((booking) => booking.slotId === slotId && booking.status !== 'cancelled').length;
+        const occupied = Math.max(reserved, previous?.currentBookings || 0);
+        if (data.capacity < occupied) fail(409, 'capacity_below_bookings', 'Capacity cannot be lower than the number of existing bookings.');
+        const id = previous?.id || randomUUID();
+        const slot = { ...previous, ...data, id, labId: actor.labId, synthetic: previous?.synthetic === true || config.demoMode === true || actor.demo === true, createdAt: previous?.createdAt || nowIso(), updatedAt: nowIso(), updatedBy: actor.id };
+        state.slots[id] = slot;
+        recordAudit(state, actor, previous ? 'catalogue.slot_updated' : 'catalogue.slot_published', id);
+        return slot;
+      });
+    },
     async searchTests(query = '') {
       if (typeof query !== 'string' || query.length > 200) fail(400, 'invalid_query', 'Search text must be at most 200 characters.');
       const needle = normalise(query);
       return store.read((state) => Object.values(state.tests).filter((test) => visibleTest(test) && (!needle || [test.name, test.code, ...(test.aliases || [])].some((value) => normalise(value).includes(needle)))).slice(0, 100));
+    },
+    // Prescription matching runs locally against the entire catalogue, not the paged chat result.
+    async prescriptionCatalogue() {
+      return store.read((state) => Object.values(state.tests).filter(visibleTest).map(({ id, name, code, aliases }) => ({ id, name, code, aliases })));
     },
     async testDetails(id) {
       requireId(id, 'testId');
@@ -115,7 +194,11 @@ export function createWorkflowService({ store, config = {} }) {
     async availability(date) {
       const parsedDate = new Date(`${date}T00:00:00Z`);
       if (date !== undefined && date !== null && (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(parsedDate.getTime()) || parsedDate.toISOString().slice(0, 10) !== date || date.startsWith('0000'))) fail(400, 'invalid_date', 'Use a valid date in YYYY-MM-DD format.');
-      return store.read((state) => Object.values(state.slots).filter((slot) => slot.active !== false && (!date || slot.date === date) && Date.parse(slot.startsAt || `${slot.date}T${slot.startTime}:00+05:30`) > Date.now()).map((slot) => ({ ...slot, remaining: Math.max(0, slot.capacity - Object.values(state.appointments).filter((booking) => booking.slotId === slot.id && booking.status !== 'cancelled').length) })).filter((slot) => slot.remaining > 0).sort((a, b) => `${a.date}${a.startTime}`.localeCompare(`${b.date}${b.startTime}`)).slice(0, 100));
+      return store.read((state) => Object.values(state.slots).filter((slot) => slot.active !== false && (!date || slot.date === date) && Date.parse(slot.startsAt || `${slot.date}T${slot.startTime}:00+05:30`) > Date.now()).map((slot) => {
+        const assistantBookings = Object.values(state.appointments).filter((booking) => booking.slotId === slot.id && booking.status !== 'cancelled').length;
+        const occupied = Number.isSafeInteger(slot.currentBookings) ? Math.max(slot.currentBookings, assistantBookings) : assistantBookings;
+        return { ...slot, remaining: Math.max(0, slot.capacity - occupied) };
+      }).filter((slot) => slot.remaining > 0).sort((a, b) => `${a.date}${a.startTime}`.localeCompare(`${b.date}${b.startTime}`)).slice(0, 100));
     },
     async book(actor, { testIds, slotId, idempotencyKey, expectedQuote }) {
       requireCitizen(actor); requireId(slotId, 'slotId'); requireId(idempotencyKey, 'idempotencyKey');
@@ -136,7 +219,8 @@ export function createWorkflowService({ store, config = {} }) {
         if (tests.some((test) => test.labId !== slot.labId)) fail(409, 'laboratory_mismatch', 'Select tests and a collection slot from the same laboratory.');
         const reserved = Object.values(state.appointments).filter((booking) => booking.slotId === slot.id && booking.status !== 'cancelled');
         if (reserved.some((booking) => booking.patientId === actor.id)) fail(409, 'duplicate_booking', 'You already have a booking for this slot.');
-        if (reserved.length >= slot.capacity) fail(409, 'slot_full', 'This collection slot has just filled. Choose another slot.');
+        const occupied = Number.isSafeInteger(slot.currentBookings) ? slot.currentBookings : reserved.length;
+        if (Math.max(occupied, reserved.length) >= slot.capacity) fail(409, 'slot_full', 'This collection slot has just filled. Choose another slot.');
         for (const appointment of Object.values(state.appointments)) {
           const token = appointment.registrationToken;
           if (!token || token.patientId !== actor.id || token.labId !== slot.labId || !['registered', 'called'].includes(token.status)) continue;

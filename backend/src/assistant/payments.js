@@ -5,6 +5,16 @@ const API = 'https://api.razorpay.com/v1';
 const now = () => new Date().toISOString();
 const validId = (value) => typeof value === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(value);
 const providerId = (value, prefix) => typeof value === 'string' && new RegExp(`^${prefix}_[A-Za-z0-9]+$`).test(value);
+const linkMode = (mode) => ['razorpay_link_test', 'razorpay_link_live'].includes(mode);
+const providerMode = (mode) => mode === 'razorpay_test' || linkMode(mode);
+
+function verifiedPaymentUrl(value) {
+  try {
+    const url = new URL(value);
+    if (url.protocol === 'https:' && url.hostname === 'rzp.io' && !url.port && !url.username && !url.password && url.pathname !== '/') return url.href;
+  } catch { /* Provider data must not become an arbitrary navigation target. */ }
+  fail(502, 'PAYMENT_LINK_INVALID', 'The payment provider returned an unverified payment link. Contact the laboratory.');
+}
 
 function fail(status, code, message) {
   throw Object.assign(new Error(message), { status, code });
@@ -32,9 +42,10 @@ function audit(state, actorId, action, resourceId) {
 }
 
 function publicPayment(payment, keyId) {
-  const { id, orderId, bookingId, invoiceId, amountPaise, currency, status, mode, providerPaymentId, createdAt, updatedAt } = payment;
+  const { id, orderId, bookingId, invoiceId, amountPaise, currency, status, mode, providerPaymentId, paymentLinkId, paymentUrl, createdAt, updatedAt } = payment;
   return { id, orderId, bookingId, invoiceId, amountPaise, currency, status, mode,
-    simulated: mode === 'simulated', label: mode === 'simulated' ? 'SIMULATED TEST PAYMENT — no money charged' : 'Razorpay TEST MODE',
+    simulated: mode === 'simulated', label: mode === 'simulated' ? 'SIMULATED TEST PAYMENT — no money charged' : mode === 'razorpay_link_live' ? 'Razorpay payment link' : 'Razorpay TEST MODE',
+    ...(paymentLinkId ? { paymentLinkId, paymentUrl: verifiedPaymentUrl(paymentUrl) } : {}),
     ...(mode === 'razorpay_test' ? { keyId } : {}), ...(providerPaymentId ? { providerPaymentId } : {}), createdAt, updatedAt };
 }
 
@@ -49,9 +60,11 @@ export function createPaymentService({ store, workflow, config = {}, fetchImpl =
     if (!['report_ready', 'booking'].includes(stage)) fail(503, 'PAYMENT_CONFIGURATION', 'Payment timing is not configured correctly.');
     if (mode === 'simulated') {
       if (config.demoMode !== true) fail(503, 'PAYMENT_CONFIGURATION', 'Simulated payments are available only in explicit local demo mode.');
-    } else if (mode === 'razorpay_test') {
-      if (!/^rzp_test_[A-Za-z0-9]+$/.test(keyId) || !keySecret) {
-        fail(503, 'PAYMENT_CONFIGURATION', 'Razorpay TEST credentials are required. Live payments are disabled.');
+    } else if (providerMode(mode)) {
+      if (mode === 'razorpay_link_live' && config.demoMode === true) fail(503, 'PAYMENT_CONFIGURATION', 'Live payment links are disabled in demonstration mode.');
+      const prefix = mode === 'razorpay_link_live' ? 'live' : 'test';
+      if (!new RegExp(`^rzp_${prefix}_[A-Za-z0-9]+$`).test(keyId) || !keySecret) {
+        fail(503, 'PAYMENT_CONFIGURATION', `Razorpay ${prefix.toUpperCase()} credentials are required for the configured payment mode.`);
       }
     } else fail(503, 'PAYMENTS_DISABLED', 'Payments are not configured.');
   }
@@ -86,6 +99,52 @@ export function createPaymentService({ store, workflow, config = {}, fetchImpl =
     return invoice;
   }
 
+  function validateLink(payment, link, { creating = false } = {}) {
+    if (!link || !providerId(link.id, 'plink') || (!creating && link.id !== payment.paymentLinkId)
+      || link.reference_id !== payment.id || link.amount !== payment.amountPaise || link.currency !== payment.currency
+      || link.accept_partial !== false || !['created', 'paid', 'partially_paid', 'expired', 'cancelled'].includes(link.status)
+      || !Number.isSafeInteger(link.amount_paid) || link.amount_paid < 0
+      || (creating && (link.status !== 'created' || link.amount_paid !== 0))
+      || (link.order_id && !providerId(link.order_id, 'order'))
+      || (payment.orderId && link.order_id && payment.orderId !== link.order_id)) {
+      fail(502, 'PAYMENT_LINK_MISMATCH', 'The provider payment link does not match this invoice. Contact the laboratory.');
+    }
+    verifiedPaymentUrl(link.short_url);
+  }
+
+  async function refreshLink(payment, actorId, eventMetadata = {}) {
+    if (payment.mode !== mode) fail(503, 'PAYMENT_CONFIGURATION', 'This payment requires its original provider mode and credentials. Contact the laboratory.');
+    const link = await provider(`/payment_links/${payment.paymentLinkId}`);
+    validateLink(payment, link);
+    if (link.status === 'paid') {
+      if (link.amount_paid !== payment.amountPaise || !providerId(link.order_id, 'order')) fail(409, 'PAYMENT_LINK_MISMATCH', 'The paid payment link could not be reconciled with its invoice.');
+      const payments = await provider(`/orders/${link.order_id}/payments`);
+      const captured = Array.isArray(payments.items) ? payments.items.filter((item) => item.status === 'captured' && item.captured === true) : [];
+      if (captured.length !== 1 || !providerId(captured[0]?.id, 'pay')) fail(409, 'PAYMENT_NOT_CAPTURED', 'The provider has not confirmed one complete captured payment for this invoice.');
+      const entity = await provider(`/payments/${captured[0].id}`);
+      const expected = { ...payment, orderId: link.order_id };
+      validateProviderPayment(expected, entity);
+      if (entity.id !== captured[0].id || entity.status !== 'captured' || entity.captured !== true) fail(409, 'PAYMENT_NOT_CAPTURED', 'The provider has not confirmed capture of this payment.');
+      await store.transaction((state) => {
+        const current = state.payments[payment.id];
+        if (!current || (current.orderId && current.orderId !== link.order_id)) fail(409, 'PAYMENT_MISMATCH', 'The persisted payment order changed. Contact the laboratory.');
+        current.orderId = link.order_id;
+      });
+      return applyPayment(payment.id, entity, actorId, eventMetadata);
+    }
+    return store.transaction((state) => {
+      const current = state.payments[payment.id];
+      if (current.status !== 'captured') {
+        // Failed and cancelled are existing schema states. An expired link is a failed attempt.
+        current.status = link.status === 'cancelled' ? 'cancelled' : link.status === 'expired' ? 'failed' : 'pending';
+        current.providerLinkStatus = link.status;
+        current.updatedAt = now();
+      }
+      if (eventMetadata.eventId) state.paymentWebhookEvents[eventMetadata.eventId] = { id: eventMetadata.eventId, hash: eventMetadata.eventHash, paymentId: payment.id, createdAt: now() };
+      return publicPayment(current, keyId);
+    });
+  }
+
   async function createOrder(actor, bookingId, idempotencyKey) {
     configured();
     if (!validId(bookingId) || typeof idempotencyKey !== 'string' || !/^[A-Za-z0-9_-]{8,128}$/.test(idempotencyKey)) {
@@ -98,6 +157,7 @@ export function createPaymentService({ store, workflow, config = {}, fetchImpl =
       const booking = state.appointments?.[bookingId];
       authorise(actor, booking, { paymentAction: true });
       const invoice = invoiceFor(state, booking);
+      if (mode === 'razorpay_link_live' && (booking.bookedTests || booking.testIds.map((id) => state.tests[id])).some((test) => test?.synthetic === true)) fail(409, 'SYNTHETIC_PAYMENT_DENIED', 'Live payments cannot be requested for synthetic demonstration tests.');
       const sameKey = Object.values(state.payments).find((item) => item.patientId === actor.id && item.idempotencyKey === idempotencyKey);
       if (sameKey && sameKey.bookingId !== bookingId) fail(409, 'IDEMPOTENCY_CONFLICT', 'This request key has already been used for another booking.');
       const existing = sameKey || Object.values(state.payments).find((item) => item.invoiceId === invoice.id && !['failed', 'creation_failed'].includes(item.status));
@@ -120,8 +180,11 @@ export function createPaymentService({ store, workflow, config = {}, fetchImpl =
     try {
       order = mode === 'simulated'
         ? { id: `sim_order_${randomUUID().replaceAll('-', '')}`, amount: reservation.payment.amountPaise, currency: 'INR' }
+        : linkMode(mode) ? await provider('/payment_links', { method: 'POST', body: JSON.stringify({ amount: reservation.payment.amountPaise, currency: reservation.payment.currency,
+          accept_partial: false, reference_id: reservation.payment.id, description: 'LabSetu laboratory invoice', notify: { sms: false, email: false }, reminder_enable: false }) })
         : await provider('/orders', { method: 'POST', body: JSON.stringify({ amount: reservation.payment.amountPaise, currency: reservation.payment.currency,
           receipt: reservation.payment.id.slice(0, 40), notes: { invoice_id: reservation.payment.invoiceId } }) });
+      if (linkMode(mode)) validateLink(reservation.payment, order, { creating: true });
       if ((mode === 'razorpay_test' && !providerId(order.id, 'order')) || order.amount !== reservation.payment.amountPaise || order.currency !== reservation.payment.currency) {
         fail(502, 'PAYMENT_PROVIDER_MISMATCH', 'The payment order did not match the verified invoice.');
       }
@@ -136,7 +199,11 @@ export function createPaymentService({ store, workflow, config = {}, fetchImpl =
     }
     return store.transaction((state) => {
       const payment = state.payments[reservation.payment.id];
-      payment.orderId = order.id;
+      if (linkMode(mode)) {
+        payment.paymentLinkId = order.id;
+        payment.paymentUrl = verifiedPaymentUrl(order.short_url);
+        if (providerId(order.order_id, 'order')) payment.orderId = order.order_id;
+      } else payment.orderId = order.id;
       payment.status = 'pending';
       payment.updatedAt = now();
       return publicPayment(payment, keyId);
@@ -157,6 +224,7 @@ export function createPaymentService({ store, workflow, config = {}, fetchImpl =
     if (!entity || !providerId(entity.id, 'pay') || entity.order_id !== payment.orderId || entity.amount !== payment.amountPaise || entity.currency !== payment.currency) {
       fail(409, 'PAYMENT_MISMATCH', 'The provider payment does not match this invoice.');
     }
+    if ((entity.amount_refunded !== undefined && entity.amount_refunded !== 0) || entity.refund_status) fail(409, 'PAYMENT_REFUNDED', 'This payment has a refund and requires laboratory reconciliation.');
   }
 
   async function applyPayment(paymentId, entity, actorId, { eventId, eventHash } = {}) {
@@ -165,7 +233,7 @@ export function createPaymentService({ store, workflow, config = {}, fetchImpl =
       if (eventId && state.paymentWebhookEvents[eventId]) return { duplicate: true };
       const payment = state.payments[paymentId];
       if (!payment) fail(404, 'PAYMENT_NOT_FOUND', 'Payment not found.');
-      if (payment.mode === 'razorpay_test') validateProviderPayment(payment, entity);
+      if (providerMode(payment.mode)) validateProviderPayment(payment, entity);
       const booking = state.appointments[payment.bookingId];
       const invoice = invoiceFor(state, booking);
       if (invoice.id !== payment.invoiceId || invoice.totalPaise !== payment.amountPaise || invoice.currency !== payment.currency) {
@@ -186,8 +254,8 @@ export function createPaymentService({ store, workflow, config = {}, fetchImpl =
           const id = `RCP-${randomUUID()}`;
           receipt = { id, bookingId: booking.id, invoiceId: invoice.id, patientId: booking.patientId, paymentId: payment.id,
             providerPaymentId: entity.id, amountPaise: payment.amountPaise, currency: payment.currency, paidAt: payment.paidAt, mode: payment.mode,
-            verified: payment.mode === 'razorpay_test', verification: payment.mode === 'razorpay_test' ? 'razorpay_capture_verified' : 'simulated_test_payment',
-            label: payment.mode === 'simulated' ? 'SIMULATED TEST RECEIPT — no money charged' : 'Razorpay TEST payment receipt' };
+            verified: providerMode(payment.mode), verification: providerMode(payment.mode) ? 'razorpay_capture_verified' : 'simulated_test_payment',
+            label: payment.mode === 'simulated' ? 'SIMULATED TEST RECEIPT — no money charged' : payment.mode === 'razorpay_link_live' ? 'Razorpay verified payment receipt' : 'Razorpay TEST payment receipt' };
           state.receipts[id] = receipt;
         }
         payment.receiptId = receipt.id;
@@ -218,7 +286,7 @@ export function createPaymentService({ store, workflow, config = {}, fetchImpl =
 
   async function webhook(rawBody, signature, eventId) {
     configured();
-    if (mode !== 'razorpay_test' || !webhookSecret) fail(503, 'WEBHOOK_NOT_CONFIGURED', 'The Razorpay TEST webhook is not configured.');
+    if (!providerMode(mode) || !webhookSecret) fail(503, 'WEBHOOK_NOT_CONFIGURED', 'The Razorpay webhook is not configured.');
     if (!Buffer.isBuffer(rawBody)) fail(400, 'INVALID_WEBHOOK_BODY', 'The original webhook request bytes are required.');
     if (!checkSignature(rawBody, signature, webhookSecret)) fail(400, 'INVALID_WEBHOOK_SIGNATURE', 'Webhook signature verification failed.');
     const hash = createHash('sha256').update(rawBody).digest('hex');
@@ -227,6 +295,14 @@ export function createPaymentService({ store, workflow, config = {}, fetchImpl =
     if (duplicate) return { accepted: true, duplicate: true };
     let event;
     try { event = JSON.parse(rawBody.toString('utf8')); } catch { fail(400, 'INVALID_WEBHOOK_JSON', 'The webhook payload must be valid JSON.'); }
+    if (linkMode(mode) && ['payment_link.paid', 'payment_link.partially_paid', 'payment_link.cancelled', 'payment_link.expired'].includes(event.event)) {
+      const linkId = event.payload?.payment_link?.entity?.id;
+      if (!providerId(linkId, 'plink')) fail(400, 'INVALID_WEBHOOK_PAYMENT', 'The webhook is missing a valid payment link reference.');
+      const payment = await store.read((state) => Object.values(state.payments || {}).find((item) => item.paymentLinkId === linkId && item.mode === mode));
+      if (!payment) return { accepted: true, ignored: true };
+      const result = await refreshLink(payment, 'razorpay_webhook', { eventId: id, eventHash: hash });
+      return { accepted: true, duplicate: result.duplicate === true, status: result.status };
+    }
     if (!['payment.captured', 'payment.authorized', 'payment.failed', 'order.paid'].includes(event.event)) return { accepted: true, ignored: true };
     const entity = event.payload?.payment?.entity;
     if (!providerId(entity?.id, 'pay') || !providerId(entity?.order_id, 'order')) fail(400, 'INVALID_WEBHOOK_PAYMENT', 'The webhook is missing a valid payment reference.');
@@ -242,6 +318,11 @@ export function createPaymentService({ store, workflow, config = {}, fetchImpl =
 
   async function status(actor, bookingId) {
     if (!validId(bookingId)) fail(400, 'INVALID_BOOKING', 'A valid booking identifier is required.');
+    const pendingLinks = await store.read((state) => {
+      authorise(actor, state.appointments?.[bookingId]);
+      return Object.values(state.payments || {}).filter((item) => item.bookingId === bookingId && linkMode(item.mode) && item.paymentLinkId && !['captured', 'cancelled', 'failed'].includes(item.status));
+    });
+    for (const payment of pendingLinks) await refreshLink(payment, actor.id);
     return store.read((state) => {
       authorise(actor, state.appointments?.[bookingId]);
       const payments = Object.values(state.payments || {}).filter((item) => item.bookingId === bookingId).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -251,6 +332,7 @@ export function createPaymentService({ store, workflow, config = {}, fetchImpl =
 
   async function receipt(actor, bookingId) {
     if (!validId(bookingId)) fail(400, 'INVALID_BOOKING', 'A valid booking identifier is required.');
+    await status(actor, bookingId);
     return store.read((state) => {
       authorise(actor, state.appointments?.[bookingId]);
       const result = Object.values(state.receipts || {}).find((item) => item.bookingId === bookingId);

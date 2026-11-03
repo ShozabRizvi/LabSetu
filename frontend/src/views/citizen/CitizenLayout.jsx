@@ -3,6 +3,8 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import logo from '../../assets/logo.png';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
+import { assistantService } from '../../services/assistantService';
+import { rows, statusLabel } from '../../utils/assistantUtils';
 import './CitizenLayout.css';
 import {
   MagnifyingGlassIcon,
@@ -42,11 +44,17 @@ export default function CitizenLayout() {
   const [isHelpModalOpen, setIsHelpModalOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [notifications, setNotifications] = useState([
-    { id: 1, title: 'Lab Report Ready', desc: 'Your Complete Blood Count (CBC) report has been published.', time: '2 hours ago', read: false },
-    { id: 2, title: 'Appointment Confirmed', desc: 'Appointment booked for tomorrow at 10:00 AM.', time: '1 day ago', read: false },
-    { id: 3, title: 'Payment Receipt Available', desc: 'Invoice #INV-2026-1049 receipt is available for download.', time: '3 days ago', read: true }
-  ]);
+  const [notificationState, setNotificationState] = useState({ patientId: null, items: [], error: '' });
+  const notifications = notificationState.patientId === currentUser?.id ? notificationState.items : [];
+
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    let alive = true;
+    assistantService.notifications().then(data => {
+      if (alive) setNotificationState({ patientId: currentUser.id, items: rows(data, 'notifications').map(item => ({ ...item, title: statusLabel(item.type), desc: item.message, time: new Date(item.createdAt).toLocaleString() })), error: '' });
+    }).catch(error => { if (alive) setNotificationState({ patientId: currentUser.id, items: [], error: error.message }); });
+    return () => { alive = false; };
+  }, [currentUser?.id, isNotificationsOpen]);
 
   const userMenuRef = useRef(null);
   const notifRef = useRef(null);
@@ -90,7 +98,7 @@ export default function CitizenLayout() {
   };
 
   const markAllRead = () => {
-    setNotifications(notifications.map(n => ({ ...n, read: true })));
+    setNotificationState(previous => ({ ...previous, items: previous.items.map(n => ({ ...n, read: true })) }));
   };
 
   const handleGlobalSearch = (e) => {
@@ -201,6 +209,14 @@ export default function CitizenLayout() {
             </button>
           </div>
 
+          <NavLink
+            to="/portal/assistant"
+            className="citizen-header-link citizen-assistant-link"
+          >
+            <SparklesIcon className="citizen-icon" />
+            <span>LabSetu Assistant</span>
+          </NavLink>
+
           <button 
             type="button" 
             className="citizen-header-link" 
@@ -232,6 +248,8 @@ export default function CitizenLayout() {
                   )}
                 </div>
                 <div className="notif-list">
+                  {notificationState.error && <p className="notif-desc" role="alert">{notificationState.error}</p>}
+                  {!notificationState.error && notifications.length === 0 && <p className="notif-desc">No notifications returned for your account.</p>}
                   {notifications.map(n => (
                     <div key={n.id} className={`notif-item ${!n.read ? 'unread' : ''}`}>
                       <div className="notif-title-row">
@@ -323,14 +341,6 @@ export default function CitizenLayout() {
           </NavLink>
 
           <nav className="citizen-nav">
-            <NavLink
-              to="/portal/assistant"
-              className={({ isActive }) => `citizen-nav-item ${isActive ? 'active' : ''}`}
-              onClick={() => setIsMobileMenuOpen(false)}
-            >
-              <SparklesIcon className="citizen-nav-icon" />
-              {lang === 'hi' ? 'जाँच सहायक' : 'LabSetu Assistant'}
-            </NavLink>
             <NavLink 
               to="/portal/dashboard" 
               className={({ isActive }) => `citizen-nav-item ${isActive ? 'active' : ''}`}
@@ -592,6 +602,36 @@ export default function CitizenLayout() {
             Complete Profile
           </button>
         </div>
+      )}
+
+      {!['/portal/explainer', '/portal/ai-explainer'].includes(location.pathname) && (
+        <button
+          type="button"
+          onClick={() => navigate('/portal/explainer')}
+          aria-label={lang === 'hi' ? 'क्लिनोवा स्वास्थ्य सहायक खोलें' : 'Open Clinova health assistant'}
+          title={lang === 'hi' ? 'क्लिनोवा' : 'Clinova'}
+          style={{
+            position: 'fixed',
+            right: '1.25rem',
+            bottom: '1.25rem',
+            zIndex: 1000,
+            border: 'none',
+            background: 'linear-gradient(135deg, #15803d, #10b981)',
+            color: '#fff',
+            borderRadius: '999px',
+            boxShadow: '0 12px 30px rgba(21, 128, 61, 0.24)',
+            padding: '0.9rem 1rem',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.55rem',
+            cursor: 'pointer',
+            fontWeight: 700,
+            fontSize: '0.8rem'
+          }}
+        >
+          <MicrophoneIcon style={{ width: '18px', height: '18px' }} />
+          {lang === 'hi' ? 'क्लिनोवा' : 'Clinova'}
+        </button>
       )}
     </div>
   );

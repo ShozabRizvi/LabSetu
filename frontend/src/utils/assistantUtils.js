@@ -12,6 +12,13 @@ export function rows(data, key) {
   return Array.isArray(data?.[key]) ? data[key] : [];
 }
 
+export function paymentLink(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' && url.hostname === 'rzp.io' && !url.port && !url.username && !url.password && url.pathname !== '/' ? url.href : null;
+  } catch { return null; }
+}
+
 export function validatePrescription(file) {
   if (!file) return 'Choose a prescription to upload.';
   if (!['application/pdf', 'image/png', 'image/jpeg'].includes(file.type)) return 'Please choose a PDF, PNG or JPEG prescription.';

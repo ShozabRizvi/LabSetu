@@ -14,6 +14,20 @@ export function AuthProvider({ children }) {
       return null;
     }
   };
+  const persistAccessToken = (token, role) => {
+    if (!token) return;
+    const tokenKey = role === 'authority' ? 'labsetu_authority_token' : 'labsetu_patient_token';
+    sessionStorage.setItem(tokenKey, token);
+    localStorage.setItem(tokenKey, token);
+    apiClient.setToken(token);
+  };
+  const clearAccessTokens = () => {
+    for (const key of ['labsetu_authority_token', 'labsetu_patient_token', 'labsetu_token']) {
+      sessionStorage.removeItem(key);
+      localStorage.removeItem(key);
+    }
+    apiClient.setToken(null);
+  };
 
   // Synchronous initialization strictly from verified stored session, never fake users
   const [authorityUser, setAuthorityUser] = useState(() => {
@@ -98,14 +112,9 @@ export function AuthProvider({ children }) {
           localStorage.removeItem('labsetu_authority_session');
           localStorage.removeItem('labsetu_patient_session');
           localStorage.removeItem('labsetu_auth');
-          localStorage.removeItem('labsetu_token');
+          clearAccessTokens();
           sessionStorage.clear();
           return;
-        }
-
-        // Restore active token
-        if (session.access_token) {
-          apiClient.setToken(session.access_token);
         }
 
         const userId = sessionUser.id;
@@ -134,9 +143,10 @@ export function AuthProvider({ children }) {
           if (data) patientRow = data;
         } catch {}
 
-        const userRole = sessionUser.user_metadata?.role || (profileRow?.role === 'admin' ? 'authority' : 'citizen');
+        const userRole = ['authority', 'admin', 'staff'].includes(sessionUser.app_metadata?.role) ? 'authority' : 'citizen';
         const resolvedName = profileRow?.display_name || profileRow?.full_name || patientRow?.full_name || sessionUser.user_metadata?.full_name || 'Patient';
         const resolvedUhid = profileRow?.uhid || patientRow?.patient_code || 'Pending';
+        persistAccessToken(session.access_token, userRole);
 
         if (userRole === 'authority') {
           const updatedAuth = {
@@ -148,7 +158,8 @@ export function AuthProvider({ children }) {
             centerName: 'LabSetu Diagnostics',
             labId: '61326885'
           };
-          if (isMounted) setAuthorityUser(updatedAuth);
+          if (isMounted) { setPatientUser(null); setAuthorityUser(updatedAuth); }
+          sessionStorage.removeItem('labsetu_patient_session'); localStorage.removeItem('labsetu_patient_session');
           sessionStorage.setItem('labsetu_authority_session', JSON.stringify(updatedAuth));
           localStorage.setItem('labsetu_authority_session', JSON.stringify(updatedAuth));
           sessionStorage.setItem('labsetu_auth', JSON.stringify(updatedAuth));
@@ -167,7 +178,8 @@ export function AuthProvider({ children }) {
             age: patientRow?.age_years !== undefined && patientRow?.age_years !== null ? patientRow.age_years : undefined,
             emergencyContact: patientRow?.emergency_contact || ''
           };
-          if (isMounted) setPatientUser(updatedPatient);
+          if (isMounted) { setAuthorityUser(null); setPatientUser(updatedPatient); }
+          sessionStorage.removeItem('labsetu_authority_session'); localStorage.removeItem('labsetu_authority_session');
           sessionStorage.setItem('labsetu_patient_session', JSON.stringify(updatedPatient));
           localStorage.setItem('labsetu_patient_session', JSON.stringify(updatedPatient));
           sessionStorage.setItem('labsetu_auth', JSON.stringify(updatedPatient));
@@ -183,53 +195,62 @@ export function AuthProvider({ children }) {
     hydrateAuth();
 
     // Listen to real-time auth state changes and dynamically fetch profiles table
-    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (!isMounted) return;
-      if (session?.user) {
-        let profile = null;
-        try {
-          const { data } = await supabase
-            .from('profiles')
-            .select('full_name, uhid, role')
-            .eq('id', session.user.id)
-            .maybeSingle();
-          if (data) profile = data;
-        } catch (err) {
-          console.warn('[AuthContext] onAuthStateChange profile fetch error:', err);
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      // Supabase invokes this callback while holding its auth lock. Defer profile
+      // queries until after the callback returns to avoid deadlocking refreshes.
+      queueMicrotask(async () => {
+        if (!isMounted) return;
+        if (session?.user) {
+          let profile = null;
+          try {
+            const { data } = await supabase
+              .from('profiles')
+              .select('full_name, uhid, role')
+              .eq('id', session.user.id)
+              .maybeSingle();
+            if (data) profile = data;
+          } catch (err) {
+            console.warn('[AuthContext] onAuthStateChange profile fetch error:', err);
+          }
+
+          const isAuthRole = ['authority', 'admin', 'staff'].includes(session.user.app_metadata?.role);
+          persistAccessToken(session.access_token, isAuthRole ? 'authority' : 'citizen');
+
+          const resolvedUser = {
+            ...session.user,
+            id: session.user.id,
+            email: session.user.email,
+            role: isAuthRole ? 'authority' : 'citizen',
+            name: profile?.full_name || session.user.user_metadata?.full_name || (isAuthRole ? 'Dr. Shozab Rizvi' : 'Patient'),
+            uhid: profile?.uhid || (isAuthRole ? undefined : 'Pending'),
+          };
+
+          if (isAuthRole) {
+            setPatientUser(null);
+            setAuthorityUser(resolvedUser);
+            sessionStorage.removeItem('labsetu_patient_session'); localStorage.removeItem('labsetu_patient_session');
+            sessionStorage.setItem('labsetu_authority_session', JSON.stringify(resolvedUser));
+            localStorage.setItem('labsetu_authority_session', JSON.stringify(resolvedUser));
+          } else {
+            setAuthorityUser(null);
+            setPatientUser(resolvedUser);
+            sessionStorage.removeItem('labsetu_authority_session'); localStorage.removeItem('labsetu_authority_session');
+            sessionStorage.setItem('labsetu_patient_session', JSON.stringify(resolvedUser));
+            localStorage.setItem('labsetu_patient_session', JSON.stringify(resolvedUser));
+          }
+          sessionStorage.setItem('labsetu_auth', JSON.stringify(resolvedUser));
+          localStorage.setItem('labsetu_auth', JSON.stringify(resolvedUser));
+        } else if (event === 'SIGNED_OUT') {
+          setPatientUser(null);
+          setAuthorityUser(null);
+          localStorage.removeItem('labsetu_patient_session');
+          localStorage.removeItem('labsetu_authority_session');
+          localStorage.removeItem('labsetu_auth');
+          localStorage.removeItem('labsetu_family_members');
+          clearAccessTokens();
+          sessionStorage.clear();
         }
-
-        const isAuthRole = session.user.user_metadata?.role === 'authority' || profile?.role === 'admin';
-
-        const resolvedUser = {
-          ...session.user,
-          id: session.user.id,
-          email: session.user.email,
-          role: isAuthRole ? 'authority' : 'citizen',
-          name: profile?.full_name || session.user.user_metadata?.full_name || (isAuthRole ? 'Dr. Shozab Rizvi' : 'Patient'),
-          uhid: profile?.uhid || (isAuthRole ? undefined : 'Pending'),
-        };
-
-        if (isAuthRole) {
-          setAuthorityUser(prev => ({ ...(prev || {}), ...resolvedUser }));
-          sessionStorage.setItem('labsetu_authority_session', JSON.stringify(resolvedUser));
-          localStorage.setItem('labsetu_authority_session', JSON.stringify(resolvedUser));
-        } else {
-          setPatientUser(prev => ({ ...(prev || {}), ...resolvedUser }));
-          sessionStorage.setItem('labsetu_patient_session', JSON.stringify(resolvedUser));
-          localStorage.setItem('labsetu_patient_session', JSON.stringify(resolvedUser));
-        }
-        sessionStorage.setItem('labsetu_auth', JSON.stringify(resolvedUser));
-        localStorage.setItem('labsetu_auth', JSON.stringify(resolvedUser));
-      } else if (event === 'SIGNED_OUT') {
-        setPatientUser(null);
-        setAuthorityUser(null);
-        localStorage.removeItem('labsetu_patient_session');
-        localStorage.removeItem('labsetu_authority_session');
-        localStorage.removeItem('labsetu_auth');
-        localStorage.removeItem('labsetu_family_members');
-        localStorage.removeItem('labsetu_token');
-        sessionStorage.clear();
-      }
+      });
     });
 
     return () => {
@@ -255,7 +276,6 @@ export function AuthProvider({ children }) {
     if (res.success && res.user && res.session) {
       const user = res.user;
       const sessionKey = user.role === 'authority' ? 'labsetu_authority_session' : 'labsetu_patient_session';
-      const tokenKey = user.role === 'authority' ? 'labsetu_authority_token' : 'labsetu_patient_token';
 
       if (user.role === 'authority') {
         setAuthorityUser(user);
@@ -269,11 +289,7 @@ export function AuthProvider({ children }) {
       localStorage.setItem('labsetu_auth', JSON.stringify(user));
 
       if (res.session.access_token) {
-        sessionStorage.setItem(tokenKey, res.session.access_token);
-        localStorage.setItem(tokenKey, res.session.access_token);
-        sessionStorage.setItem('labsetu_token', res.session.access_token);
-        localStorage.setItem('labsetu_token', res.session.access_token);
-        apiClient.setToken(res.session.access_token);
+        persistAccessToken(res.session.access_token, user.role);
       }
 
       return { ...res, user };

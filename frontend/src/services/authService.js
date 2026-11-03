@@ -70,10 +70,11 @@ export const authService = {
         console.warn('[authService.login] Patient lookup notice:', ptErr);
       }
 
-      const resolvedRole = authUser.user_metadata?.role || (profile?.role === 'admin' ? 'authority' : role) || role;
+      const resolvedRole = ['authority', 'admin', 'staff'].includes(authUser.app_metadata?.role) ? 'authority' : 'citizen';
 
       // Role boundary validation: warn if logging into citizen portal with authority account or vice versa
-      if (role && resolvedRole && role !== resolvedRole && resolvedRole !== 'admin') {
+      if (role && role !== resolvedRole) {
+        await supabase.auth.signOut({ scope: 'local' });
         return {
           success: false,
           error: `This account is registered as ${resolvedRole === 'authority' ? 'Authority / Staff' : 'Patient / Citizen'}. Please select the ${resolvedRole === 'authority' ? 'Authority' : 'Patient'} tab.`

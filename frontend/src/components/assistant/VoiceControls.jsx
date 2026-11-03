@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { MicrophoneIcon, StopIcon, SpeakerWaveIcon } from '@heroicons/react/24/outline';
+import './VoiceAssistant.css';
 
 export function VoiceInput({ lang, value, onTranscript, isProcessing = false }) {
   const [listening, setListening] = useState(false);
@@ -75,7 +76,7 @@ export function VoiceInput({ lang, value, onTranscript, isProcessing = false }) 
 
   return <div className="labsetu-voice-controls">
     <button type="button" className="labsetu-voice-button" onClick={listening ? stopListening : startListening} disabled={isProcessing} aria-label={listening ? 'Stop recording' : 'Start voice input'}>
-      {listening ? <StopIcon aria-hidden="true" /> : <MicrophoneIcon aria-hidden="true" />}
+      {listening ? <StopIcon width={20} height={20} aria-hidden="true" style={{ flex: '0 0 20px' }} /> : <MicrophoneIcon width={20} height={20} aria-hidden="true" style={{ flex: '0 0 20px' }} />}
       {listening ? 'Stop recording' : 'Talk'}
     </button>
     <span className="labsetu-voice-state" role="status" aria-live="polite">
@@ -122,8 +123,8 @@ export function SpeechPlayback({ text, lang }) {
       setEnabled(event.target.checked);
       if (!event.target.checked) stop();
     }} /> Enable spoken responses</label>
-    <button type="button" className="labsetu-voice-button secondary" onClick={speaking ? stop : speak} disabled={!enabled || !text?.trim() || !supported} aria-label={speaking ? 'Stop spoken response' : 'Read response aloud'}>
-      <SpeakerWaveIcon aria-hidden="true" />{speaking ? 'Stop speaking' : 'Read aloud / replay'}
+    <button type="button" className="labsetu-voice-button secondary" onClick={speaking ? stop : speak} disabled={!enabled || !text?.trim() || !supported} aria-pressed={speaking} aria-label={speaking ? 'Stop spoken response' : 'Read response aloud'}>
+      {speaking ? <StopIcon width={20} height={20} aria-hidden="true" style={{ flex: '0 0 20px' }} /> : <SpeakerWaveIcon width={20} height={20} aria-hidden="true" style={{ flex: '0 0 20px' }} />}{speaking ? 'Stop speaking' : 'Read aloud / replay'}
     </button>
     {!supported && <span role="status">Spoken responses are not supported in this browser.</span>}
     <span className="sr-only" aria-live="polite">{speaking ? 'Speaking response' : ''}</span>

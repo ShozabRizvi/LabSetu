@@ -1,6 +1,7 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, readFile, writeFile, rename, open, unlink } from 'node:fs/promises';
 import path from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 
 export const SYNTHETIC_LAB_ID = '00000000-0000-4000-8000-000000000010';
 export const SYNTHETIC_PATIENT_ID = '00000000-0000-4000-8000-000000000001';
@@ -90,23 +91,64 @@ export function createFileStore(filePath, { seed = createSyntheticState() } = {}
 
 const TABLES = {
   tests: ['assistant_tests', 'id'], slots: ['assistant_slots', 'id'], appointments: ['appointments', 'id'],
-  invoices: ['bills', 'id'], samples: ['assistant_samples', 'booking_id'], reports: ['reports', 'assistant_booking_id'],
+  invoices: ['bills', 'id'], samples: ['assistant_samples', 'booking_id'], reports: ['reports', 'id'],
   payments: ['assistant_payments', 'id'], receipts: ['assistant_receipts', 'id']
 };
 
-/** PostgreSQL uses existing appointment/bill/report entities. All writes share a transaction/lock. */
+function storageUuid(type, id) {
+  const bytes = createHash('sha256').update(`labsetu-assistant:${type}:${id}`).digest().subarray(0, 16);
+  bytes[6] = (bytes[6] & 0x0f) | 0x80;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = bytes.toString('hex');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+const money = (paise) => (paise / 100).toFixed(2);
+const paymentStatus = (status) => ({ unpaid: 'UNPAID', paid: 'PAID', void: 'CANCELLED' })[status] || 'UNPAID';
+const reportStatus = (status) => ({ draft: 'DRAFT', pending_verification: 'GENERATED', approved: 'VERIFIED', released: 'SIGNED' })[status];
+const appointmentStatus = (status) => ['booked', 'confirmed', 'checked_in', 'completed', 'cancelled', 'no_show'].includes(status) ? status : 'confirmed';
+
+function reconcileUnless(condition) {
+  if (!condition) throw Object.assign(new Error('A saved laboratory record differs from its canonical ownership, billing or clinical data. Authorised staff must reconcile it before this operation can continue.'), { status: 409, code: 'record_reconciliation_required' });
+}
+function canonicalPaise(value) {
+  const match = String(value ?? '').match(/^(\d+)(?:\.(\d{1,2}))?$/);
+  reconcileUnless(Boolean(match));
+  const paise = BigInt(match[1]) * 100n + BigInt((match[2] || '').padEnd(2, '0'));
+  reconcileUnless(paise <= BigInt(Number.MAX_SAFE_INTEGER));
+  return Number(paise);
+}
+function canonicalOwner(payload, row, { unrecordedLab = false } = {}) {
+  reconcileUnless(payload && typeof payload === 'object' && typeof payload.id === 'string' && typeof row.canonical_lab_id === 'string'
+    && (payload.labId === row.canonical_lab_id || unrecordedLab && payload.labId === undefined));
+  if (row.canonical_patient_id !== undefined) reconcileUnless(payload.patientId === row.canonical_patient_id);
+  if (row.canonical_appointment_id !== undefined) reconcileUnless(typeof payload.bookingId === 'string' && storageUuid('appointment', payload.bookingId) === row.canonical_appointment_id);
+}
+
+/** Supports both the repository schema and the deployed UUID-based canonical schema. */
 export function createPgStore(pool) {
-  async function load(client) {
+  async function layout(client) {
+    const { rows } = await client.query(`SELECT column_name, data_type FROM information_schema.columns
+      WHERE table_schema='public' AND table_name='assistant_tests' AND column_name IN ('id','lab_id','center_id')`);
+    const columns = new Map(rows.map((row) => [row.column_name, row.data_type]));
+    if (columns.get('id') === 'text' && columns.has('lab_id')) return 'assistant';
+    if (columns.get('id') === 'uuid' && columns.has('center_id')) return 'deployed';
+    throw new Error('Unsupported assistant PostgreSQL schema. Review /api/ready and database migrations.');
+  }
+  async function loadAssistantSchema(client) {
     const state = emptyState();
     for (const [collection, [table, key]] of Object.entries(TABLES)) {
       const { rows } = await client.query(`SELECT ${key} AS key, assistant_data AS payload FROM public.${table} WHERE assistant_data IS NOT NULL`);
-      for (const row of rows) state[collection][row.key] = row.payload;
+      for (const row of rows) {
+        const stateKey = collection === 'reports' || collection === 'samples' ? row.payload.bookingId || row.key : row.payload.id || row.key;
+        state[collection][stateKey] = row.payload;
+      }
     }
     const { rows } = await client.query('SELECT collection, id, payload FROM public.assistant_records');
     for (const row of rows) if (GENERIC.includes(row.collection)) state[row.collection][row.id] = row.payload;
     return state;
   }
-  async function save(client, before, after) {
+  async function saveAssistantSchema(client, before, after) {
     // Inserts follow foreign-key order. Existing non-assistant rows are never overwritten.
     for (const key of Object.keys(after.tests)) {
       const row = after.tests[key];
@@ -157,6 +199,233 @@ export function createPgStore(pool) {
       for (const key of Object.keys(before[collection])) if (!(key in after[collection])) await client.query('DELETE FROM public.assistant_records WHERE collection=$1 AND id=$2', [collection, key]);
     }
   }
+  async function loadDeployedSchema(client) {
+    const state = emptyState();
+    const tests = await client.query('SELECT center_id::text AS canonical_lab_id,test_name,price,parameters,assistant_data FROM public.assistant_tests WHERE assistant_data IS NOT NULL');
+    for (const row of tests.rows) {
+      const payload = row.assistant_data;
+      canonicalOwner(payload, row);
+      const pricePaise = canonicalPaise(row.price);
+      reconcileUnless(pricePaise > 0 && typeof row.test_name === 'string' && row.test_name.trim() && Array.isArray(row.parameters)
+        && row.parameters.every((parameter) => parameter && typeof parameter.name === 'string' && parameter.name.trim() && typeof parameter.unit === 'string' && (parameter.referenceRange === undefined || typeof parameter.referenceRange === 'string')));
+      state.tests[payload.id] = { ...payload, name: row.test_name, pricePaise, parameters: clone(row.parameters) };
+    }
+    const slots = await client.query('SELECT center_id::text AS canonical_lab_id,slot_time,max_capacity,current_bookings,is_active,assistant_data FROM public.assistant_slots WHERE assistant_data IS NOT NULL');
+    for (const row of slots.rows) {
+      const payload = row.assistant_data;
+      canonicalOwner(payload, row);
+      const startsAt = row.slot_time;
+      reconcileUnless(typeof startsAt === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:00(?:\.000)?[+-]\d{2}:\d{2}$/.test(startsAt) && Number.isFinite(Date.parse(startsAt))
+        && startsAt.slice(0, 10) === payload.date && startsAt.slice(11, 16) === payload.startTime
+        && Date.parse(startsAt) === Date.parse(payload.startsAt || `${payload.date}T${payload.startTime}:00+05:30`)
+        && Number.isSafeInteger(row.max_capacity) && row.max_capacity > 0 && row.max_capacity <= 1000 && typeof row.is_active === 'boolean'
+        && (row.current_bookings === null || Number.isSafeInteger(row.current_bookings) && row.current_bookings >= 0));
+      state.slots[payload.id] = { ...payload, startsAt, capacity: row.max_capacity, active: row.is_active, currentBookings: row.current_bookings || 0 };
+    }
+    const appointments = await client.query(`SELECT center_id::text AS canonical_lab_id,patient_id::text AS canonical_patient_id,
+      appointment_date::text AS canonical_date,slot_start::text AS canonical_start,slot_end::text AS canonical_end,status::text AS canonical_status,assistant_data
+      FROM public.appointments WHERE assistant_data IS NOT NULL`);
+    for (const row of appointments.rows) {
+      const payload = row.assistant_data;
+      canonicalOwner(payload, row);
+      reconcileUnless(row.canonical_date === payload.date && row.canonical_start.slice(0, 5) === payload.startTime
+        && (!state.slots[payload.slotId]?.endTime || row.canonical_end.slice(0, 5) === state.slots[payload.slotId].endTime)
+        && ['booked', 'confirmed', 'checked_in', 'completed', 'cancelled', 'no_show'].includes(row.canonical_status));
+      state.appointments[payload.id] = { ...payload, status: row.canonical_status };
+    }
+    const invoices = await client.query(`SELECT b.center_id::text AS canonical_lab_id,c.patient_id::text AS canonical_patient_id,c.appointment_id::text AS canonical_appointment_id,
+      c.center_id::text AS case_lab_id,b.total_amount,b.paid_amount,b.due_amount,b.payment_status::text AS canonical_status,b.assistant_data
+      FROM public.bills b LEFT JOIN public.patient_cases c ON c.id=b.case_id WHERE b.assistant_data IS NOT NULL`);
+    for (const row of invoices.rows) {
+      const payload = row.assistant_data;
+      canonicalOwner(payload, row);
+      reconcileUnless(row.case_lab_id === payload.labId && ['unpaid', 'paid', 'void'].includes(payload.status) && row.canonical_status === paymentStatus(payload.status)
+        && canonicalPaise(row.total_amount) === payload.totalPaise
+        && canonicalPaise(row.paid_amount) === (payload.status === 'paid' ? payload.totalPaise : 0)
+        && canonicalPaise(row.due_amount) === (payload.status === 'unpaid' ? payload.totalPaise : 0));
+      state.invoices[payload.id] = payload;
+    }
+    const samples = await client.query(`SELECT a.center_id::text AS canonical_lab_id,s.patient_id::text AS canonical_patient_id,s.appointment_id::text AS canonical_appointment_id,
+      a.patient_id::text AS appointment_patient_id,s.collection_status,s.assistant_data FROM public.assistant_samples s
+      LEFT JOIN public.appointments a ON a.id=s.appointment_id WHERE s.assistant_data IS NOT NULL`);
+    for (const row of samples.rows) {
+      const payload = row.assistant_data;
+      canonicalOwner(payload, row);
+      reconcileUnless(row.appointment_patient_id === payload.patientId && ['awaiting_collection', 'collected', 'processing', 'processing_complete'].includes(row.collection_status));
+      state.samples[payload.bookingId] = { ...payload, status: row.collection_status };
+    }
+    const reports = await client.query(`SELECT r.center_id::text AS canonical_lab_id,c.patient_id::text AS canonical_patient_id,c.appointment_id::text AS canonical_appointment_id,
+      c.center_id::text AS case_lab_id,r.status::text AS canonical_status,r.report_json,r.assistant_data
+      FROM public.reports r LEFT JOIN public.patient_cases c ON c.id=r.case_id WHERE r.assistant_data IS NOT NULL`);
+    for (const row of reports.rows) {
+      const payload = row.assistant_data;
+      canonicalOwner(payload, row);
+      reconcileUnless(row.case_lab_id === payload.labId && reportStatus(payload.status) === row.canonical_status && isDeepStrictEqual(row.report_json, payload.results || []));
+      state.reports[payload.bookingId] = payload;
+    }
+    const payments = await client.query(`SELECT c.center_id::text AS canonical_lab_id,p.patient_id::text AS canonical_patient_id,c.appointment_id::text AS canonical_appointment_id,
+      c.patient_id::text AS case_patient_id,p.amount,p.status AS canonical_status,p.transaction_id,p.assistant_data
+      FROM public.assistant_payments p LEFT JOIN public.bills b ON b.id=p.bill_id LEFT JOIN public.patient_cases c ON c.id=b.case_id WHERE p.assistant_data IS NOT NULL`);
+    for (const row of payments.rows) {
+      const payload = row.assistant_data;
+      canonicalOwner(payload, row);
+      reconcileUnless(row.case_patient_id === payload.patientId && canonicalPaise(row.amount) === payload.amountPaise && row.canonical_status === payload.status
+        && row.transaction_id === (payload.providerPaymentId || payload.transactionId || null));
+      state.payments[payload.id] = payload;
+    }
+    const receipts = await client.query(`SELECT c.center_id::text AS canonical_lab_id,p.patient_id::text AS canonical_patient_id,c.appointment_id::text AS canonical_appointment_id,
+      c.patient_id::text AS case_patient_id,r.payment_id::text AS canonical_payment_id,r.receipt_number,r.assistant_data
+      FROM public.assistant_receipts r LEFT JOIN public.assistant_payments p ON p.id=r.payment_id LEFT JOIN public.bills b ON b.id=p.bill_id
+      LEFT JOIN public.patient_cases c ON c.id=b.case_id WHERE r.assistant_data IS NOT NULL`);
+    for (const row of receipts.rows) {
+      const payload = row.assistant_data;
+      // Existing receipts store patient/booking ownership; their lab comes from the canonical bill/case join.
+      canonicalOwner(payload, row, { unrecordedLab: true });
+      reconcileUnless(row.case_patient_id === payload.patientId && storageUuid('payment', payload.paymentId) === row.canonical_payment_id && row.receipt_number === (payload.number || payload.id));
+      state.receipts[payload.id] = payload;
+    }
+    const occupancy = await client.query(`SELECT center_id::text AS lab_id,appointment_date::text AS date,slot_start::text AS start_time,count(*)::integer AS booked
+      FROM public.appointments WHERE status IN ('booked','confirmed','checked_in')
+      GROUP BY center_id,appointment_date,slot_start`);
+    const occupancyBySlot = new Map(occupancy.rows.map((row) => [`${row.lab_id}|${row.date}|${row.start_time.slice(0, 5)}`, row.booked]));
+    for (const slot of Object.values(state.slots)) {
+      const actualCount = occupancyBySlot.get(`${slot.labId}|${slot.date}|${slot.startTime}`) || 0;
+      slot.currentBookings = Math.max(slot.currentBookings || 0, actualCount);
+    }
+    for (const booking of Object.values(state.appointments)) {
+      if (!state.reports[booking.id]) {
+        state.reports[booking.id] = {
+          id: `REP-${booking.id}`,
+          bookingId: booking.id,
+          patientId: booking.patientId,
+          patientName: booking.patientName,
+          labId: booking.labId,
+          testNames: (booking.bookedTests || []).map((test) => test.name),
+          status: 'awaiting_results',
+          results: []
+        };
+      }
+    }
+    const { rows } = await client.query('SELECT record_type, id, payload, assistant_data FROM public.assistant_records');
+    for (const row of rows) {
+      if (!GENERIC.includes(row.record_type)) continue;
+      const payload = row.payload || row.assistant_data;
+      const key = payload?.id || row.id;
+      if (payload && typeof key === 'string') state[row.record_type][key] = payload;
+    }
+    return state;
+  }
+  async function ensureCase(client, booking) {
+    const appointmentId = storageUuid('appointment', booking.id);
+    const existing = await client.query('SELECT id FROM public.patient_cases WHERE appointment_id=$1::uuid ORDER BY created_at LIMIT 1', [appointmentId]);
+    if (existing.rows[0]) {
+      if (booking.status === 'cancelled') await client.query("UPDATE public.patient_cases SET case_status='cancelled',updated_at=now() WHERE id=$1::uuid", [existing.rows[0].id]);
+      return existing.rows[0].id;
+    }
+    const caseId = storageUuid('case', booking.id);
+    const caseNumber = `CASE-${booking.id}`;
+    await client.query(`INSERT INTO public.patient_cases(id,center_id,patient_id,case_no,appointment_id,case_status,priority)
+      VALUES($1::uuid,$2::uuid,$3::uuid,$4,$5::uuid,$6::case_status,'ROUTINE')
+      ON CONFLICT(id) DO UPDATE SET case_status=EXCLUDED.case_status,updated_at=now()`,
+    [caseId, booking.labId, booking.patientId, caseNumber, appointmentId, booking.status === 'cancelled' ? 'cancelled' : 'registered']);
+    return caseId;
+  }
+  async function saveDeployedSchema(client, before, after) {
+    for (const key of Object.keys(after.tests)) {
+      const row = after.tests[key];
+      if (JSON.stringify(before.tests[key]) === JSON.stringify(row)) continue;
+      await client.query(`INSERT INTO public.assistant_tests(id,center_id,test_name,category,price,parameters,assistant_data)
+        VALUES($1::uuid,$2::uuid,$3,$4,$5,$6::jsonb,$7::jsonb)
+        ON CONFLICT(id) DO UPDATE SET test_name=EXCLUDED.test_name,category=EXCLUDED.category,price=EXCLUDED.price,parameters=EXCLUDED.parameters,assistant_data=EXCLUDED.assistant_data`,
+      [storageUuid('test', key), row.labId, row.name, row.category || null, money(row.pricePaise), JSON.stringify(row.parameters || []), JSON.stringify(row)]);
+    }
+    for (const key of Object.keys(after.slots)) {
+      const row = after.slots[key];
+      if (JSON.stringify(before.slots[key]) === JSON.stringify(row)) continue;
+      const startsAt = row.startsAt || `${row.date}T${row.startTime}:00+05:30`;
+      await client.query(`INSERT INTO public.assistant_slots(id,center_id,slot_time,max_capacity,is_active,assistant_data)
+        VALUES($1::uuid,$2::uuid,$3,$4,$5,$6::jsonb)
+        ON CONFLICT(id) DO UPDATE SET slot_time=EXCLUDED.slot_time,max_capacity=EXCLUDED.max_capacity,is_active=EXCLUDED.is_active,assistant_data=EXCLUDED.assistant_data`,
+      [storageUuid('slot', key), row.labId, startsAt, row.capacity, row.active !== false, JSON.stringify(row)]);
+    }
+    for (const key of Object.keys(after.appointments)) {
+      const row = after.appointments[key];
+      if (JSON.stringify(before.appointments[key]) === JSON.stringify(row)) continue;
+      const slot = after.slots[row.slotId];
+      if (!slot?.endTime) throw Object.assign(new Error('The selected laboratory slot has no published end time. Ask laboratory staff to publish a complete slot.'), { status: 409, code: 'slot_end_time_required' });
+      const appointmentId = storageUuid('appointment', key);
+      await client.query(`INSERT INTO public.appointments(id,center_id,patient_id,department,appointment_date,slot_start,slot_end,visit_type,booking_source,status,purpose,assistant_data)
+        VALUES($1::uuid,$2::uuid,$3::uuid,'Laboratory Diagnostics',$4::date,$5::time,$6::time,'new','patient_portal',$7::appointment_status,$8,$9::jsonb)
+        ON CONFLICT(id) DO UPDATE SET status=EXCLUDED.status,purpose=EXCLUDED.purpose,assistant_data=EXCLUDED.assistant_data`,
+      [appointmentId, row.labId, row.patientId, row.date, row.startTime, slot.endTime, appointmentStatus(row.status), (row.testNames || []).join(', ') || 'Laboratory testing', JSON.stringify(row)]);
+      await ensureCase(client, row);
+    }
+    for (const key of Object.keys(after.invoices)) {
+      const row = after.invoices[key];
+      if (JSON.stringify(before.invoices[key]) === JSON.stringify(row)) continue;
+      const caseId = await ensureCase(client, after.appointments[row.bookingId]);
+      await client.query(`INSERT INTO public.bills(id,center_id,case_id,bill_no,subtotal,discount_amount,tax_amount,total_amount,paid_amount,due_amount,payment_status,assistant_data)
+        VALUES($1::uuid,$2::uuid,$3::uuid,$4,$5,$6,$7,$8,$9,$10,$11::payment_status,$12::jsonb)
+        ON CONFLICT(id) DO UPDATE SET subtotal=EXCLUDED.subtotal,discount_amount=EXCLUDED.discount_amount,tax_amount=EXCLUDED.tax_amount,total_amount=EXCLUDED.total_amount,paid_amount=EXCLUDED.paid_amount,due_amount=EXCLUDED.due_amount,payment_status=EXCLUDED.payment_status,assistant_data=EXCLUDED.assistant_data`,
+      [storageUuid('invoice', key), row.labId, caseId, row.id, money(row.subtotalPaise), money(row.discountPaise), money(row.taxPaise), money(row.totalPaise), money(row.status === 'paid' ? row.totalPaise : 0), money(row.status === 'paid' || row.status === 'void' ? 0 : row.totalPaise), paymentStatus(row.status), JSON.stringify(row)]);
+    }
+    for (const key of Object.keys(after.samples)) {
+      const row = after.samples[key];
+      if (JSON.stringify(before.samples[key]) === JSON.stringify(row)) continue;
+      const appointment = after.appointments[row.bookingId];
+      await client.query(`INSERT INTO public.assistant_samples(id,appointment_id,patient_id,sample_type,collection_status,assistant_data)
+        VALUES($1::uuid,$2::uuid,$3::uuid,'laboratory',$4,$5::jsonb)
+        ON CONFLICT(id) DO UPDATE SET collection_status=EXCLUDED.collection_status,assistant_data=EXCLUDED.assistant_data`,
+      [storageUuid('sample', row.bookingId), storageUuid('appointment', row.bookingId), appointment.patientId, row.status, JSON.stringify(row)]);
+      if (row.status === 'collected' || row.status === 'processing' || row.status === 'processing_complete') {
+        const caseId = await ensureCase(client, appointment);
+        const caseStatus = row.status === 'collected' ? 'sample_collected' : 'processing';
+        await client.query('UPDATE public.patient_cases SET case_status=$2::case_status,updated_at=now() WHERE id=$1::uuid', [caseId, caseStatus]);
+      }
+    }
+    for (const key of Object.keys(after.reports)) {
+      const row = after.reports[key];
+      if (JSON.stringify(before.reports[key]) === JSON.stringify(row)) continue;
+      if (row.status === 'awaiting_results') continue;
+      const booking = after.appointments[key];
+      const caseId = await ensureCase(client, booking);
+      const status = reportStatus(row.status);
+      if (!status) throw new Error(`Unsupported assistant report status: ${row.status}`);
+      await client.query(`INSERT INTO public.reports(id,center_id,case_id,report_no,status,title,report_json,disclaimer,verified_at,created_by,assistant_data)
+        VALUES($1::uuid,$2::uuid,$3::uuid,$4,$5::report_status,$6,$7::jsonb,'Informational report; review with a qualified clinician.',$8,$9::uuid,$10::jsonb)
+        ON CONFLICT(id) DO UPDATE SET status=EXCLUDED.status,title=EXCLUDED.title,report_json=EXCLUDED.report_json,verified_at=EXCLUDED.verified_at,created_by=EXCLUDED.created_by,assistant_data=EXCLUDED.assistant_data`,
+      [storageUuid('report', row.id), booking.labId, caseId, row.reportNumber || row.id, status, (row.testNames || []).join(', ') || 'Laboratory report', JSON.stringify(row.results || []), status === 'VERIFIED' || status === 'SIGNED' ? row.approvedAt || new Date().toISOString() : null, row.approvedBy || null, JSON.stringify(row)]);
+      await client.query('UPDATE public.patient_cases SET case_status=$2::case_status,updated_at=now() WHERE id=$1::uuid', [caseId, status === 'VERIFIED' || status === 'SIGNED' ? 'reported' : 'processing']);
+    }
+    for (const key of Object.keys(after.payments)) {
+      const row = after.payments[key];
+      if (JSON.stringify(before.payments[key]) === JSON.stringify(row)) continue;
+      const invoice = after.invoices[row.invoiceId];
+      await client.query(`INSERT INTO public.assistant_payments(id,bill_id,patient_id,amount,payment_method,transaction_id,status,assistant_data)
+        VALUES($1::uuid,$2::uuid,$3::uuid,$4,$5,$6,$7,$8::jsonb)
+        ON CONFLICT(id) DO UPDATE SET amount=EXCLUDED.amount,payment_method=EXCLUDED.payment_method,transaction_id=EXCLUDED.transaction_id,status=EXCLUDED.status,assistant_data=EXCLUDED.assistant_data`,
+      [storageUuid('payment', key), storageUuid('invoice', row.invoiceId), row.patientId || invoice.patientId, money(row.amountPaise || invoice.totalPaise), row.method || null, row.providerPaymentId || row.transactionId || null, row.status, JSON.stringify(row)]);
+    }
+    for (const key of Object.keys(after.receipts)) {
+      const row = after.receipts[key];
+      if (JSON.stringify(before.receipts[key]) === JSON.stringify(row)) continue;
+      await client.query(`INSERT INTO public.assistant_receipts(id,payment_id,receipt_number,receipt_url,assistant_data)
+        VALUES($1::uuid,$2::uuid,$3,$4,$5::jsonb)
+        ON CONFLICT(id) DO UPDATE SET receipt_number=EXCLUDED.receipt_number,receipt_url=EXCLUDED.receipt_url,assistant_data=EXCLUDED.assistant_data`,
+      [storageUuid('receipt', key), storageUuid('payment', row.paymentId), row.number || row.id, row.url || null, JSON.stringify(row)]);
+    }
+    for (const collection of GENERIC) {
+      for (const [key, row] of Object.entries(after[collection])) {
+        if (JSON.stringify(before[collection][key]) === JSON.stringify(row)) continue;
+        await client.query(`INSERT INTO public.assistant_records(id,record_type,summary,payload,assistant_data)
+          VALUES($1::uuid,$2,$3,$4::jsonb,$4::jsonb) ON CONFLICT(id) DO UPDATE SET record_type=EXCLUDED.record_type,summary=EXCLUDED.summary,payload=EXCLUDED.payload,assistant_data=EXCLUDED.assistant_data`,
+        [storageUuid(collection, key), collection, row.summary || null, JSON.stringify(row)]);
+      }
+      for (const key of Object.keys(before[collection])) if (!(key in after[collection])) {
+        await client.query('DELETE FROM public.assistant_records WHERE id=$1::uuid AND record_type=$2', [storageUuid(collection, key), collection]);
+      }
+    }
+  }
   async function run(fn, writing) {
     const client = await pool.connect();
     try {
@@ -165,10 +434,14 @@ export function createPgStore(pool) {
       await client.query("SET LOCAL lock_timeout = '10s'");
       // The lock coordinates application instances and makes capacity/idempotency checks atomic.
       await client.query('SELECT pg_advisory_xact_lock(713082018)');
-      const state = await load(client);
+      const schema = await layout(client);
+      const state = schema === 'assistant' ? await loadAssistantSchema(client) : await loadDeployedSchema(client);
       const before = clone(state);
       const result = await fn(state);
-      if (writing) await save(client, before, state);
+      if (writing) {
+        if (schema === 'assistant') await saveAssistantSchema(client, before, state);
+        else await saveDeployedSchema(client, before, state);
+      }
       await client.query('COMMIT');
       return clone(result);
     } catch (error) { await client.query('ROLLBACK'); throw error; }

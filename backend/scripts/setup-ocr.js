@@ -1,9 +1,13 @@
-import 'dotenv/config';
+import dotenv from 'dotenv';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const backendDirectory = fileURLToPath(new URL('../', import.meta.url));
+dotenv.config({ path: path.join(backendDirectory, '.env') });
 
 const language = process.env.OCR_LANGUAGE || 'eng';
-const directory = path.resolve(process.env.OCR_DATA_PATH || './data/ocr');
+const directory = path.resolve(backendDirectory, process.env.OCR_DATA_PATH || './data/ocr');
 if (!/^[a-z]{3}(\+[a-z]{3})*$/.test(language)) throw new Error('OCR_LANGUAGE must use three-letter Tesseract language codes.');
 await mkdir(directory, { recursive: true, mode: 0o700 });
 for (const code of language.split('+')) {

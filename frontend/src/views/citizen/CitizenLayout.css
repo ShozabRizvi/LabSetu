@@ -130,6 +130,13 @@
   color: #0f172a;
 }
 
+.citizen-assistant-link {
+  color: #15803d;
+  text-decoration: none;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
 .citizen-icon {
   width: 18px;
   height: 18px;
@@ -583,6 +590,10 @@
 
 /* Mobile responsive */
 @media (max-width: 768px) {
+  .citizen-header-left { min-width: 0; }
+  .citizen-badge { display: none; }
+  .citizen-header-right { gap: 0.5rem; }
+  .citizen-user-meta { display: none; }
   .citizen-mobile-menu-btn {
     display: block;
   }
@@ -615,4 +626,18 @@
   .citizen-user-meta {
     display: none;
   }
+  .citizen-header {
+    height: 112px;
+    box-sizing: border-box;
+    min-height: 64px;
+    padding: 0.5rem 0.75rem;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+  .citizen-header-left { width: 100%; }
+  .citizen-badge { display: none; }
+  .citizen-header-right { gap: 0.25rem; width: 100%; justify-content: flex-end; }
+  .citizen-header-link.citizen-assistant-link { display: flex; font-size: 0.75rem; padding: 0.35rem; }
+  .citizen-assistant-link .citizen-icon { display: none; }
+  .citizen-sidebar { top: 112px; }
 }

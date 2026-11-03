@@ -1,451 +1,49 @@
-import React, { useState } from 'react';
-import { demoCitizenBills } from '../../data/mockLabData';
-import { useAuth } from '../../context/AuthContext';
-import { useTranslation } from '../../context/LanguageContext';
-import {
-  CreditCardIcon,
-  CheckCircleIcon,
-  ClockIcon,
-  ArrowDownTrayIcon,
-  XMarkIcon,
-  CurrencyRupeeIcon,
-  QrCodeIcon
-} from '@heroicons/react/24/outline';
+import React, { useCallback, useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { useLanguage } from '../../context/LanguageContext';
+import { assistantService } from '../../services/assistantService';
+import { money, rows, statusLabel } from '../../utils/assistantUtils';
+import './CitizenAssistant.css';
 
 export default function CitizenBills() {
-  const { currentUser, activeUHID, activeMember } = useAuth();
-  const { t, lang } = useTranslation();
-  const [bills, setBills] = useState(demoCitizenBills);
-  const [payingBill, setPayingBill] = useState(null);
-  const [paymentMode, setPaymentMode] = useState('upi');
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [paymentSuccess, setPaymentSuccess] = useState(false);
-  const [selectedReceipt, setSelectedReceipt] = useState(null);
+  const { lang } = useLanguage();
+  const hi = lang === 'hi';
+  const [bookings, setBookings] = useState([]);
+  const [busy, setBusy] = useState(true);
+  const [error, setError] = useState('');
+  const [receipt, setReceipt] = useState(null);
+  const refresh = useCallback(async () => {
+    setBusy(true); setError('');
+    try { setBookings(rows(await assistantService.appointments(), 'appointments')); }
+    catch (failure) { setError(failure.message); }
+    finally { setBusy(false); }
+  }, []);
+  useEffect(() => {
+    let alive = true;
+    assistantService.appointments().then(data => { if (alive) setBookings(rows(data, 'appointments')); })
+      .catch(failure => { if (alive) setError(failure.message); })
+      .finally(() => { if (alive) setBusy(false); });
+    return () => { alive = false; };
+  }, []);
 
-  const totalPaid = bills.reduce((acc, b) => acc + b.paid, 0);
-  const totalDue = bills.reduce((acc, b) => acc + b.due, 0);
+  async function viewReceipt(id) {
+    setBusy(true); setError(''); setReceipt(null);
+    try { setReceipt(await assistantService.receipt(id)); }
+    catch (failure) { setError(failure.message); }
+    finally { setBusy(false); }
+  }
 
-  const handlePaySubmit = (e) => {
-    e.preventDefault();
-    setIsProcessing(true);
-    setTimeout(() => {
-      setIsProcessing(false);
-      setPaymentSuccess(true);
-      setTimeout(() => {
-        setBills(bills.map(b => b.id === payingBill.id ? {
-          ...b,
-          paid: b.total,
-          due: 0,
-          status: 'Paid',
-          method: paymentMode === 'upi' ? 'UPI (Verified Online)' : 'Card (Online Gateway)',
-          transactionId: `TXN-${Math.floor(10000000 + Math.random() * 90000000)}`
-        } : b));
-        setPaymentSuccess(false);
-        setPayingBill(null);
-      }, 1000);
-    }, 1200);
-  };
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-      <div>
-        <h2 style={{ margin: '0 0 0.25rem 0', fontSize: '1.5rem', color: '#0f172a' }}>{t('bills.pageTitle')}</h2>
-        <p style={{ margin: 0, fontSize: '0.9rem', color: '#64748b' }}>
-          {t('bills.subtitle')}
-        </p>
-      </div>
-
-      {/* Summary Stats */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem' }}>
-        <div style={{
-          backgroundColor: '#ffffff',
-          borderRadius: '10px',
-          border: '1px solid #e2e8f0',
-          padding: '1.25rem',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '1rem'
-        }}>
-          <div style={{
-            width: '44px',
-            height: '44px',
-            borderRadius: '8px',
-            backgroundColor: '#dcfce7',
-            color: '#15803d',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center'
-          }}>
-            <CheckCircleIcon style={{ width: '24px' }} />
-          </div>
-          <div>
-            <div style={{ fontSize: '1.35rem', fontWeight: '700', color: '#0f172a' }}>₹{totalPaid}</div>
-            <div style={{ fontSize: '0.8rem', color: '#64748b' }}>{t('bills.totalPaid')}</div>
-          </div>
-        </div>
-
-        <div style={{
-          backgroundColor: '#ffffff',
-          borderRadius: '10px',
-          border: '1px solid #e2e8f0',
-          padding: '1.25rem',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '1rem'
-        }}>
-          <div style={{
-            width: '44px',
-            height: '44px',
-            borderRadius: '8px',
-            backgroundColor: totalDue > 0 ? '#fee2e2' : '#f1f5f9',
-            color: totalDue > 0 ? '#dc2626' : '#64748b',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center'
-          }}>
-            <CreditCardIcon style={{ width: '24px' }} />
-          </div>
-          <div>
-            <div style={{ fontSize: '1.35rem', fontWeight: '700', color: totalDue > 0 ? '#dc2626' : '#0f172a' }}>
-              ₹{totalDue}
-            </div>
-            <div style={{ fontSize: '0.8rem', color: '#64748b' }}>{t('bills.outstanding')}</div>
-          </div>
-        </div>
-      </div>
-
-      {/* Invoices Table */}
-      <div style={{
-        backgroundColor: '#ffffff',
-        borderRadius: '12px',
-        border: '1px solid #e2e8f0',
-        overflow: 'hidden'
-      }}>
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.875rem' }}>
-            <thead>
-              <tr style={{ backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-                <th style={{ padding: '0.85rem 1rem', color: '#475569', fontWeight: '600' }}>{t('bills.invoiceNo', 'INVOICE ID')}</th>
-                <th style={{ padding: '0.85rem 1rem', color: '#475569', fontWeight: '600' }}>{t('common.date', 'DATE')}</th>
-                <th style={{ padding: '0.85rem 1rem', color: '#475569', fontWeight: '600' }}>{t('bills.testName', 'TESTS INCLUDED')}</th>
-                <th style={{ padding: '0.85rem 1rem', color: '#475569', fontWeight: '600' }}>{t('bills.amount', 'TOTAL AMOUNT')}</th>
-                <th style={{ padding: '0.85rem 1rem', color: '#475569', fontWeight: '600' }}>{t('bills.paid')} / {t('bills.pending')}</th>
-                <th style={{ padding: '0.85rem 1rem', color: '#475569', fontWeight: '600' }}>{t('common.status', 'STATUS')}</th>
-                <th style={{ padding: '0.85rem 1rem', color: '#475569', fontWeight: '600' }}>{t('common.action', 'ACTIONS')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {bills.map((b) => (
-                <tr key={b.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                  <td style={{ padding: '0.9rem 1rem', fontFamily: 'monospace', fontWeight: '600', color: '#0f172a' }}>
-                    {b.id}
-                  </td>
-                  <td style={{ padding: '0.9rem 1rem', color: '#475569' }}>
-                    {b.date}
-                  </td>
-                  <td style={{ padding: '0.9rem 1rem' }}>
-                    {b.tests.join(', ')}
-                  </td>
-                  <td style={{ padding: '0.9rem 1rem', fontWeight: '600', color: '#0f172a' }}>
-                    ₹{b.total}
-                  </td>
-                  <td style={{ padding: '0.9rem 1rem' }}>
-                    <span style={{ color: '#15803d', fontWeight: '600' }}>₹{b.paid}</span>
-                    {b.due > 0 && <span style={{ color: '#dc2626', marginLeft: '0.4rem', fontWeight: '600' }}>({lang === 'hi' ? 'बकाया' : 'Due'}: ₹{b.due})</span>}
-                  </td>
-                  <td style={{ padding: '0.9rem 1rem' }}>
-                    <span style={{
-                      padding: '0.2rem 0.5rem',
-                      borderRadius: '9999px',
-                      fontSize: '0.75rem',
-                      fontWeight: '600',
-                      backgroundColor: b.status === 'Paid' ? '#dcfce7' : '#fee2e2',
-                      color: b.status === 'Paid' ? '#15803d' : '#dc2626'
-                    }}>
-                      {b.status === 'Paid' ? t('bills.paid') : t('bills.pending')}
-                    </span>
-                  </td>
-                  <td style={{ padding: '0.9rem 1rem' }}>
-                    <div style={{ display: 'flex', gap: '0.4rem' }}>
-                      {b.due > 0 ? (
-                        <button
-                          type="button"
-                          onClick={() => setPayingBill(b)}
-                          style={{
-                            padding: '0.4rem 0.75rem',
-                            borderRadius: '6px',
-                            border: 'none',
-                            backgroundColor: '#15803d',
-                            color: '#ffffff',
-                            fontWeight: '600',
-                            fontSize: '0.775rem',
-                            cursor: 'pointer'
-                          }}
-                        >
-                          {t('bills.payNow')} ₹{b.due}
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => setSelectedReceipt(b)}
-                          style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '0.3rem',
-                            padding: '0.4rem 0.75rem',
-                            borderRadius: '6px',
-                            border: '1px solid #cbd5e1',
-                            backgroundColor: '#ffffff',
-                            color: '#334155',
-                            fontWeight: '600',
-                            fontSize: '0.775rem',
-                            cursor: 'pointer'
-                          }}
-                        >
-                          <ArrowDownTrayIcon style={{ width: '14px' }} /> {t('bills.downloadReceipt')}
-                        </button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Payment Modal */}
-      {payingBill && (
-        <div className="citizen-modal-backdrop" onClick={() => setPayingBill(null)}>
-          <div className="citizen-modal-card" onClick={e => e.stopPropagation()}>
-            <div className="citizen-modal-header">
-              <h3>Settle Invoice {payingBill.id}</h3>
-              <button 
-                type="button" 
-                className="citizen-modal-close" 
-                onClick={() => setPayingBill(null)}
-              >
-                <XMarkIcon style={{ width: '20px' }} />
-              </button>
-            </div>
-            <form onSubmit={handlePaySubmit} className="citizen-modal-body">
-              <div style={{ backgroundColor: '#f8fafc', padding: '0.85rem', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
-                  <span style={{ color: '#64748b', fontSize: '0.85rem' }}>Invoice Amount Due:</span>
-                  <strong style={{ fontSize: '1.1rem', color: '#15803d' }}>₹{payingBill.due}</strong>
-                </div>
-                <div style={{ fontSize: '0.8rem', color: '#475569' }}>
-                  Diagnostics: {payingBill.tests.join(', ')}
-                </div>
-              </div>
-
-              <div>
-                <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '600', fontSize: '0.85rem' }}>
-                  Choose Payment Method
-                </label>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
-                  <button
-                    type="button"
-                    onClick={() => setPaymentMode('upi')}
-                    style={{
-                      padding: '0.75rem',
-                      borderRadius: '8px',
-                      border: '1px solid',
-                      borderColor: paymentMode === 'upi' ? '#15803d' : '#cbd5e1',
-                      backgroundColor: paymentMode === 'upi' ? '#f0fdf4' : '#ffffff',
-                      color: paymentMode === 'upi' ? '#15803d' : '#334155',
-                      fontWeight: '600',
-                      fontSize: '0.85rem',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '0.4rem'
-                    }}
-                  >
-                    <QrCodeIcon style={{ width: '18px' }} /> UPI / QR
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPaymentMode('card')}
-                    style={{
-                      padding: '0.75rem',
-                      borderRadius: '8px',
-                      border: '1px solid',
-                      borderColor: paymentMode === 'card' ? '#15803d' : '#cbd5e1',
-                      backgroundColor: paymentMode === 'card' ? '#f0fdf4' : '#ffffff',
-                      color: paymentMode === 'card' ? '#15803d' : '#334155',
-                      fontWeight: '600',
-                      fontSize: '0.85rem',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '0.4rem'
-                    }}
-                  >
-                    <CreditCardIcon style={{ width: '18px' }} /> Card / NetBanking
-                  </button>
-                </div>
-              </div>
-
-              {paymentMode === 'upi' ? (
-                <div style={{ textAlign: 'center', padding: '1rem', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px dashed #cbd5e1' }}>
-                  <div style={{ fontSize: '0.85rem', color: '#475569', marginBottom: '0.5rem' }}>
-                    Scan QR or Pay to UPI ID: <strong>labsetu@hdfcbank</strong>
-                  </div>
-                  <div style={{
-                    width: '120px',
-                    height: '120px',
-                    margin: '0 auto',
-                    backgroundColor: '#ffffff',
-                    border: '1px solid #cbd5e1',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    borderRadius: '8px'
-                  }}>
-                    <QrCodeIcon style={{ width: '80px', height: '80px', color: '#0f172a' }} />
-                  </div>
-                  <span style={{ display: 'block', fontSize: '0.75rem', color: '#94a3b8', marginTop: '0.4rem' }}>
-                    Demo Simulation: Click button below to complete payment
-                  </span>
-                </div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
-                  <input
-                    type="text"
-                    placeholder="Card Number (Demo: 4242 •••• •••• 4242)"
-                    defaultValue="4242 4242 4242 4242"
-                    style={{ padding: '0.65rem', borderRadius: '6px', border: '1px solid #cbd5e1' }}
-                  />
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
-                    <input type="text" placeholder="MM/YY" defaultValue="12/28" style={{ padding: '0.65rem', borderRadius: '6px', border: '1px solid #cbd5e1' }} />
-                    <input type="text" placeholder="CVV" defaultValue="123" style={{ padding: '0.65rem', borderRadius: '6px', border: '1px solid #cbd5e1' }} />
-                  </div>
-                </div>
-              )}
-
-              {paymentSuccess && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#15803d', fontWeight: '600', fontSize: '0.875rem' }}>
-                  <CheckCircleIcon style={{ width: '20px' }} /> Payment received successfully! Updating invoice...
-                </div>
-              )}
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '0.5rem' }}>
-                <button
-                  type="button"
-                  onClick={() => setPayingBill(null)}
-                  style={{
-                    padding: '0.55rem 1rem',
-                    borderRadius: '6px',
-                    border: '1px solid #cbd5e1',
-                    background: '#ffffff',
-                    cursor: 'pointer'
-                  }}
-                >
-                  {t('common.cancel')}
-                </button>
-                <button
-                  type="submit"
-                  disabled={isProcessing || paymentSuccess}
-                  style={{
-                    padding: '0.55rem 1.25rem',
-                    borderRadius: '6px',
-                    border: 'none',
-                    backgroundColor: '#15803d',
-                    color: '#ffffff',
-                    fontWeight: '600',
-                    cursor: 'pointer'
-                  }}
-                >
-                  {isProcessing ? (lang === 'hi' ? 'भुगतान संसाधित हो रहा है...' : 'Processing Payment...') : `${t('bills.payAmount')}${payingBill.due}`}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Receipt View Modal */}
-      {selectedReceipt && (
-        <div className="citizen-modal-backdrop" onClick={() => setSelectedReceipt(null)}>
-          <div className="citizen-modal-card" onClick={e => e.stopPropagation()} style={{ maxWidth: '480px' }}>
-            <div className="citizen-modal-header">
-              <h3>Payment Receipt</h3>
-              <button type="button" className="citizen-modal-close" onClick={() => setSelectedReceipt(null)}>
-                <XMarkIcon style={{ width: '20px' }} />
-              </button>
-            </div>
-            <div className="citizen-modal-body" style={{ fontSize: '0.875rem' }}>
-              <div style={{ textAlign: 'center', borderBottom: '1px dashed #cbd5e1', paddingBottom: '1rem' }}>
-                <h4 style={{ margin: '0 0 0.25rem 0', color: '#15803d' }}>LabSetu Diagnostics</h4>
-                <p style={{ margin: 0, fontSize: '0.8rem', color: '#64748b' }}>Authorized Laboratory Payment Slip</p>
-              </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', margin: '0.75rem 0' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: '#64748b' }}>Receipt #:</span>
-                  <strong>{selectedReceipt.id}</strong>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: '#64748b' }}>Date:</span>
-                  <span>{selectedReceipt.date}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: '#64748b' }}>Patient:</span>
-                  <strong>{activeMember?.name || (currentUser?.name && !currentUser.name.includes('@') ? currentUser.name : 'Patient')}</strong>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: '#64748b' }}>Payment Mode:</span>
-                  <span>{selectedReceipt.method || 'Online'}</span>
-                </div>
-                {selectedReceipt.transactionId && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: '#64748b' }}>Txn Reference:</span>
-                    <code style={{ fontSize: '0.75rem' }}>{selectedReceipt.transactionId}</code>
-                  </div>
-                )}
-                <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #e2e8f0', paddingTop: '0.5rem' }}>
-                  <span style={{ fontWeight: '600' }}>Total Paid:</span>
-                  <strong style={{ color: '#15803d', fontSize: '1.1rem' }}>₹{selectedReceipt.paid}</strong>
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '1rem' }}>
-                <button
-                  type="button"
-                  onClick={() => window.print()}
-                  style={{
-                    padding: '0.55rem 1rem',
-                    borderRadius: '6px',
-                    border: '1px solid #15803d',
-                    backgroundColor: '#15803d',
-                    color: '#ffffff',
-                    fontWeight: '600',
-                    cursor: 'pointer'
-                  }}
-                >
-                  Print Receipt
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSelectedReceipt(null)}
-                  style={{
-                    padding: '0.55rem 1rem',
-                    borderRadius: '6px',
-                    border: '1px solid #cbd5e1',
-                    background: '#ffffff',
-                    cursor: 'pointer'
-                  }}
-                >
-                  Close
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
+  return <main className="assistant-page">
+    <header className="assistant-heading"><div><h1>{hi ? 'मेरे बिल और भुगतान' : 'My bills & payments'}</h1><p>{hi ? 'सहेजे गए इनवॉइस और सर्वर द्वारा सत्यापित भुगतान रसीदें।' : 'Persisted invoices and server-verified payment receipts for your account.'}</p></div><button className="secondary" disabled={busy} onClick={refresh}>{busy ? 'Loading…' : 'Refresh invoices'}</button></header>
+    {error && <p className="assistant-error" role="alert">{error}</p>}
+    {!busy && !error && bookings.length === 0 && <p>{hi ? 'कोई सहेजा गया इनवॉइस नहीं मिला।' : 'No persisted booking invoices were returned for your account.'}</p>}
+    {bookings.map(booking => <article className="assistant-card" key={booking.id}>
+      <div className="assistant-card-title"><h2>Invoice {booking.invoice?.id || 'unavailable'}</h2><strong>{statusLabel(booking.invoice?.status)}</strong></div>
+      <p>Booking: {booking.id} · {booking.date}</p>
+      {booking.invoice && <><table><caption className="sr-only">Invoice items</caption><thead><tr><th>Test</th><th>Amount</th></tr></thead><tbody>{booking.invoice.items?.map((item, index) => <tr key={item.testId || index}><td>{item.name}</td><td>{money(item.totalPaise ?? item.amountPaise, booking.invoice.currency)}</td></tr>)}</tbody><tfoot><tr><th>Total (including configured adjustments)</th><th>{money(booking.invoice.totalPaise, booking.invoice.currency)}</th></tr></tfoot></table>
+        {booking.invoice.status === 'paid' && <button className="secondary" disabled={busy} onClick={() => viewReceipt(booking.id)}>View verified receipt</button>}</>}
+      <p><Link to={`/portal/assistant?booking=${encodeURIComponent(booking.id)}`}>Review invoice and payment in LabSetu Assistant</Link></p>
+    </article>)}
+    {receipt && <section className="assistant-receipt"><h2>{receipt.simulated ? 'SIMULATED receipt — no money transferred' : 'Server-verified payment receipt'}</h2><dl>{Object.entries(receipt).filter(([, value]) => value != null && typeof value !== 'object').map(([key, value]) => <React.Fragment key={key}><dt>{statusLabel(key)}</dt><dd>{key.toLowerCase().includes('paise') ? money(value, receipt.currency) : String(value)}</dd></React.Fragment>)}</dl></section>}
+  </main>;
 }

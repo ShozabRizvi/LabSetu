@@ -1,4 +1,5 @@
 import express from 'express';
+import { randomUUID } from 'node:crypto';
 import { assistantConfig, fault } from './config.js';
 import { createPatientAuthentication } from './auth.js';
 import { createFileStore, createPgStore } from './store.js';
@@ -11,14 +12,14 @@ import { createReportService } from './reports.js';
 
 const unavailableStore = { mode: 'unconfigured', read: async () => { throw fault(503, 'Database integration is not configured. Configure DATABASE_URL or explicit local DEMO_MODE.'); }, transaction: async () => { throw fault(503, 'Database integration is not configured.'); } };
 
-export function createAssistantRouter({ pool = null, config = assistantConfig(), store: suppliedStore, fetchImpl, extract } = {}) {
+export function createAssistantRouter({ pool = null, config = assistantConfig(), store: suppliedStore, fetchImpl, extract, geminiService } = {}) {
   const router = express.Router();
   const store = suppliedStore || (config.demoMode ? createFileStore(config.dataFile) : pool ? createPgStore(pool) : unavailableStore);
   const workflow = createWorkflowService({ store, config: { ...config, paymentTiming: config.paymentStage === 'booking' ? 'at_booking' : 'after_report' } });
   const payments = createPaymentService({ store, workflow, config, fetchImpl });
   const authentication = createPatientAuthentication(config);
   const executor = createToolExecutor({ store, workflow, payments });
-  const agent = createAgent({ store, executor, workflow, config, fetchImpl });
+  const agent = createAgent({ store, executor, workflow, config, fetchImpl, geminiService });
   const prescriptions = createPrescriptionService({ store, workflow, config, extract });
   const reports = createReportService({ store, workflow, config });
   const run = fn => async (req, res) => {
@@ -42,13 +43,20 @@ export function createAssistantRouter({ pool = null, config = assistantConfig(),
       next();
     };
   }
-  router.get('/config', (_req, res) => res.json({ success: true, data: { mode: config.aiProvider, storageMode: config.demoMode ? 'demo' : store.mode === 'postgresql' ? 'postgres' : 'unconfigured', paymentMode: config.paymentMode, paymentStage: config.paymentStage, demoAuth: Boolean(config.demoMode && config.jwtSecret?.length >= 32 && config.demoPassword?.length >= 12) } }));
+  router.get('/config', (_req, res) => res.json({ success: true, data: { mode: config.aiProvider, aiConfigured: config.aiProvider === 'gemini' ? Boolean(config.geminiKey) : config.aiProvider === 'openai' ? Boolean(config.openaiKey && config.openaiModel) : config.aiProvider === 'demo', authenticationConfigured: Boolean(config.supabaseUrl && config.supabaseKey), storageMode: config.demoMode ? 'demo' : store.mode === 'postgresql' ? 'postgres' : 'unconfigured', paymentMode: config.paymentMode, paymentStage: config.paymentStage, demoAuth: Boolean(config.demoMode && config.jwtSecret?.length >= 32 && config.demoPassword?.length >= 12) } }));
   router.post('/demo-session', limited(10, req => `login:${req.ip}`), run(req => authentication.demoSession(req.body)));
   router.post('/public/chat', limited(12, req => `public-chat:${req.ip}`), run(req => agent.publicChat(req.body)));
   router.use(authentication.authenticate);
   router.use(limited(90, req => `actor:${req.actor.id}`));
   router.post('/chat', limited(12, req => `chat:${req.actor.id}`), run(req => agent.chat(req.actor, req.body)));
   router.post('/confirm', run(req => agent.confirm(req.actor, req.body)));
+  router.get('/conversations/:id', run(req => store.read(state => {
+    const conversation = state.conversations[req.params.id];
+    if (!conversation || conversation.patientId !== req.actor.id) throw fault(404, 'Conversation not found.');
+    const action = Object.values(state.confirmations).find(action => action.conversationId === conversation.id && action.actorId === req.actor.id && action.status === 'pending' && action.expiresAt > Date.now());
+    const pendingAction = action ? { id: action.id, type: action.type, summary: action.summary } : undefined;
+    return { conversationId: conversation.id, messages: conversation.messages.map(({ role, displayContent, content }) => ({ role, content: displayContent || content })), pendingAction };
+  })));
   router.get('/tests', run(req => workflow.searchTests(req.query.query || '')));
   router.get('/slots', run(req => workflow.availability(req.query.date)));
   router.get('/appointments', run(req => workflow.appointments(req.actor)));
@@ -61,16 +69,42 @@ export function createAssistantRouter({ pool = null, config = assistantConfig(),
   router.post('/bookings', run(req => { confirmed(req.body); return workflow.book(req.actor, req.body); }));
   router.post('/bookings/:id/cancel', run(req => { confirmed(req.body); return workflow.cancel(req.actor, req.params.id); }));
   router.get('/bookings/:id/invoice', run(req => workflow.invoice(req.actor, req.params.id)));
+  router.get('/bookings/:id/explanation', run(async req => {
+    const result = await executor.execute(req.actor, 'explain_approved_report', { bookingId: req.params.id }, undefined, req.query.language === 'hi' ? 'hi' : 'en');
+    if (!result.success) throw fault(result.code === 'record_not_found' ? 404 : 409, result.error, result.code);
+    return result.data;
+  }));
   router.get('/bookings/:id/report.pdf', run(async (req, res) => {
     const buffer = await reports.getPdf(req.actor, req.params.id);
     res.type('application/pdf').set('Content-Disposition', 'inline; filename="LabSetu-approved-report.pdf"').send(buffer);
   }));
   router.get('/bookings/:id/receipt', run(req => payments.receipt(req.actor, req.params.id)));
-  router.post('/prescriptions', limited(5, req => `ocr:${req.actor.id}`), run(req => prescriptions.upload(req.actor, req.body)));
+  router.post('/prescriptions', limited(5, req => `ocr:${req.actor.id}`), run(async req => {
+    const conversationId = req.body?.conversationId || randomUUID();
+    if (!/^[a-f0-9-]{36}$/i.test(conversationId)) throw fault(400, 'Invalid conversation identifier.');
+    await store.read(state => {
+      if (state.conversations[conversationId] && state.conversations[conversationId].patientId !== req.actor.id) throw fault(404, 'Conversation not found.');
+    });
+    const result = await prescriptions.upload(req.actor, req.body);
+    await store.transaction(state => {
+      const c = state.conversations[conversationId] || { id: conversationId, patientId: req.actor.id, messages: [], createdAt: new Date().toISOString() };
+      if (c.patientId !== req.actor.id) throw fault(404, 'Conversation not found.');
+      c.messages.push({ role: 'user', displayContent: 'Prescription uploaded. Suggested tests require your review.', content: `Uploaded prescription ID: ${result.id}. Verified catalogue candidates (not patient-approved selections): ${JSON.stringify(result.candidates)}. Ask the patient to review these before choosing tests.` });
+      c.messages = c.messages.slice(-12);
+      c.updatedAt = new Date().toISOString();
+      state.conversations[conversationId] = c;
+    });
+    return { ...result, conversationId };
+  }));
   router.post('/payments/order', run(req => { confirmed(req.body); return payments.createOrder(req.actor, req.body.bookingId, req.body.idempotencyKey); }));
   router.post('/payments/verify', run(req => payments.verify(req.actor, req.body)));
   router.get('/bookings/:id/payment', run(req => payments.status(req.actor, req.params.id)));
   router.post('/payments/:id/simulate', run(req => { confirmed(req.body); return payments.simulate(req.actor, req.params.id, req.body.outcome); }));
+  router.get('/staff/catalogue', run(req => workflow.staffCatalogue(req.actor)));
+  router.post('/staff/tests', run(req => workflow.publishTest(req.actor, req.body)));
+  router.put('/staff/tests/:id', run(req => workflow.publishTest(req.actor, req.body, req.params.id)));
+  router.post('/staff/slots', run(req => workflow.publishSlot(req.actor, req.body)));
+  router.put('/staff/slots/:id', run(req => workflow.publishSlot(req.actor, req.body, req.params.id)));
   router.get('/staff/bookings', run(req => { if (req.actor.role !== 'authority') throw fault(403, 'Laboratory staff access is required.'); return workflow.appointments(req.actor); }));
   router.post('/staff/bookings/:id/transition', run(async req => {
     const booking = await workflow.staffTransition(req.actor, req.params.id, req.body);

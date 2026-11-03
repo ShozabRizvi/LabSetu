@@ -9,9 +9,9 @@ export function secureEqual(a, b) {
   return left.length === right.length && timingSafeEqual(left, right);
 }
 
-export function createPatientAuthentication(config) {
+export function createPatientAuthentication(config, { createSupabaseClient = createClient } = {}) {
   const supabase = config.supabaseUrl && config.supabaseKey
-    ? createClient(config.supabaseUrl, config.supabaseKey, { auth: { persistSession: false, autoRefreshToken: false }, global: { fetch: (url, options) => fetch(url, { ...options, signal: AbortSignal.timeout(10000) }) } })
+    ? createSupabaseClient(config.supabaseUrl, config.supabaseKey, { auth: { persistSession: false, autoRefreshToken: false }, global: { fetch: (url, options) => fetch(url, { ...options, signal: AbortSignal.timeout(10000) }) } })
     : null;
 
   async function authenticate(req, res, next) {
@@ -20,12 +20,17 @@ export function createPatientAuthentication(config) {
       if (!token) throw fault(401, 'Sign in to access your healthcare records.', 'UNAUTHENTICATED');
       // Local demo tokens are accepted only in an explicitly configured demo process.
       if (config.demoMode && config.jwtSecret) {
+        let claims;
         try {
-          const claims = jwt.verify(token, config.jwtSecret, { algorithms: ['HS256'], audience: 'labsetu-demo', issuer: 'labsetu-local' });
-          if (!claims.exp || ![demoCitizenId, demoAuthorityId].includes(claims.sub)) throw new Error('Invalid demo subject');
+          claims = jwt.verify(token, config.jwtSecret, { algorithms: ['HS256'], audience: 'labsetu-demo', issuer: 'labsetu-local' });
+        } catch {
+          // A non-demo token may still be a genuine Supabase access token.
+        }
+        if (claims) {
+          if (!claims.exp || ![demoCitizenId, demoAuthorityId].includes(claims.sub)) throw fault(401, 'Use the synthetic demo sign-in for this local demonstration.', 'UNAUTHENTICATED');
           req.actor = { id: claims.sub, role: claims.sub === demoAuthorityId ? 'authority' : 'citizen', labId: demoLabId, canApproveReports: claims.sub === demoAuthorityId, name: claims.sub === demoAuthorityId ? 'Synthetic laboratory staff' : 'Synthetic patient', demo: true };
           return next();
-        } catch { throw fault(401, 'Use the synthetic demo sign-in for this local demonstration.'); }
+        }
       }
       if (!supabase) throw fault(503, 'Authentication is not configured. Local demonstrations require explicit demo configuration.', 'AUTH_UNAVAILABLE');
       const { data, error } = await supabase.auth.getUser(token);

@@ -1,50 +1,23 @@
 import apiClient from './apiClient';
+import { supabase } from '../lib/supabase';
+import { createAssistantRequest } from './assistantRequest';
 
 // Healthcare actions intentionally have no optimistic or mock-data fallback.
-export async function assistantRequest(path, { method = 'GET', body, binary = false, authRole } = {}) {
-  let response;
-  const headers = apiClient.getHeaders();
-  if (authRole) {
-    const tokenKey = authRole === 'citizen' ? 'labsetu_patient_token' : 'labsetu_authority_token';
-    const token = sessionStorage.getItem(tokenKey) || localStorage.getItem(tokenKey);
-    if (token) headers.Authorization = `Bearer ${token}`;
-    else delete headers.Authorization;
-  }
-  if (path === '/public/chat') delete headers.Authorization;
-  if (window.location.pathname === '/assistant-demo') {
-    delete headers.Authorization;
-    const token = sessionStorage.getItem('labsetu_assistant_demo_token');
-    if (token) headers.Authorization = `Bearer ${token}`;
-  }
-  try {
-    response = await fetch(`${apiClient.baseUrl}/assistant${path}`, {
-      method,
-      headers,
-      body: body === undefined ? undefined : JSON.stringify(body),
-      signal: AbortSignal.timeout(60000),
-    });
-  } catch (error) {
-    throw new Error(error.name === 'TimeoutError'
-      ? 'The request timed out. Refresh status before retrying an action.'
-      : 'The LabSetu backend is unavailable. Please try again when the connection is restored.');
-  }
-  if (binary && response.ok) return response.blob();
-  const payload = await response.json().catch(() => null);
-  if (!response.ok || payload?.success !== true) {
-    throw new Error(payload?.error?.message || payload?.error || `Request failed (${response.status}).`);
-  }
-  return payload.data;
-}
+export const assistantRequest = createAssistantRequest({ apiClient, supabase, browser: window });
 
 export const assistantService = {
   config: () => assistantRequest('/config'),
   publicChat: body => assistantRequest('/public/chat', { method: 'POST', body }),
   chat: body => assistantRequest('/chat', { method: 'POST', body, authRole: 'citizen' }),
   confirm: body => assistantRequest('/confirm', { method: 'POST', body }),
+  conversation: id => assistantRequest(`/conversations/${encodeURIComponent(id)}`),
   tests: query => assistantRequest(`/tests?query=${encodeURIComponent(query || '')}`),
   slots: date => assistantRequest(`/slots?date=${encodeURIComponent(date)}`),
   appointments: () => assistantRequest('/appointments'),
+  notifications: () => assistantRequest('/notifications'),
   booking: id => assistantRequest(`/bookings/${encodeURIComponent(id)}`),
+  explanation: (id, language = 'en') => assistantRequest(`/bookings/${encodeURIComponent(id)}/explanation?language=${encodeURIComponent(language)}`),
+  paymentStatus: id => assistantRequest(`/bookings/${encodeURIComponent(id)}/payment`),
   book: body => assistantRequest('/bookings', { method: 'POST', body }),
   upload: body => assistantRequest('/prescriptions', { method: 'POST', body }),
   cancel: id => assistantRequest(`/bookings/${encodeURIComponent(id)}/cancel`, { method: 'POST', body: { confirmed: true } }),
@@ -54,5 +27,8 @@ export const assistantService = {
   receipt: id => assistantRequest(`/bookings/${encodeURIComponent(id)}/receipt`),
   report: id => assistantRequest(`/bookings/${encodeURIComponent(id)}/report.pdf`, { binary: true }),
   staffBookings: () => assistantRequest('/staff/bookings'),
+  staffCatalogue: () => assistantRequest('/staff/catalogue', { authRole: 'authority' }),
+  publishTest: (id, body) => assistantRequest(`/staff/tests${id ? `/${encodeURIComponent(id)}` : ''}`, { method: id ? 'PUT' : 'POST', body, authRole: 'authority' }),
+  publishSlot: (id, body) => assistantRequest(`/staff/slots${id ? `/${encodeURIComponent(id)}` : ''}`, { method: id ? 'PUT' : 'POST', body, authRole: 'authority' }),
   transition: (id, body) => assistantRequest(`/staff/bookings/${encodeURIComponent(id)}/transition`, { method: 'POST', body }),
 };

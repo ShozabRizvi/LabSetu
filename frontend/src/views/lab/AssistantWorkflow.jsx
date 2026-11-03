@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { assistantService } from '../../services/assistantService';
+import StaffCatalogue from '../../components/assistant/StaffCatalogue';
 import { rows, sampleNext, reportNext, tokenNext, statusLabel } from '../../utils/assistantUtils';
 import '../citizen/CitizenAssistant.css';
 
@@ -56,6 +57,7 @@ export default function AssistantWorkflow() {
 
   return <main className="assistant-page"><header className="assistant-heading"><div><p className="assistant-eyebrow">LABORATORY WORKFLOW</p><h1>Assistant bookings</h1><p>Record queue, sample and report events. Report approval requires an authorised human reviewer.</p></div><button disabled={busy} onClick={() => { setError(''); reload(booking?.id).catch(e => setError(e.message)); }}>Refresh</button></header>
     {error && <p className="assistant-error" role="alert">{error}</p>}{notice && <p className="assistant-notice" role="status">{notice}</p>}
+    <StaffCatalogue />
     <section className="assistant-card"><h2>Laboratory queue</h2>{bookings.length === 0 ? <p>No assistant bookings returned for your laboratory.</p> : <label className="assistant-field">Booking<select value={booking?.id || ''} onChange={e => { if (e.target.value) select(e.target.value); }} disabled={busy}><option value="">Select a booking</option>{bookings.map(item => <option key={item.id} value={item.id}>{item.registrationToken?.tokenNumber || 'No token'} · {item.id} · {item.patientName || item.patientId} · {item.date} · {statusLabel(item.status)}</option>)}</select></label>}</section>
     {booking && <section className="assistant-card"><h2>{booking.id}</h2><p>Patient: {booking.patientName || booking.patientId} · {booking.date} {booking.startTime}</p><div className="assistant-progress"><div><small>Appointment</small><strong>{statusLabel(booking.status)}</strong></div><div><small>Digital token</small><strong>{statusLabel(booking.registrationToken?.status)}</strong></div><div><small>Sample</small><strong>{statusLabel(booking.sample?.status)}</strong></div><div><small>Report</small><strong>{statusLabel(booking.report?.status)}</strong></div></div>
       {booking.registrationToken && <p><strong>{booking.registrationToken.tokenNumber}</strong> · Queue position {booking.registrationToken.queuePosition ?? 'not active'} · Expires {new Date(booking.registrationToken.expiresAt).toLocaleString()}</p>}
