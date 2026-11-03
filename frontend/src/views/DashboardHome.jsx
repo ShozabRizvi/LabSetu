@@ -7,7 +7,7 @@ import {
   DocumentTextIcon,
   ClockIcon,
   ChevronDownIcon
-} from '@heroicons/regular/24/outline';
+} from '@heroicons/react/24/outline';
 
 import './DashboardHome.css';
 import { Link } from 'react-router-dom';
@@ -27,64 +27,86 @@ export default function DashboardHome() {
 
   const fetchLiveAppointments = async () => {
     try {
-      // Fetch all appointments directly from Supabase without center restriction so all patient bookings show up live
-      const [apptsRes, billsRes] = await Promise.all([
-        supabase
+      const masterLabId = 'cb17e71d-cb76-49e6-a202-4a82c94de5d8';
+
+      // 100% Schema-matched query filtered strictly by Master Lab Center ID
+      let { data, error } = await supabase
+        .from('appointments')
+        .select(`
+          id,
+          appointment_date,
+          slot_start,
+          status,
+          purpose,
+          created_at,
+          assistant_data,
+          patients (full_name, phone, patient_code)
+        `)
+        .eq('center_id', masterLabId)
+        .order('created_at', { ascending: false });
+
+      // Graceful fallback if joined relationship with patients table is not mapped in schema cache
+      if (error) {
+        console.warn('[Dashboard] Direct schema query fallback without join:', error.message);
+        const { data: directData, error: directErr } = await supabase
           .from('appointments')
-          .select('*')
-          .order('created_at', { ascending: false })
-          .limit(15),
-        supabase.from('bills').select('due_amount').eq('payment_status', 'due')
-      ]);
+          .select('id, appointment_date, slot_start, status, purpose, created_at, assistant_data')
+          .eq('center_id', masterLabId)
+          .order('created_at', { ascending: false });
 
-      if (apptsRes.error) {
-        console.error('[DashboardHome] Appointments fetch error:', apptsRes.error.message);
+        if (directErr) {
+          console.error('[Dashboard] Direct Fetch Error:', directErr);
+          setLiveAppointments([]);
+          return;
+        }
+        data = directData;
       }
 
-      if (billsRes.error) {
-        console.error('[DashboardHome] Bills fetch error:', billsRes.error.message);
-      }
+      if (data && data.length > 0) {
+        const mappedBookings = data.map(appt => {
+          return {
+            id: appt.id,
+            date: appt.appointment_date,
+            slot: appt.assistant_data?.time_slot || appt.assistant_data?.slot || appt.slot_start || '10:00 AM',
+            status: appt.status || 'booked',
+            tracking_status: appt.assistant_data?.tracking_status || appt.status || 'Order Placed',
+            purpose: appt.purpose || 'Pathology Test',
+            patientName: appt.patients?.full_name || appt.assistant_data?.patient_name || 'Citizen Patient',
+            patient_name: appt.patients?.full_name || appt.assistant_data?.patient_name || 'Citizen Patient',
+            mobile: appt.patients?.phone || appt.assistant_data?.patient_phone || '—',
+            patient_phone: appt.patients?.phone || appt.assistant_data?.patient_phone || '—',
+            uhid: appt.assistant_data?.uhid || appt.patients?.patient_code || '—',
+            source: appt.assistant_data?.source || 'Portal',
+            assistant_data: appt.assistant_data || {}
+          };
+        });
 
-      const dbAppts = apptsRes?.data;
-      const dbBills = billsRes?.data;
-
-      if (dbAppts && dbAppts.length > 0) {
-        setLiveAppointments(dbAppts);
+        setLiveAppointments(mappedBookings);
       } else {
         setLiveAppointments([]);
       }
-
-      if (dbBills && dbBills.length > 0) {
-        const sum = dbBills.reduce((acc, b) => acc + (Number(b.due_amount) || 0), 0);
-        setDbDues(sum);
-      } else {
-        setDbDues(0);
-      }
-    } catch (e) {
-      console.warn('Live appointments exception:', e);
+    } catch (err) {
+      console.warn('LIMS Dashboard Fetch Note:', err);
       setLiveAppointments([]);
     }
   };
 
+  // Component load hone par fetch karein aur Realtime Setup karein
   useEffect(() => {
-    document.title = 'LabSetu - Authority Dashboard (shozab64@gmail.com)';
     fetchLiveAppointments();
 
-    const channelName = `authority-appointments-realtime-${Date.now()}`;
-    const channel = supabase.channel(channelName);
-
-    channel.on(
-      'postgres_changes',
-      { event: '*', schema: 'public', table: 'appointments' },
-      (payload) => {
-        console.log('[Realtime] Appointment change detected on LIMS Authority:', payload);
+    // Instant Realtime synchronization filtered strictly by master center_id
+    const channel = supabase.channel('lims-dashboard-sync')
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'appointments',
+        filter: `center_id=eq.cb17e71d-cb76-49e6-a202-4a82c94de5d8`
+      }, (payload) => {
+        console.log('[Dashboard] New live booking or status change detected:', payload);
         fetchLiveAppointments();
-      }
-    );
-
-    channel.subscribe((status) => {
-      console.log('[Realtime LIMS] Subscription status:', status);
-    });
+      })
+      .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
@@ -94,35 +116,46 @@ export default function DashboardHome() {
   const handleUpdateStatus = async (apptId, nextStatus) => {
     try {
       setUpdatingId(apptId);
-      
+
+      const target = (liveAppointments || []).find(a => a.id === apptId);
+      const updatedAssistantData = {
+        ...(target?.assistant_data || {}),
+        tracking_status: nextStatus
+      };
+
+      // Schema-compliant update: status updated at root, tracking_status inside assistant_data JSONB
       const { error } = await supabase
         .from('appointments')
-        .update({ 
-          status: nextStatus, 
-          tracking_status: nextStatus,
-          updated_at: new Date().toISOString() 
+        .update({
+          status: nextStatus,
+          assistant_data: updatedAssistantData,
+          updated_at: new Date().toISOString()
         })
         .eq('id', apptId);
 
       if (error) {
-        console.error('Status update failed:', error);
+        console.warn('[Dashboard] Status update error:', error);
       }
 
       setLiveAppointments(prev =>
-        prev.map(a => a.id === apptId ? { ...a, status: nextStatus, tracking_status: nextStatus } : a)
+        prev.map(a => a.id === apptId ? {
+          ...a,
+          status: nextStatus,
+          tracking_status: nextStatus,
+          assistant_data: updatedAssistantData
+        } : a)
       );
 
       if (nextStatus === 'Report Signed' || nextStatus === 'Report Ready') {
         await supabase.from('reports').insert({
+          center_id: 'cb17e71d-cb76-49e6-a202-4a82c94de5d8',
           title: 'Complete Blood Count & Comprehensive Metabolic Profile',
           status: 'signed',
-          generated_at: new Date().toISOString(),
-          assistant_data: { appointment_id: apptId, host: 'shozab64@gmail.com' }
-        });
+          generated_at: new Date().toISOString()
+        }).catch(() => {});
       }
-      fetchLiveAppointments();
     } catch (err) {
-      console.warn('Status update exception:', err);
+      console.warn('Status update error:', err);
     } finally {
       setUpdatingId(null);
     }
@@ -142,9 +175,9 @@ export default function DashboardHome() {
     <div className="dashboard-home-container">
       <div className="dashboard-hero-banner">
         <div className="hero-text">
-          <h1>Welcome, Dr. Shozab Rizvi 👋</h1>
+          <h1>Welcome, {currentUser?.name || 'Dr. Shozab Rizvi'} 👋</h1>
           <p>
-            LabSetu Authority Operations Console · Host: shozab64@gmail.com · Lab #{currentUser?.labId || '61326885'} · LabSetu Diagnostics
+            LabSetu Authority Operations Console · Lab #{currentUser?.labId || '61326885'} · {currentUser?.centerName || 'LabSetu Diagnostics'}
           </p>
         </div>
         <div className="hero-actions">
@@ -161,27 +194,53 @@ export default function DashboardHome() {
       </div>
 
       <div className="dashboard-home-grid">
-        <div className="dashboard-home-left" style={{ width: '100%' }}>
-          {/* Real-Time Patient Bookings & Phlebotomy Queue */}
+        <div className="dashboard-home-left">
+          <div className="dashboard-home-quick-access">
+            <Link to="/app/manage/employee-login" className="dashboard-home-qa-card">
+              <div className="dashboard-home-qa-icon-wrapper green-bg">
+                <UserIcon className="dashboard-home-qa-icon green-text" />
+              </div>
+              <span className="dashboard-home-qa-text">
+                Employee logins
+                <strong>{data?.employeeLogins ?? 0}</strong>
+              </span>
+            </Link>
+
+            <Link to="/app/manage/browser-security" className="dashboard-home-qa-card">
+              <div className="dashboard-home-qa-icon-wrapper blue-bg">
+                <ShieldCheckIcon className="dashboard-home-qa-icon blue-text" />
+              </div>
+              <span className="dashboard-home-qa-text">Browser security</span>
+            </Link>
+
+            <Link to="/app/manage/doctor-access" className="dashboard-home-qa-card">
+              <div className="dashboard-home-qa-icon-wrapper purple-bg">
+                <UserGroupIcon className="dashboard-home-qa-icon purple-text" />
+              </div>
+              <span className="dashboard-home-qa-text">Doctor portal</span>
+            </Link>
+          </div>
+
           <div className="dashboard-home-card" style={{ marginBottom: '1.25rem' }}>
             <div className="dashboard-home-card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                 <span style={{ display: 'inline-block', width: '9px', height: '9px', borderRadius: '50%', backgroundColor: '#22c55e', boxShadow: '0 0 0 3px rgba(34, 197, 94, 0.2)' }} />
                 <h3 className="dashboard-home-card-title" style={{ margin: 0 }}>
-                  Live Patient Bookings &amp; Collection Queue (Realtime Supabase Sync)
+                  Live Patient Bookings &amp; Collection Queue
                 </h3>
               </div>
               <span style={{ fontSize: '0.75rem', background: '#dcfce7', color: '#15803d', fontWeight: '700', padding: '0.2rem 0.55rem', borderRadius: '12px' }}>
-                SYNC ACTIVE
+                REALTIME SYNC ACTIVE
               </span>
             </div>
 
             <div className="dashboard-home-card-body" style={{ padding: '0.75rem 1rem' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                 {liveAppointments.length === 0 ? (
-                  <div style={{ textAlign: 'center', padding: '2.5rem 1rem', color: '#64748b', fontSize: '0.9rem' }}>
+                  <div style={{ textAlign: 'center', padding: '2.5rem 1rem', color: '#64748b', fontSize: '0.9rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
                     <span style={{ fontSize: '1.5rem' }}>📋</span>
-                    <p style={{ fontWeight: 500, margin: '0.5rem 0 0 0' }}>No live bookings yet. Book from the patient portal to test real-time sync!</p>
+                    <span style={{ fontWeight: 500 }}>No live bookings at the moment</span>
+                    <span style={{ fontSize: '0.78rem', color: '#94a3b8' }}>Incoming home collection and lab appointments will appear here in real-time.</span>
                   </div>
                 ) : (
                   liveAppointments.map((appt) => (
@@ -191,7 +250,7 @@ export default function DashboardHome() {
                         display: 'flex',
                         justifyContent: 'space-between',
                         alignItems: 'center',
-                        padding: '0.85rem 1rem',
+                        padding: '0.75rem 1rem',
                         background: '#f8fafc',
                         borderRadius: '8px',
                         border: '1px solid #e2e8f0',
@@ -201,21 +260,21 @@ export default function DashboardHome() {
                     >
                       <div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                          <strong style={{ fontSize: '0.9rem', color: '#0f172a' }}>{appt.patient_name || 'Patient'}</strong>
+                          <strong style={{ fontSize: '0.9rem', color: '#0f172a' }}>{appt.patient_name || appt.id}</strong>
                           <span style={{ fontSize: '0.75rem', color: '#64748b' }}>({appt.id.slice(0, 8)})</span>
                           <span style={{
                             fontSize: '0.72rem',
                             fontWeight: '600',
                             padding: '0.15rem 0.45rem',
                             borderRadius: '4px',
-                            background: '#e0f2fe',
-                            color: '#0369a1'
+                            background: appt.visit_type === 'home_collection' ? '#e0f2fe' : '#f1f5f9',
+                            color: appt.visit_type === 'home_collection' ? '#0369a1' : '#475569'
                           }}>
-                            {appt.purpose || 'Pathology'}
+                            {appt.visit_type === 'home_collection' ? '🏠 Home Collection' : '🏥 Lab Visit'}
                           </span>
                         </div>
-                        <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '4px' }}>
-                          Date: {appt.appointment_date || 'Today'} · Slot: {appt.time_slot || '10:00 AM'} · Phone: {appt.patient_phone || '—'} · UHID: {appt.uhid || '—'}
+                        <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '2px' }}>
+                          {appt.notes || `${appt.purpose || 'General Diagnostics'} · Date: ${appt.appointment_date || 'Today'} · Phone: ${appt.patient_phone || '—'}`}
                         </div>
                       </div>
 
@@ -228,7 +287,7 @@ export default function DashboardHome() {
                           style={{
                             fontSize: '0.75rem',
                             fontWeight: '600',
-                            padding: '0.3rem 0.6rem',
+                            padding: '0.25rem 0.5rem',
                             borderRadius: '6px',
                             border: '1px solid #cbd5e1',
                             backgroundColor: '#ffffff',
@@ -245,32 +304,34 @@ export default function DashboardHome() {
                           <option value="Report Ready">Report Ready</option>
                         </select>
 
-                        <button
-                          type="button"
-                          disabled={updatingId === appt.id}
-                          onClick={() => {
-                            const cur = appt.tracking_status || appt.status;
-                            const next = cur === 'Order Placed' || cur === 'Confirmed' 
-                              ? 'Phlebotomist Assigned'
-                              : (cur === 'Phlebotomist Assigned' ? 'Out for Collection' 
-                                : (cur === 'Out for Collection' ? 'Sample Collected' 
-                                  : (cur === 'Sample Collected' ? 'In Transit to Lab' 
-                                    : (cur === 'In Transit to Lab' ? 'Processing' : 'Report Ready'))));
-                            handleUpdateStatus(appt.id, next);
-                          }}
-                          style={{
-                            fontSize: '0.75rem',
-                            fontWeight: '600',
-                            padding: '0.35rem 0.7rem',
-                            borderRadius: '6px',
-                            border: '1px solid #15803d',
-                            background: '#15803d',
-                            color: '#ffffff',
-                            cursor: 'pointer'
-                          }}
-                        >
-                          → Advance Stage
-                        </button>
+                        {appt.status !== 'Report Signed' && appt.status !== 'Report Ready' && (
+                          <button
+                            type="button"
+                            disabled={updatingId === appt.id}
+                            onClick={() => {
+                              const cur = appt.tracking_status || appt.status;
+                              const next = cur === 'Order Placed' || cur === 'Confirmed' || cur === 'scheduled'
+                                ? 'Phlebotomist Assigned'
+                                : (cur === 'Phlebotomist Assigned' ? 'Out for Collection'
+                                  : (cur === 'Out for Collection' ? 'Sample Collected'
+                                    : (cur === 'Sample Collected' ? 'In Transit to Lab'
+                                      : (cur === 'In Transit to Lab' ? 'Processing' : 'Report Ready'))));
+                              handleUpdateStatus(appt.id, next);
+                            }}
+                            style={{
+                              fontSize: '0.75rem',
+                              fontWeight: '600',
+                              padding: '0.3rem 0.65rem',
+                              borderRadius: '6px',
+                              border: '1px solid #cbd5e1',
+                              background: '#ffffff',
+                              color: '#15803d',
+                              cursor: 'pointer'
+                            }}
+                          >
+                            → Advance Stage
+                          </button>
+                        )}
                       </div>
                     </div>
                   ))
@@ -278,6 +339,76 @@ export default function DashboardHome() {
               </div>
             </div>
           </div>
+
+          <div className="dashboard-home-status-row">
+            <div className="dashboard-home-card dashboard-home-status-card">
+              <div className="dashboard-home-card-header">
+                <div>
+                  <h3 className="dashboard-home-card-title">Payments due</h3>
+                  <p className="dashboard-home-card-subtitle">Outstanding balance</p>
+                </div>
+                <Link to="/app/business/due-reports" className="dashboard-home-view-all">View all</Link>
+              </div>
+
+              <div className="dashboard-home-card-body centered">
+                <div className="dashboard-home-status-icon-box">
+                  {Number(dbDues || 0) > 0 ? (
+                    <DocumentTextIcon className="dashboard-home-status-icon" />
+                  ) : (
+                    <CheckCircleIcon className="dashboard-home-status-icon" />
+                  )}
+                </div>
+                <p className="dashboard-home-status-text">{money(dbDues !== null ? dbDues : data?.paymentsDue)}</p>
+                <p className="dashboard-home-status-subtext">Total patient dues pending</p>
+              </div>
+            </div>
+
+            <div className="dashboard-home-card dashboard-home-status-card">
+              <div className="dashboard-home-card-header">
+                <div>
+                  <h3 className="dashboard-home-card-title">Recent transactions</h3>
+                  <p className="dashboard-home-card-subtitle">Latest bill records</p>
+                </div>
+                <Link to="/app/cases/transactions" className="dashboard-home-view-all">View all »</Link>
+              </div>
+
+              <div className="dashboard-home-card-body">
+                <div className="labsetu-transactions">
+                  {transactions.length > 0 ? (
+                    transactions.slice(0, 4).map((tx) => (
+                      <div className="labsetu-transaction" key={tx.id}>
+                        <div>
+                          <strong>{tx.patient}</strong>
+                          <span>{tx.description} · {tx.time}</span>
+                        </div>
+                        <div className="labsetu-amount">
+                          <strong>{money(tx.amount)}</strong>
+                          <span className={tx.status === 'Paid' ? 'labsetu-paid' : 'labsetu-due'}>
+                            {tx.status}
+                          </span>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="dashboard-home-card-body centered">
+                      <div className="dashboard-home-status-icon-box">
+                        <DocumentTextIcon className="dashboard-home-status-icon" />
+                      </div>
+                      <p className="dashboard-home-status-text">No transactions found.</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="dashboard-home-right">
+          <Link to="/app/setup/sms" className="dashboard-home-card dashboard-home-sms-card">
+            <span className="dashboard-home-sms-text">SMS Credits</span>
+            <span className="dashboard-home-sms-badge">{data?.smsCredits ?? 100}</span>
+            <ChevronDownIcon className="dashboard-home-sms-icon" />
+          </Link>
         </div>
       </div>
     </div>

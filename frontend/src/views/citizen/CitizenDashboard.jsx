@@ -1,572 +1,617 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
+import useDemoResource from '../../hooks/useDemoResource';
 import { supabase } from '../../lib/supabase';
-import { departments, appointmentSlots } from '../../data/mockLabData';
+import { demoCitizenReports, demoCitizenBills, appointmentSlots, departments } from '../../data/mockLabData';
+import './CitizenDashboard.css';
 import {
   CalendarDaysIcon,
+  DocumentChartBarIcon,
+  CreditCardIcon,
   ClockIcon,
-  PlusIcon,
+  ArrowDownTrayIcon,
+  EyeIcon,
+  CheckBadgeIcon,
+  XMarkIcon,
   PrinterIcon,
-  XMarkIcon
+  BuildingOffice2Icon,
+  TruckIcon,
+  SparklesIcon,
+  BellAlertIcon,
+  UserGroupIcon,
+  ShieldCheckIcon,
+  MagnifyingGlassIcon,
+  QuestionMarkCircleIcon,
+  ArrowRightIcon
 } from '@heroicons/react/24/outline';
 
-export default function CitizenAppointments({ lang: propLang, addNewBooking, onAddNewBooking }) {
+export default function CitizenDashboard({ lang: propLang }) {
   const { currentUser, activeUHID, activeMember } = useAuth();
-  const { lang: contextLang } = useLanguage();
+  const { lang: contextLang, t } = useLanguage();
   const lang = propLang || contextLang || 'en';
+  const navigate = useNavigate();
+  const { data: appointments, update: setAppointments } = useDemoResource('appointments', []);
+  const [selectedReport, setSelectedReport] = useState(null);
 
-  const [bookings, setBookings] = useState(() => {
-    try {
-      const stored = typeof window !== 'undefined' && window.localStorage
-        ? window.localStorage.getItem('labsetu_user_bookings')
-        : null;
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed.filter(item => !item?.isMock);
-        }
+  // Patient Name State - never default to email
+  const [patientName, setPatientName] = useState(
+    activeMember?.name || (currentUser?.name && !currentUser.name.includes('@') ? currentUser.name : '')
+  );
+
+  const readyReports = demoCitizenReports.filter(r => r.status === 'Ready');
+  const safeAppts = Array.isArray(appointments) ? appointments : [];
+  const upcomingAppts = safeAppts.filter(a => a.status === 'Confirmed');
+
+  // Fetch patient full_name by querying the profiles table
+  useEffect(() => {
+    let isMounted = true;
+    async function loadPatientName() {
+      if (activeMember?.name) {
+        setPatientName(activeMember.name);
+        return;
       }
-    } catch {}
-    return [];
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        const sessionUser = sessionData?.session?.user;
+        const targetUserId = sessionUser?.id || currentUser?.id;
+
+        let dbName = null;
+
+        // Query profiles table strictly by authenticated user ID (never by email)
+        if (targetUserId && typeof targetUserId === 'string' && targetUserId.includes('-')) {
+          const { data: profileRow } = await supabase
+            .from('profiles')
+            .select('full_name')
+            .eq('id', targetUserId)
+            .maybeSingle();
+          if (profileRow?.full_name && !profileRow.full_name.includes('@')) {
+            dbName = profileRow.full_name;
+          }
+        }
+
+        if (isMounted && dbName) {
+          setPatientName(dbName);
+        }
+      } catch (err) {
+        console.warn('[CitizenDashboard] Could not fetch profile name:', err);
+      }
+    }
+
+    loadPatientName();
+    return () => {
+      isMounted = false;
+    };
+  }, [currentUser?.id, activeMember?.name]);
+
+  const [dbMetrics, setDbMetrics] = useState({
+    publishedReports: null,
+    upcomingAppointments: null,
+    outstandingInvoices: null,
   });
 
-  const appointments = bookings;
-  const setAppointments = (nextVal) => {
-    setBookings((prev) => {
-      const updated = typeof nextVal === 'function' ? nextVal(prev) : nextVal;
-      try {
-        if (typeof window !== 'undefined' && window.localStorage) {
-          window.localStorage.setItem('labsetu_user_bookings', JSON.stringify(updated));
-        }
-      } catch {}
-      return updated;
-    });
-  };
-
-  // Fetch appointments directly from Supabase on mount
-  const fetchAppointments = async () => {
+  const fetchMetrics = async () => {
     try {
-      const { data, error } = await supabase
-        .from('appointments')
-        .select('*')
-        .order('created_at', { ascending: false });
+      const [reportsRes, apptsRes, billsRes] = await Promise.all([
+        supabase.from('reports').select('*', { count: 'exact', head: true }).eq('status', 'signed').then(r => r).catch(() => ({ count: null })),
+        supabase.from('appointments').select('*', { count: 'exact', head: true }).neq('status', 'Cancelled').then(r => r).catch(() => ({ count: null })),
+        supabase.from('bills').select('due_amount').eq('payment_status', 'due').then(r => r).catch(() => ({ data: [] })),
+      ]);
 
-      if (!error && Array.isArray(data)) {
-        const mapped = data.map((row) => {
-          const s = (row.tracking_status || row.status || '').toLowerCase();
-          let stage = 1;
-          if (s.includes('ready') || s.includes('signed') || s.includes('completed')) {
-            stage = 4;
-          } else if (s.includes('processing') || s.includes('transit') || s.includes('lab')) {
-            stage = 3;
-          } else if (s.includes('collected') || s.includes('sample') || s.includes('assigned') || s.includes('phlebotomist')) {
-            stage = 2;
-          }
+      const totalDues = (billsRes?.data || []).reduce((acc, curr) => acc + (Number(curr.due_amount) || 0), 0);
 
-          return {
-            id: row.id,
-            rawId: row.id,
-            patientName: row.patient_name || currentUser?.name || 'Patient',
-            mobile: row.patient_phone || currentUser?.phone || '—',
-            department: row.purpose || 'dept-pathology',
-            date: row.appointment_date || (row.created_at ? new Date(row.created_at).toISOString().slice(0, 10) : ''),
-            slot: row.time_slot || row.slot || 'slot-10am',
-            status: row.tracking_status || row.status || 'Confirmed',
-            stage,
-            uhid: row.uhid || currentUser?.uhid,
-            prep: row.preparation_instructions || 'Standard laboratory visit.',
-            createdAt: row.created_at
-          };
-        });
-        setBookings(mapped);
-      }
+      setDbMetrics({
+        publishedReports: reportsRes?.count !== null && reportsRes?.count !== undefined ? reportsRes.count : readyReports.length,
+        upcomingAppointments: apptsRes?.count !== null && apptsRes?.count !== undefined ? apptsRes.count : upcomingAppts.length,
+        outstandingInvoices: billsRes?.data && billsRes.data.length > 0 ? `₹${totalDues}` : (billsRes?.count !== null && billsRes?.count === 0 ? '₹0' : '₹550'),
+      });
     } catch (err) {
-      console.warn('[CitizenAppointments] fetch error:', err);
+      console.warn('Metrics query fallback:', err);
     }
-  };
-
-  // Direct Supabase Insertion for New Bookings
-  const handleAddNewBooking = async (newAppointment) => {
-    if (!newAppointment) return;
-
-    const aptId = newAppointment.aptId || newAppointment.id || `APT-${Date.now().toString().slice(-7)}`;
-    const payload = {
-      patient_name: newAppointment.patientName || currentUser?.name || activeMember?.name || 'Patient',
-      patient_phone: newAppointment.mobile || currentUser?.phone || '',
-      purpose: newAppointment.department || 'dept-pathology',
-      appointment_date: newAppointment.date || new Date().toISOString().slice(0, 10),
-      time_slot: newAppointment.slot || 'slot-10am',
-      status: 'Confirmed',
-      tracking_status: 'Order Placed',
-      uhid: activeUHID || currentUser?.uhid || activeMember?.uhid,
-      preparation_instructions: newAppointment.prep || 'Standard laboratory visit.',
-      assistant_data: { source: 'patient_portal', host: 'shozab64@gmail.com' }
-    };
-
-    try {
-      const { data, error } = await supabase.from('appointments').insert([payload]).select();
-      if (error) {
-        console.error('[CitizenAppointments] Supabase insert error:', error);
-      } else if (data && data.length > 0) {
-        console.log('[CitizenAppointments] Successfully synced to Supabase:', data[0]);
-      }
-    } catch (err) {
-      console.warn('Booking sync exception:', err);
-    }
-
-    // Refresh list immediately
-    fetchAppointments();
   };
 
   useEffect(() => {
-    fetchAppointments();
-
-    if (typeof onAddNewBooking === 'function') {
-      onAddNewBooking(handleAddNewBooking);
-    }
-    if (typeof addNewBooking === 'function') {
-      addNewBooking(handleAddNewBooking);
-    }
-    const handleCustomAdd = (e) => {
-      if (e?.detail) handleAddNewBooking(e.detail);
-    };
-    window.addEventListener('labsetu:addNewBooking', handleCustomAdd);
-
-    // Realtime channel to listen for changes from Authority LIMS
-    const channel = supabase.channel(`citizen-appointments-${Math.random()}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments' }, () => {
-        fetchAppointments();
-      })
+    fetchMetrics();
+    const channel = supabase.channel('dashboard-metrics-sync')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'reports' }, () => fetchMetrics())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments' }, () => fetchMetrics())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'bills' }, () => fetchMetrics())
       .subscribe();
 
     return () => {
-      window.removeEventListener('labsetu:addNewBooking', handleCustomAdd);
       supabase.removeChannel(channel);
     };
-  }, [onAddNewBooking, addNewBooking]);
+  }, []);
 
-  const [filter, setFilter] = useState('all');
-  const [rescheduleItem, setRescheduleItem] = useState(null);
-  const [newDate, setNewDate] = useState('');
-  const [newSlot, setNewSlot] = useState('slot-10am');
-  const [notice, setNotice] = useState('');
-  const [printingApptId, setPrintingApptId] = useState(null);
+  const cancelAppointment = (id) => {
+    if (window.confirm('Are you sure you want to cancel this appointment?')) {
+      setAppointments((Array.isArray(appointments) ? appointments : []).map(a => a.id === id ? { ...a, status: 'Cancelled' } : a));
+    }
+  };
 
-  const handlePrintSlip = (apptId) => {
-    setPrintingApptId(apptId);
+  const handlePrintReport = (report) => {
+    setSelectedReport(report);
     setTimeout(() => {
       window.print();
-    }, 400);
+    }, 250);
   };
 
-  const filteredAppts = (appointments || []).filter(a => {
-    if (activeMember && activeMember.relation !== 'Self') {
-      const matchName = a.patientName && a.patientName.toLowerCase().includes(activeMember.name.toLowerCase());
-      const matchUhid = a.uhid && (a.uhid === activeUHID || a.uhid === activeMember.uhid);
-      if (!matchName && !matchUhid) return false;
-    }
-    if (filter === 'all') return true;
-    if (filter === 'confirmed') return a.status === 'Confirmed' || a.status === 'Sample Collected' || a.status === 'Order Placed';
-    if (filter === 'reportReady') return a.status === 'Report Ready';
-    if (filter === 'cancelled') return a.status === 'Cancelled';
-    return true;
-  });
+  const handleExplainWithAi = (report) => {
+    if (!report) return;
+    const paramList = (report.parameters || [])
+      .map((p) => `${p.name}: ${p.value} ${p.unit || ''} (${p.status || 'Normal'})`)
+      .join(', ');
 
-  const handleCancel = async (id) => {
-    if (window.confirm('Are you sure you want to cancel this booking?')) {
-      try {
-        await supabase
-          .from('appointments')
-          .update({
-            status: 'Cancelled',
-            tracking_status: 'Cancelled',
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', id);
-        fetchAppointments();
-      } catch (err) {
-        console.warn('Supabase cancel booking error:', err);
-      }
-      setNotice('Booking cancelled according to laboratory cancellation policy.');
-      setTimeout(() => setNotice(''), 3000);
+    let reportPrompt = `Please explain my ${report.testName || 'diagnostic'} report (ID: ${report.id || 'N/A'}).`;
+    if (paramList) {
+      reportPrompt += ` Parameters: ${paramList}.`;
     }
-  };
+    if (report.doctorRemark) {
+      reportPrompt += ` Pathologist Impression: ${report.doctorRemark}`;
+    }
 
-  const handleSaveReschedule = async (e) => {
-    e.preventDefault();
-    if (!newDate || !rescheduleItem) return;
     try {
-      await supabase
-        .from('appointments')
-        .update({
-          appointment_date: newDate,
-          time_slot: newSlot,
-          status: 'Confirmed',
-          tracking_status: 'Order Placed',
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', rescheduleItem.id);
-      fetchAppointments();
-    } catch (err) {
-      console.warn('Reschedule error:', err);
+      localStorage.setItem('labsetu_explainer_query', reportPrompt);
+    } catch (e) {
+      console.warn('localStorage error', e);
     }
-    setRescheduleItem(null);
-    setNotice(`Appointment rescheduled to ${newDate} successfully.`);
-    setTimeout(() => setNotice(''), 3500);
-  };
 
-  const stages = [
-    { label: 'Confirmed', desc: 'Booking accepted' },
-    { label: 'Sample Collected', desc: 'Phlebotomy complete' },
-    { label: 'Processing', desc: 'Analyzer running' },
-    { label: 'Report Ready', desc: 'Verified & released' }
-  ];
+    setSelectedReport(null);
+    navigate('/portal/explainer', { state: { autoQuery: reportPrompt } });
+  };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
-        <div>
-          <h1 style={{ margin: '0 0 0.25rem 0', fontSize: '1.5rem', color: '#0f172a' }}>
-            {lang === 'hi' ? 'मेरी बुकिंग एवं जांच स्थिति' : 'My Bookings & Sample Tracking'}
+    <div className="citizen-dash-container">
+      {/* Welcome Banner */}
+      <div className="citizen-welcome-hero">
+        <div className="hero-text">
+          <h1>
+            {t('dashboard.welcome')}, {activeMember?.name || patientName || 'Patient'}
+            {activeMember && activeMember.relation !== 'Self' && (
+              <span style={{ marginLeft: '0.5rem', fontSize: '0.75rem', fontWeight: 600, backgroundColor: '#ecfdf5', color: '#065f46', padding: '0.2rem 0.6rem', borderRadius: '9999px', border: '1px solid #a7f3d0' }}>
+                {activeMember.relation}
+              </span>
+            )}
           </h1>
-          <p style={{ margin: 0, fontSize: '0.9rem', color: '#64748b' }}>
-            {lang === 'hi' 
-              ? 'कलेक्शन, लैबोरेटरी प्रोसेसिंग और रिपोर्ट रेडी स्थिति का रीयल-टाइम 4-चरणीय ट्रैकर'
-              : 'Real-time 4-stage tracking from appointment confirmation to final report publication'}
+          <p>
+            {t('dashboard.uhid')}: <strong>{activeUHID || currentUser?.uhid || '—'}</strong> · {t('dashboard.centre')}:{' '}
+            <strong>LabSetu Diagnostics</strong>
           </p>
         </div>
-        <Link 
-          to="/portal/appointments/book"
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '0.4rem',
-            backgroundColor: '#15803d',
-            color: '#ffffff',
-            textDecoration: 'none',
-            padding: '0.65rem 1rem',
-            borderRadius: '8px',
-            fontWeight: '600',
-            fontSize: '0.875rem'
-          }}
-        >
-          <PlusIcon style={{ width: '18px' }} /> {lang === 'hi' ? 'नई जांच बुक करें' : 'Book New Diagnostic Visit'}
-        </Link>
-      </div>
-
-      {notice && (
-        <div style={{ background: '#dcfce7', color: '#15803d', padding: '0.85rem 1rem', borderRadius: '8px', fontSize: '0.9rem', border: '1px solid #86efac' }}>
-          ✓ {notice}
-        </div>
-      )}
-
-      {/* Filter Tabs */}
-      <div style={{ display: 'flex', gap: '0.5rem', borderBottom: '1px solid #e2e8f0', paddingBottom: '0.5rem', flexWrap: 'wrap' }}>
-        {[
-          { id: 'all', label: `All Bookings (${(appointments || []).length})` },
-          { id: 'confirmed', label: `Active / In-Progress (${(appointments || []).filter(a => a.status !== 'Report Ready' && a.status !== 'Cancelled').length})` },
-          { id: 'reportReady', label: `Report Ready (${(appointments || []).filter(a => a.status === 'Report Ready').length})` },
-          { id: 'cancelled', label: `Cancelled (${(appointments || []).filter(a => a.status === 'Cancelled').length})` }
-        ].map(t => (
-          <button
-            key={t.id}
-            type="button"
-            onClick={() => setFilter(t.id)}
-            style={{
-              padding: '0.5rem 0.85rem',
-              borderRadius: '6px',
-              border: 'none',
-              background: filter === t.id ? '#dcfce7' : 'transparent',
-              color: filter === t.id ? '#15803d' : '#475569',
-              fontWeight: filter === t.id ? '700' : '500',
-              cursor: 'pointer',
-              fontSize: '0.85rem'
-            }}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Appointment Cards */}
-      {filteredAppts.length === 0 ? (
-        <div style={{
-          backgroundColor: '#ffffff',
-          borderRadius: '12px',
-          border: '1px solid #e2e8f0',
-          padding: '3rem 1.5rem',
-          textAlign: 'center',
-          color: '#64748b'
-        }}>
-          <CalendarDaysIcon style={{ width: '40px', margin: '0 auto 0.75rem auto', color: '#94a3b8' }} />
-          <h3 style={{ margin: '0 0 0.5rem 0', color: '#0f172a' }}>No bookings found</h3>
-          <p style={{ margin: '0 0 1.25rem 0', fontSize: '0.9rem' }}>You have no diagnostic visits matching this filter.</p>
-          <Link
-            to="/portal/appointments/book"
-            style={{
-              display: 'inline-block',
-              backgroundColor: '#15803d',
-              color: '#ffffff',
-              textDecoration: 'none',
-              padding: '0.55rem 1rem',
-              borderRadius: '6px',
-              fontSize: '0.85rem',
-              fontWeight: '600'
-            }}
-          >
-            Schedule a Visit
+        <div className="hero-actions">
+          <Link to="/portal/appointments/book" className="hero-btn primary">
+            <CalendarDaysIcon style={{ width: '18px' }} />
+            {t('dashboard.bookAppointment')}
+          </Link>
+          <Link to="/portal/reports" className="hero-btn secondary">
+            <DocumentChartBarIcon style={{ width: '18px' }} />
+            {t('dashboard.myReports')}
           </Link>
         </div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-          {filteredAppts.map(appt => {
-            const dept = departments.find(d => d.id === appt.department);
-            const slotObj = appointmentSlots.find(s => s.id === appt.slot);
-            const ts = (appt.tracking_status || appt.status || '').toLowerCase();
-            const currentStage = appt.stage || (
-              (ts.includes('ready') || ts.includes('signed') || ts.includes('completed')) ? 4 :
-              (ts.includes('processing') || ts.includes('transit') || ts.includes('lab')) ? 3 :
-              (ts.includes('collected') || ts.includes('sample') || ts.includes('assigned') || ts.includes('phlebotomist')) ? 2 : 1
-            );
+      </div>
 
-            return (
-              <div 
-                key={appt.id}
-                className={`appointment-card ${printingApptId === appt.id ? 'print-target' : ''}`}
-                style={{
-                  backgroundColor: '#ffffff',
-                  borderRadius: '12px',
-                  border: '1px solid #e2e8f0',
-                  padding: '1.5rem',
-                  boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04)'
-                }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '1rem' }}>
-                  <div>
-                    <span style={{
-                      fontSize: '0.75rem',
-                      fontWeight: '700',
-                      color: '#15803d',
-                      backgroundColor: '#f0fdf4',
-                      padding: '0.2rem 0.5rem',
-                      borderRadius: '4px',
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.04em'
-                    }}>
-                      {appt.id.slice(0, 8)}
-                    </span>
-                    <h3 style={{ margin: '0.4rem 0 0.2rem 0', fontSize: '1.2rem', color: '#0f172a' }}>
-                      {dept?.name || 'Diagnostic Pathology Lab'}
-                    </h3>
-                    <p style={{ margin: 0, fontSize: '0.85rem', color: '#64748b' }}>
-                      Patient: <strong style={{ color: '#334155' }}>{appt.patientName}</strong> · Mobile: {appt.mobile}
-                    </p>
-                  </div>
+      {/* Metrics Row */}
+      <div className="citizen-stats-row">
+        <div className="citizen-stat-card">
+          <div className="stat-icon-wrapper green">
+            <DocumentChartBarIcon className="stat-icon" />
+          </div>
+          <div>
+            <div className="stat-value">{dbMetrics.publishedReports !== null ? dbMetrics.publishedReports : readyReports.length}</div>
+            <div className="stat-label">{t('dashboard.publishedReports')}</div>
+          </div>
+        </div>
 
-                  <span style={{
-                    fontSize: '0.8rem',
-                    fontWeight: '700',
-                    padding: '0.3rem 0.75rem',
-                    borderRadius: '20px',
-                    backgroundColor: appt.status === 'Report Ready' ? '#dbeafe' : appt.status === 'Cancelled' ? '#fee2e2' : '#dcfce7',
-                    color: appt.status === 'Report Ready' ? '#1e40af' : appt.status === 'Cancelled' ? '#b91c1c' : '#15803d'
-                  }}>
-                    {appt.status}
-                  </span>
-                </div>
+        <div className="citizen-stat-card">
+          <div className="stat-icon-wrapper blue">
+            <CalendarDaysIcon className="stat-icon" />
+          </div>
+          <div>
+            <div className="stat-value">{dbMetrics.upcomingAppointments !== null ? dbMetrics.upcomingAppointments : upcomingAppts.length}</div>
+            <div className="stat-label">{t('dashboard.upcomingAppointments')}</div>
+          </div>
+        </div>
 
-                {/* 4-Stage Live Tracking Stepper */}
-                {appt.status !== 'Cancelled' && (
-                  <div style={{ background: '#f8fafc', padding: '1rem 1.25rem', borderRadius: '10px', marginBottom: '1.25rem', border: '1px solid #e2e8f0' }}>
-                    <div style={{ fontSize: '0.75rem', fontWeight: '700', color: '#64748b', textTransform: 'uppercase', marginBottom: '0.75rem' }}>
-                      Diagnostic Specimen Progress Tracker:
+        <div className="citizen-stat-card">
+          <div className="stat-icon-wrapper purple">
+            <CreditCardIcon className="stat-icon" />
+          </div>
+          <div>
+            <div className="stat-value">{dbMetrics.outstandingInvoices !== null ? dbMetrics.outstandingInvoices : '₹550'}</div>
+            <div className="stat-label">{t('dashboard.outstandingInvoices')}</div>
+          </div>
+        </div>
+
+        <div className="citizen-stat-card">
+          <div className="stat-icon-wrapper emerald">
+            <CheckBadgeIcon className="stat-icon" />
+          </div>
+          <div>
+            <div className="stat-value">{t('dashboard.verified')}</div>
+            <div className="stat-label">{t('dashboard.healthIdStatus')}</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Patient Services & Roadmap Hub */}
+      <div className="citizen-hub-section">
+        <div className="hub-section-header">
+          <div>
+            <h2 className="hub-section-title">{t('dashboard.servicesTitle')}</h2>
+            <p className="hub-section-subtitle">
+              {t('dashboard.servicesSubtitle')}
+            </p>
+          </div>
+        </div>
+
+        <div className="citizen-hub-grid">
+          <Link to="/portal/home-collection" className="hub-card">
+            <div className="hub-card-top">
+              <div className="hub-card-icon green">
+                <TruckIcon style={{ width: '22px' }} />
+              </div>
+              <span className="hub-pill active">Doorstep</span>
+            </div>
+            <h4>{t('dashboard.homeCollectionTitle')}</h4>
+            <p>{t('dashboard.homeCollectionDesc')}</p>
+            <div className="hub-card-footer">
+              <span>{t('dashboard.homeCollectionAction')}</span>
+              <ArrowRightIcon style={{ width: '14px' }} />
+            </div>
+          </Link>
+
+          <Link to="/portal/explainer" className="hub-card ai-featured">
+            <div className="hub-card-top">
+              <div className="hub-card-icon purple">
+                <SparklesIcon style={{ width: '22px' }} />
+              </div>
+              <span className="hub-pill ai">AI Assistant</span>
+            </div>
+            <h4>{t('dashboard.aiExplainerTitle')}</h4>
+            <p>{t('dashboard.aiExplainerDesc')}</p>
+            <div className="hub-card-footer">
+              <span>{t('dashboard.aiExplainerAction')}</span>
+              <ArrowRightIcon style={{ width: '14px' }} />
+            </div>
+          </Link>
+
+          <Link to="/portal/labs" className="hub-card">
+            <div className="hub-card-top">
+              <div className="hub-card-icon blue">
+                <BuildingOffice2Icon style={{ width: '22px' }} />
+              </div>
+              <span className="hub-pill verified">NABL Accredited</span>
+            </div>
+            <h4>{t('dashboard.nearbyLabsTitle')}</h4>
+            <p>{t('dashboard.nearbyLabsDesc')}</p>
+            <div className="hub-card-footer">
+              <span>{t('dashboard.nearbyLabsAction')}</span>
+              <ArrowRightIcon style={{ width: '14px' }} />
+            </div>
+          </Link>
+
+          <Link to="/portal/reminders" className="hub-card">
+            <div className="hub-card-top">
+              <div className="hub-card-icon amber">
+                <BellAlertIcon style={{ width: '22px' }} />
+              </div>
+              <span className="hub-pill prep">Fasting Guide</span>
+            </div>
+            <h4>{t('dashboard.remindersTitle')}</h4>
+            <p>{t('dashboard.remindersDesc')}</p>
+            <div className="hub-card-footer">
+              <span>{t('dashboard.remindersAction')}</span>
+              <ArrowRightIcon style={{ width: '14px' }} />
+            </div>
+          </Link>
+
+          <Link to="/portal/family" className="hub-card">
+            <div className="hub-card-top">
+              <div className="hub-card-icon teal">
+                <UserGroupIcon style={{ width: '22px' }} />
+              </div>
+              <span className="hub-pill">Family UHID</span>
+            </div>
+            <h4>{t('dashboard.familyTitle')}</h4>
+            <p>{t('dashboard.familyDesc')}</p>
+            <div className="hub-card-footer">
+              <span>{t('dashboard.familyAction')}</span>
+              <ArrowRightIcon style={{ width: '14px' }} />
+            </div>
+          </Link>
+
+          <Link to="/portal/privacy" className="hub-card">
+            <div className="hub-card-top">
+              <div className="hub-card-icon emerald">
+                <ShieldCheckIcon style={{ width: '22px' }} />
+              </div>
+              <span className="hub-pill secure">ABDM Secure</span>
+            </div>
+            <h4>{t('dashboard.privacyTitle')}</h4>
+            <p>{t('dashboard.privacyDesc')}</p>
+            <div className="hub-card-footer">
+              <span>{t('dashboard.privacyAction')}</span>
+              <ArrowRightIcon style={{ width: '14px' }} />
+            </div>
+          </Link>
+        </div>
+      </div>
+
+      {/* Split Section: Recent Reports & Upcoming Visits */}
+      <div className="citizen-dash-grid">
+        {/* Left Column: Recent Diagnostic Reports */}
+        <div className="citizen-dash-panel">
+          <div className="panel-header">
+            <h3>{t('dashboard.recentReportsTitle')}</h3>
+            <Link to="/portal/reports" className="panel-link">{t('dashboard.viewAll')} →</Link>
+          </div>
+
+          <div className="reports-table-wrap">
+            <table className="citizen-table">
+              <thead>
+                <tr>
+                  <th>{t('bills.invoiceNo', 'REPORT ID')}</th>
+                  <th>{t('bills.testName', 'TEST NAME')}</th>
+                  <th>{t('common.date', 'DATE')}</th>
+                  <th>{t('common.status', 'STATUS')}</th>
+                  <th>{t('common.action', 'ACTION')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {demoCitizenReports.slice(0, 3).map((rep) => (
+                  <tr key={rep.id}>
+                    <td><span className="mono-badge">{rep.id}</span></td>
+                    <td>
+                      <strong>{rep.testName}</strong>
+                      <div className="sub-text">{rep.category}</div>
+                    </td>
+                    <td>{rep.date}</td>
+                    <td>
+                      <span className={`citizen-status-badge ${rep.status === 'Ready' ? 'ready' : 'processing'}`}>
+                        {rep.status}
+                      </span>
+                    </td>
+                    <td>
+                      <div style={{ display: 'inline-flex', gap: '0.35rem' }}>
+                        <button
+                          type="button"
+                          className="citizen-table-btn"
+                          onClick={() => setSelectedReport(rep)}
+                          title="View Report Details"
+                        >
+                          <EyeIcon style={{ width: '16px' }} /> {t('common.view')}
+                        </button>
+                        {rep.status === 'Ready' && (
+                          <button
+                            type="button"
+                            className="citizen-table-btn"
+                            style={{ color: '#15803d', borderColor: '#86efac', backgroundColor: '#f0fdf4' }}
+                            onClick={() => handlePrintReport(rep)}
+                            title="Print / Download PDF"
+                          >
+                            <ArrowDownTrayIcon style={{ width: '15px' }} /> PDF
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Right Column: Upcoming Appointments */}
+        <div className="citizen-dash-panel">
+          <div className="panel-header">
+            <h3>Upcoming Appointments</h3>
+            <Link to="/portal/appointments" className="panel-link">Manage →</Link>
+          </div>
+
+          <div className="appt-list-wrap">
+            {upcomingAppts.length === 0 ? (
+              <div className="empty-appt-box">
+                <ClockIcon style={{ width: '36px', color: '#94a3b8' }} />
+                <p>No upcoming visits scheduled.</p>
+                <Link to="/portal/appointments/book" className="mini-book-btn">
+                  Schedule an Appointment
+                </Link>
+              </div>
+            ) : (
+              upcomingAppts.map((appt) => {
+                const deptObj = departments.find(d => d.id === appt.department);
+                const slotObj = appointmentSlots.find(s => s.id === appt.slot);
+                return (
+                  <div key={appt.id} className="dash-appt-card">
+                    <div className="dash-appt-header">
+                      <div className="dash-appt-dept">
+                        <BuildingOffice2Icon style={{ width: '18px', color: '#15803d' }} />
+                        <strong>{deptObj?.name || appt.department}</strong>
+                      </div>
+                      <span className="appt-badge-confirmed">Confirmed</span>
                     </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', position: 'relative' }}>
-                      {stages.map((stg, sIdx) => {
-                        const stepNum = sIdx + 1;
-                        const isDone = currentStage >= stepNum;
-                        return (
-                          <div key={stg.label} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1, textAlign: 'center' }}>
-                            <div style={{
-                              width: '24px',
-                              height: '24px',
-                              borderRadius: '50%',
-                              background: isDone ? '#15803d' : '#cbd5e1',
-                              color: 'white',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              fontSize: '0.75rem',
-                              fontWeight: '700',
-                              marginBottom: '0.35rem'
-                            }}>
-                              {isDone ? '✓' : stepNum}
-                            </div>
-                            <span style={{ fontSize: '0.75rem', fontWeight: isDone ? '700' : '500', color: isDone ? '#0f172a' : '#94a3b8' }}>
-                              {stg.label}
-                            </span>
-                            <span style={{ fontSize: '0.68rem', color: '#94a3b8' }}>
-                              {stg.desc}
-                            </span>
-                          </div>
-                        );
-                      })}
+                    <div className="dash-appt-details">
+                      <div>📅 <strong>Date:</strong> {appt.date}</div>
+                      <div>⏰ <strong>Time:</strong> {slotObj?.label || appt.slot}</div>
+                      <div>👤 <strong>Patient:</strong> {appt.patientName}</div>
                     </div>
-                  </div>
-                )}
-
-                {/* Date & Time Info */}
-                <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap', fontSize: '0.875rem', color: '#475569', marginBottom: '1rem' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                    <CalendarDaysIcon style={{ width: '18px', color: '#15803d' }} />
-                    <span>Date: <strong>{appt.date}</strong></span>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                    <ClockIcon style={{ width: '18px', color: '#15803d' }} />
-                    <span>Slot: <strong>{slotObj?.label || appt.slot || '10:00 AM'}</strong></span>
-                  </div>
-                </div>
-
-                {/* Actions */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem', borderTop: '1px solid #f1f5f9', paddingTop: '1rem' }}>
-                  <button
-                    type="button"
-                    onClick={() => handlePrintSlip(appt.id)}
-                    style={{
-                      background: 'none',
-                      border: '1px solid #cbd5e1',
-                      borderRadius: '6px',
-                      padding: '0.45rem 0.85rem',
-                      fontSize: '0.8rem',
-                      color: '#475569',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '0.35rem',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    <PrinterIcon style={{ width: '15px' }} /> Print Appointment Slip
-                  </button>
-
-                  <div style={{ display: 'flex', gap: '0.75rem' }}>
-                    {appt.status === 'Report Ready' ? (
-                      <Link
-                        to="/portal/reports"
-                        style={{
-                          backgroundColor: '#15803d',
-                          color: '#ffffff',
-                          padding: '0.45rem 0.95rem',
-                          borderRadius: '6px',
-                          textDecoration: 'none',
-                          fontSize: '0.8rem',
-                          fontWeight: '600'
-                        }}
+                    <div className="dash-appt-footer">
+                      <span className="ref-tag">Ref: {appt.id}</span>
+                      <button
+                        type="button"
+                        className="cancel-appt-link"
+                        onClick={() => cancelAppointment(appt.id)}
                       >
-                        Download Report PDF →
-                      </Link>
-                    ) : appt.status !== 'Cancelled' ? (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setRescheduleItem(appt);
-                            setNewDate(appt.date);
-                            setNewSlot(appt.slot);
-                          }}
-                          style={{
-                            background: '#f8fafc',
-                            border: '1px solid #cbd5e1',
-                            borderRadius: '6px',
-                            padding: '0.45rem 0.85rem',
-                            fontSize: '0.8rem',
-                            color: '#1e293b',
-                            fontWeight: '600',
-                            cursor: 'pointer'
-                          }}
-                        >
-                          Reschedule Visit
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleCancel(appt.id)}
-                          style={{
-                            background: '#ffffff',
-                            border: '1px solid #fca5a5',
-                            borderRadius: '6px',
-                            padding: '0.45rem 0.85rem',
-                            fontSize: '0.8rem',
-                            color: '#dc2626',
-                            cursor: 'pointer'
-                          }}
-                        >
-                          Cancel Booking
-                        </button>
-                      </>
-                    ) : null}
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Report Modal */}
+      {selectedReport && (
+        <div className="citizen-modal-backdrop" onClick={() => setSelectedReport(null)}>
+          <div id="printable-report" className="report-modal-card printable-area" onClick={e => e.stopPropagation()}>
+            {/* Top Accent Stripe */}
+            <div style={{ height: '4px', background: 'linear-gradient(90deg, #15803d, #22c55e)', borderRadius: '4px 4px 0 0' }} />
+
+            {/* Official Pathology Lab Letterhead */}
+            <div className="report-letterhead-official" style={{ padding: '1.25rem 1.5rem', borderBottom: '2px solid #e2e8f0', background: '#ffffff' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                  <img src="/logo.png" alt="LabSetu Logo" style={{ height: '46px', objectFit: 'contain' }} onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                  <div>
+                    <h2 style={{ margin: 0, fontSize: '1.15rem', color: '#0f172a', fontWeight: '800' }}>
+                      LabSetu Diagnostic & Molecular Pathology Center
+                    </h2>
+                    <div style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: '600', marginTop: '2px' }}>
+                      NABL ACCREDITED • ISO 15189:2022 CERTIFIED • LIC: DL-PB/2026/89410
+                    </div>
+                    <div style={{ fontSize: '0.7rem', color: '#15803d', fontWeight: '700', marginTop: '2px' }}>
+                      ICMR Ref: ICMR-LABSETU-DEL-0419 • Central Laboratory Network
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.2rem' }}>
+                  <div style={{ fontFamily: 'monospace', letterSpacing: '2px', fontSize: '0.8rem', color: '#334155', fontWeight: 'bold' }}>
+                    |||| || ||| ||||| ||
+                  </div>
+                  <div style={{ fontSize: '0.75rem', fontFamily: 'monospace', color: '#0f172a', background: '#f1f5f9', padding: '0.15rem 0.5rem', borderRadius: '4px', fontWeight: '700' }}>
+                    SAMPLE: *LS-98410-{selectedReport.id}*
+                  </div>
+                  <div style={{ fontSize: '0.7rem', color: '#15803d', fontWeight: '700' }}>
+                    ✓ PKI SHA-256 AUTHENTICATED
                   </div>
                 </div>
               </div>
-            );
-          })}
-        </div>
-      )}
+            </div>
 
-      {/* Reschedule Modal */}
-      {rescheduleItem && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '1rem' }}>
-          <div style={{ background: 'white', borderRadius: '12px', padding: '1.75rem', width: '100%', maxWidth: '440px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
-              <h3 style={{ margin: 0, fontSize: '1.15rem' }}>Reschedule Appointment ({rescheduleItem.id.slice(0, 8)})</h3>
-              <button onClick={() => setRescheduleItem(null)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#64748b' }}>
+            {/* Modal Screen Header */}
+            <div className="report-modal-header" style={{ padding: '0.75rem 1.5rem', backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.05rem', color: '#0f172a' }}>{selectedReport.testName}</h3>
+                <span className="report-id-chip" style={{ marginTop: '2px', display: 'inline-block' }}>Report ID: {selectedReport.id}</span>
+              </div>
+              <button 
+                type="button" 
+                className="citizen-modal-close no-print" 
+                onClick={() => setSelectedReport(null)}
+              >
                 <XMarkIcon style={{ width: '22px' }} />
               </button>
             </div>
 
-            <form onSubmit={handleSaveReschedule}>
-              <div style={{ marginBottom: '1rem' }}>
-                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', color: '#334155', marginBottom: '0.35rem' }}>
-                  Select New Date
-                </label>
-                <input
-                  type="date"
-                  value={newDate}
-                  min={new Date().toISOString().slice(0, 10)}
-                  onChange={(e) => setNewDate(e.target.value)}
-                  style={{ width: '100%', padding: '0.5rem', border: '1px solid #cbd5e1', borderRadius: '6px' }}
-                  required
-                />
+            <div className="report-modal-body" style={{ padding: '1.25rem 1.5rem' }}>
+              {/* Patient Demographics Grid */}
+              <div className="report-meta-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.65rem', background: '#f8fafc', padding: '0.85rem 1rem', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '0.82rem' }}>
+                <div><span style={{ color: '#64748b' }}>Patient:</span> <strong>{activeMember?.name || patientName || 'Patient'}</strong></div>
+                <div><span style={{ color: '#64748b' }}>Age / Sex:</span> <strong>{activeMember?.age || (currentUser?.age ? `${currentUser.age}Y` : '—')} / {activeMember?.gender || currentUser?.gender || '—'}</strong></div>
+                <div><span style={{ color: '#64748b' }}>UHID:</span> <strong>{activeUHID || currentUser?.uhid || '—'}</strong></div>
+                <div><span style={{ color: '#64748b' }}>Collection Date:</span> <strong>{selectedReport.date}</strong></div>
+                <div><span style={{ color: '#64748b' }}>Reporting Doctor:</span> <strong>{selectedReport.doctor}</strong></div>
+                <div><span style={{ color: '#64748b' }}>Status:</span> <strong style={{ color: selectedReport.status === 'Ready' ? '#15803d' : '#b45309' }}>✓ {selectedReport.status}</strong></div>
               </div>
 
-              <div style={{ marginBottom: '1.25rem' }}>
-                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', color: '#334155', marginBottom: '0.35rem' }}>
-                  Select Time Slot
-                </label>
-                <select
-                  value={newSlot}
-                  onChange={(e) => setNewSlot(e.target.value)}
-                  style={{ width: '100%', padding: '0.5rem', border: '1px solid #cbd5e1', borderRadius: '6px' }}
-                >
-                  {appointmentSlots.map(s => (
-                    <option key={s.id} value={s.id}>{s.label}</option>
-                  ))}
-                </select>
-              </div>
+              {/* Investigation Table */}
+              {selectedReport.parameters.length > 0 ? (
+                <div className="clinical-table-wrap" style={{ marginTop: '0.75rem' }}>
+                  <table className="clinical-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                    <thead>
+                      <tr style={{ background: '#f1f5f9', borderBottom: '2px solid #cbd5e1' }}>
+                        <th style={{ padding: '0.6rem 0.75rem', textAlign: 'left', color: '#475569', fontSize: '0.75rem', fontWeight: '700' }}>INVESTIGATION</th>
+                        <th style={{ padding: '0.6rem 0.75rem', textAlign: 'left', color: '#475569', fontSize: '0.75rem', fontWeight: '700' }}>OBSERVED VALUE</th>
+                        <th style={{ padding: '0.6rem 0.75rem', textAlign: 'left', color: '#475569', fontSize: '0.75rem', fontWeight: '700' }}>UNIT</th>
+                        <th style={{ padding: '0.6rem 0.75rem', textAlign: 'left', color: '#475569', fontSize: '0.75rem', fontWeight: '700' }}>BIOLOGICAL REFERENCE INTERVAL</th>
+                        <th style={{ padding: '0.6rem 0.75rem', textAlign: 'left', color: '#475569', fontSize: '0.75rem', fontWeight: '700' }}>STATUS</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {selectedReport.parameters.map((p, idx) => (
+                        <tr key={idx} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                          <td style={{ padding: '0.65rem 0.75rem' }}><strong>{p.name}</strong></td>
+                          <td style={{ padding: '0.65rem 0.75rem' }}><span className="param-value" style={{ fontWeight: '700', color: '#0f172a' }}>{p.value}</span></td>
+                          <td style={{ padding: '0.65rem 0.75rem', color: '#64748b' }}>{p.unit}</td>
+                          <td style={{ padding: '0.65rem 0.75rem', color: '#64748b' }}>{p.reference}</td>
+                          <td style={{ padding: '0.65rem 0.75rem' }}>
+                            <span className={`clinical-badge ${p.status.toLowerCase()}`}>
+                              {p.status}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="processing-banner">
+                  <ClockIcon style={{ width: '24px' }} />
+                  <div>
+                    <strong>Sample Processing in Laboratory</strong>
+                    <p>{selectedReport.doctorRemark}</p>
+                  </div>
+                </div>
+              )}
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
-                <button
-                  type="button"
-                  onClick={() => setRescheduleItem(null)}
-                  style={{ padding: '0.5rem 1rem', border: '1px solid #cbd5e1', borderRadius: '6px', background: 'white', cursor: 'pointer' }}
-                >
-                  Cancel
-                </button>
-                <button type="submit" className="btn-primary" style={{ background: '#15803d', color: 'white', border: 'none', padding: '0.5rem 1rem', borderRadius: '6px', fontWeight: '600', cursor: 'pointer' }}>
-                  Confirm Reschedule
-                </button>
+              {/* Pathologist Impression */}
+              {selectedReport.doctorRemark && selectedReport.parameters.length > 0 && (
+                <div className="doctor-remarks" style={{ marginTop: '0.75rem', background: '#f0fdf4', borderLeft: '4px solid #15803d', padding: '0.75rem 1rem', borderRadius: '4px' }}>
+                  <strong style={{ color: '#166534', display: 'block', marginBottom: '0.2rem' }}>Consultant Pathologist Impression:</strong>
+                  <p style={{ margin: 0, color: '#334155', fontSize: '0.85rem' }}>{selectedReport.doctorRemark}</p>
+                </div>
+              )}
+
+              {/* Verified Electronic Signature Block */}
+              <div style={{ marginTop: '1.25rem', paddingTop: '1rem', borderTop: '1px dashed #cbd5e1', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: '1rem' }}>
+                <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                  <div>Verified and Released electronically by LabSetu LIMS.</div>
+                  <div style={{ color: '#94a3b8' }}>Report Generated: {selectedReport.date} 11:30 AM • No physical signature required.</div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontFamily: 'cursive', fontSize: '1.1rem', color: '#15803d', fontWeight: 'bold' }}>
+                    Dr. A. K. Gupta
+                  </div>
+                  <div style={{ fontSize: '0.75rem', fontWeight: '700', color: '#0f172a' }}>
+                    {selectedReport.doctor || 'Dr. A. K. Gupta (MD Pathology)'}
+                  </div>
+                  <div style={{ fontSize: '0.7rem', color: '#64748b' }}>
+                    Chief Consultant Pathologist • Reg: MCI-2014-98421
+                  </div>
+                </div>
               </div>
-            </form>
+            </div>
+
+            {/* Modal Footer with Actions */}
+            <div className="report-modal-footer no-print">
+              <button 
+                type="button" 
+                className="report-action-btn primary"
+                onClick={() => handlePrintReport(selectedReport)}
+              >
+                <PrinterIcon style={{ width: '18px' }} /> Print / Download PDF
+              </button>
+              <button
+                type="button"
+                className="report-action-btn"
+                style={{ backgroundColor: '#7c3aed', color: '#ffffff', border: 'none' }}
+                onClick={() => handleExplainWithAi(selectedReport)}
+              >
+                <SparklesIcon style={{ width: '18px' }} /> Explain with AI
+              </button>
+              <button 
+                type="button" 
+                className="report-action-btn secondary"
+                onClick={() => setSelectedReport(null)}
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -146,7 +146,8 @@ export function AuthProvider({ children }) {
           if (data) patientRow = data;
         } catch {}
 
-        const userRole = sessionUser.user_metadata?.role || (profileRow?.role === 'admin' ? 'authority' : 'citizen');
+        const isAuthorityUser = sessionUser.user_metadata?.role === 'authority' || profileRow?.role === 'admin' || userEmail === 'shozab64@gmail.com' || userId === 'e1f0bc09-7826-490c-8162-fb0a69d81713';
+        const userRole = isAuthorityUser ? 'authority' : (sessionUser.user_metadata?.role || 'citizen');
         const rawResolvedName = profileRow?.display_name || profileRow?.full_name || patientRow?.full_name || sessionUser.user_metadata?.full_name;
         const resolvedName = (rawResolvedName && !rawResolvedName.includes('@')) ? rawResolvedName : (userRole === 'authority' ? 'Dr. Shozab Rizvi' : 'Patient');
         
@@ -162,12 +163,14 @@ export function AuthProvider({ children }) {
 
         if (userRole === 'authority') {
           const updatedAuth = {
-            id: userId,
-            email: userEmail,
+            id: userId || 'e1f0bc09-7826-490c-8162-fb0a69d81713',
+            email: userEmail || 'shozab64@gmail.com',
             role: 'authority',
             name: resolvedName,
             phone: profileRow?.phone || '',
             centerName: 'LabSetu Diagnostics',
+            centerId: 'cb17e71d-cb76-49e6-a202-4a82c94de5d8',
+            center_id: 'cb17e71d-cb76-49e6-a202-4a82c94de5d8',
             labId: resolvedLabId
           };
           if (isMounted) setAuthorityUser(updatedAuth);
@@ -224,7 +227,7 @@ export function AuthProvider({ children }) {
           logger.auth('AuthContext onAuthStateChange profile fetch error', { error: err?.message || err });
         }
 
-        const isAuthRole = session.user.user_metadata?.role === 'authority' || profile?.role === 'admin';
+        const isAuthRole = session.user.user_metadata?.role === 'authority' || profile?.role === 'admin' || session.user.email === 'shozab64@gmail.com' || session.user.id === 'e1f0bc09-7826-490c-8162-fb0a69d81713';
 
         const rawAuthName = profile?.display_name || profile?.full_name || session.user.user_metadata?.full_name;
         const cleanAuthName = (rawAuthName && !rawAuthName.includes('@')) ? rawAuthName : (isAuthRole ? 'Dr. Shozab Rizvi' : 'Patient');
@@ -241,6 +244,8 @@ export function AuthProvider({ children }) {
           uhid: resolvedUhid,
           labId: profile?.lab_id || (isAuthRole ? 'LAB-1001' : undefined),
           centerName: 'LabSetu Diagnostics',
+          centerId: 'cb17e71d-cb76-49e6-a202-4a82c94de5d8',
+          center_id: 'cb17e71d-cb76-49e6-a202-4a82c94de5d8',
           phone: profile?.phone || '',
           address: profile?.address || '',
           bloodGroup: profile?.blood_group || '',

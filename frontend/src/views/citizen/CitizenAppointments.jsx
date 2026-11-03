@@ -68,14 +68,14 @@ export default function CitizenAppointments({ lang: propLang, addNewBooking, onA
           return {
             id: row.id,
             rawId: row.id,
-            patientName: row.patient_name || currentUser?.name || 'Patient',
-            mobile: row.patient_phone || currentUser?.phone || '—',
+            patientName: row.assistant_data?.patient_name || currentUser?.name || 'Patient',
+            mobile: row.assistant_data?.patient_phone || currentUser?.phone || '—',
             department: row.purpose || 'dept-pathology',
             date: row.appointment_date || (row.created_at ? new Date(row.created_at).toISOString().slice(0, 10) : ''),
-            slot: row.time_slot || row.slot || 'slot-10am',
-            status: row.tracking_status || row.status || 'Confirmed',
+            slot: row.time_slot || 'slot-10am',
+            status: row.assistant_data?.tracking_status || row.status || 'Confirmed',
             stage,
-            uhid: row.uhid || currentUser?.uhid,
+            uhid: row.assistant_data?.uhid || currentUser?.uhid,
             prep: row.preparation_instructions || 'Standard laboratory visit.',
             createdAt: row.created_at
           };
@@ -87,30 +87,70 @@ export default function CitizenAppointments({ lang: propLang, addNewBooking, onA
     }
   };
 
-  // Direct Supabase Insertion for New Bookings
+  // Direct Supabase Insertion for New Bookings with Valid Schema Mapping
   const handleAddNewBooking = async (newAppointment) => {
     if (!newAppointment) return;
 
-    const aptId = newAppointment.aptId || newAppointment.id || `APT-${Date.now().toString().slice(-7)}`;
-    const payload = {
-      patient_name: newAppointment.patientName || currentUser?.name || activeMember?.name || 'Patient',
-      patient_phone: newAppointment.mobile || currentUser?.phone || '',
-      purpose: newAppointment.department || 'dept-pathology',
-      appointment_date: newAppointment.date || new Date().toISOString().slice(0, 10),
-      time_slot: newAppointment.slot || 'slot-10am',
-      status: 'Confirmed',
-      tracking_status: 'Order Placed',
-      uhid: activeUHID || currentUser?.uhid || activeMember?.uhid,
-      preparation_instructions: newAppointment.prep || 'Standard laboratory visit.',
-      assistant_data: { source: 'patient_portal', host: 'shozab64@gmail.com' }
-    };
+    if (newAppointment.synced) {
+      fetchAppointments();
+      return;
+    }
+
+    const MASTER_CENTER_ID = 'cb17e71d-cb76-49e6-a202-4a82c94de5d8';
 
     try {
+      // 1. Foreign Key Protection: Fetch or fallback to a valid patient UUID to prevent 23503 error
+      let patientUuid = null;
+      const candidateUuid = currentUser?.id || activeMember?.id;
+      if (candidateUuid && candidateUuid.length >= 30 && candidateUuid.includes('-')) {
+        const { data: pt } = await supabase.from('patients').select('id').eq('id', candidateUuid).maybeSingle();
+        if (pt?.id) {
+          patientUuid = pt.id;
+        } else {
+          const { data: newPat } = await supabase.from('patients').upsert([{
+            id: candidateUuid,
+            center_id: MASTER_CENTER_ID,
+            patient_code: activeUHID || currentUser?.uhid || `PAT-${Date.now().toString().slice(-5)}`,
+            full_name: newAppointment.patientName || currentUser?.name || 'Patient',
+            phone: newAppointment.mobile || currentUser?.phone || ''
+          }], { onConflict: 'id' }).select('id').maybeSingle();
+          if (newPat) patientUuid = newPat.id;
+        }
+      }
+
+      const payload = {
+        center_id: MASTER_CENTER_ID, // Master Lab Center ID
+        patient_id: patientUuid || null,
+        department: 'Pathology',
+        appointment_date: newAppointment.date || new Date().toISOString().slice(0, 10),
+        slot_start: '10:00:00',
+        slot_end: '11:00:00',
+        status: 'booked',
+        visit_type: 'lab_visit',
+        booking_source: 'CENTRAL_PORTAL',
+        purpose: newAppointment.department || 'General Diagnostics',
+        assistant_data: { 
+          patient_name: newAppointment.patientName || currentUser?.name || 'Patient',
+          patient_phone: newAppointment.mobile || currentUser?.phone || '',
+          tracking_status: 'Order Placed',
+          time_slot: newAppointment.slot || '10:00 AM',
+          slot: newAppointment.slot || '10:00 AM',
+          uhid: activeUHID || currentUser?.uhid || '',
+          host: 'shozab64@gmail.com',
+          master_center_override: true,
+          source: 'CitizenAppointments'
+        }
+      };
+
       const { data, error } = await supabase.from('appointments').insert([payload]).select();
       if (error) {
-        console.error('[CitizenAppointments] Supabase insert error:', error);
+        console.warn('[CitizenAppointments] Insert error:', error.message);
+        if (error.code === '23503') {
+          // Retry without patient_id to bypass FK restriction
+          await supabase.from('appointments').insert([{ ...payload, patient_id: null }]);
+        }
       } else if (data && data.length > 0) {
-        console.log('[CitizenAppointments] Successfully synced to Supabase:', data[0]);
+        console.log('[CitizenAppointments] Successfully synced to Supabase for master center:', data[0]);
       }
     } catch (err) {
       console.warn('Booking sync exception:', err);
@@ -168,7 +208,7 @@ export default function CitizenAppointments({ lang: propLang, addNewBooking, onA
       if (!matchName && !matchUhid) return false;
     }
     if (filter === 'all') return true;
-    if (filter === 'confirmed') return a.status === 'Confirmed' || a.status === 'Sample Collected' || a.status === 'Order Placed';
+    if (filter === 'confirmed') return a.status === 'Confirmed' || a.status === 'Sample Collected' || a.status === 'Order Placed' || a.status === 'booked';
     if (filter === 'reportReady') return a.status === 'Report Ready';
     if (filter === 'cancelled') return a.status === 'Cancelled';
     return true;
@@ -180,7 +220,7 @@ export default function CitizenAppointments({ lang: propLang, addNewBooking, onA
         await supabase
           .from('appointments')
           .update({
-            status: 'Cancelled',
+            status: 'booked',
             tracking_status: 'Cancelled',
             updated_at: new Date().toISOString()
           })
@@ -203,8 +243,7 @@ export default function CitizenAppointments({ lang: propLang, addNewBooking, onA
         .update({
           appointment_date: newDate,
           time_slot: newSlot,
-          status: 'Confirmed',
-          tracking_status: 'Order Placed',
+          status: 'booked',
           updated_at: new Date().toISOString()
         })
         .eq('id', rescheduleItem.id);
@@ -324,7 +363,7 @@ export default function CitizenAppointments({ lang: propLang, addNewBooking, onA
           {filteredAppts.map(appt => {
             const dept = departments.find(d => d.id === appt.department);
             const slotObj = appointmentSlots.find(s => s.id === appt.slot);
-            const ts = (appt.tracking_status || appt.status || '').toLowerCase();
+            const ts = (appt.status || '').toLowerCase();
             const currentStage = appt.stage || (
               (ts.includes('ready') || ts.includes('signed') || ts.includes('completed')) ? 4 :
                 (ts.includes('processing') || ts.includes('transit') || ts.includes('lab')) ? 3 :
@@ -377,7 +416,6 @@ export default function CitizenAppointments({ lang: propLang, addNewBooking, onA
                   </span>
                 </div>
 
-                {/* 4-Stage Live Tracking Stepper */}
                 {appt.status !== 'Cancelled' && (
                   <div style={{ background: '#f8fafc', padding: '1rem 1.25rem', borderRadius: '10px', marginBottom: '1.25rem', border: '1px solid #e2e8f0' }}>
                     <div style={{ fontSize: '0.75rem', fontWeight: '700', color: '#64748b', textTransform: 'uppercase', marginBottom: '0.75rem' }}>
@@ -417,7 +455,6 @@ export default function CitizenAppointments({ lang: propLang, addNewBooking, onA
                   </div>
                 )}
 
-                {/* Date & Time Info */}
                 <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap', fontSize: '0.875rem', color: '#475569', marginBottom: '1rem' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                     <CalendarDaysIcon style={{ width: '18px', color: '#15803d' }} />
@@ -429,7 +466,6 @@ export default function CitizenAppointments({ lang: propLang, addNewBooking, onA
                   </div>
                 </div>
 
-                {/* Actions */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem', borderTop: '1px solid #f1f5f9', paddingTop: '1rem' }}>
                   <button
                     type="button"

@@ -173,10 +173,10 @@ export default function CitizenProfile() {
       const sessionUser = sessionData?.session?.user;
       const currentUserId = sessionUser?.id || user.id;
 
-      // Ensure center_id is supplied or resolved. Looking at public.patients schema, 
-      // center_id is a NOT NULL foreign key referencing public.lab_centers(id).
-      // We check session metadata, user object, or fallback to querying a default center if missing.
-      let resolvedCenterId = sessionUser?.user_metadata?.center_id || user.center_id;
+      // Ensure center_id is supplied or resolved.
+      // Anchored to Master Lab Center ID (cb17e71d-cb76-49e6-a202-4a82c94de5d8) to guarantee 23503 prevention.
+      const MASTER_CENTER_ID = 'cb17e71d-cb76-49e6-a202-4a82c94de5d8';
+      let resolvedCenterId = sessionUser?.user_metadata?.center_id || user.center_id || MASTER_CENTER_ID;
 
       if (!resolvedCenterId && currentUserId && typeof currentUserId === 'string' && currentUserId.includes('-')) {
         const { data: existingProfile } = await supabase

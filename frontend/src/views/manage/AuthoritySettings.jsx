@@ -101,14 +101,6 @@ export default function AuthoritySettings() {
     hydrateSettings();
   }, [hydrateSettings]);
 
-  const handleCopyLabId = () => {
-    if (form.labId) {
-      navigator.clipboard?.writeText(form.labId);
-      setCopiedLabId(true);
-      setTimeout(() => setCopiedLabId(false), 2000);
-    }
-  };
-
   const handleSave = async (e) => {
     e.preventDefault();
     if (!isDirty || isSaving) return;
@@ -119,8 +111,13 @@ export default function AuthoritySettings() {
       const currentUserId = sessionData?.session?.user?.id || currentUser?.id;
       const cleanAnswer = (form.securityAnswer || '').trim().toLowerCase();
 
+      // FIXED: Use the actual Lab Center ID from your database screenshot
+      const targetCenterId = 'cb17e71d-cb76-49e6-a202-4a82c94de5d8';
+
+      // Now proceed to update the profile securely
       const updates = {
         id: currentUserId,
+        center_id: targetCenterId,
         full_name: form.name.trim(),
         display_name: form.name.trim(),
         phone: form.phone.trim() || null,
@@ -137,39 +134,49 @@ export default function AuthoritySettings() {
       if (currentUserId) {
         const { error } = await supabase.from('profiles').upsert(updates, { onConflict: 'id' });
         if (error) {
-          console.warn('[AuthoritySettings] upsert error, falling back to update:', error);
+          console.error('[AuthoritySettings] Upsert failed:', error.message, error.details);
+          // Fallback to update
           await supabase.from('profiles').update(updates).eq('id', currentUserId);
         }
       }
 
+      // Update local context and storage
       const updatedUser = {
         ...(currentUser || {}),
         name: form.name.trim(),
         phone: form.phone.trim(),
         centerName: form.centerName.trim(),
         labId: form.labId,
-        designation: form.designation.trim()
+        designation: form.designation.trim(),
+        centerId: targetCenterId
       };
 
       if (typeof updateCurrentUser === 'function') {
         updateCurrentUser(updatedUser);
       }
+
       sessionStorage.setItem('labsetu_authority_session', JSON.stringify(updatedUser));
       localStorage.setItem('labsetu_authority_session', JSON.stringify(updatedUser));
       sessionStorage.setItem('labsetu_auth', JSON.stringify(updatedUser));
       localStorage.setItem('labsetu_auth', JSON.stringify(updatedUser));
 
-      // Re-hydrate fresh DB state to reset pristine baseline
       await hydrateSettings();
 
       setSavedNotice(true);
       setTimeout(() => setSavedNotice(false), 2500);
     } catch (err) {
       console.error('Settings save exception:', err);
-      setSavedNotice(true);
-      setTimeout(() => setSavedNotice(false), 2500);
+      alert("Failed to save settings. Check developer console for details.");
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleCopyLabId = () => {
+    if (form.labId) {
+      navigator.clipboard?.writeText(form.labId);
+      setCopiedLabId(true);
+      setTimeout(() => setCopiedLabId(false), 2000);
     }
   };
 

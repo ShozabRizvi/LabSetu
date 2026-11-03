@@ -284,30 +284,76 @@ export default function CitizenHomeCollection({ lang: propLang }) {
     const newId = `HC-${Math.floor(1000 + Math.random() * 9000)}`;
     const isFasting = /fasting|sugar|glucose|lipid|cholesterol|kft|lft/i.test(form.tests);
     const prepNotice = isFasting ? 'Strict 10-12 hours overnight fasting required. Plain water permitted.' : null;
+    const MASTER_CENTER_ID = 'cb17e71d-cb76-49e6-a202-4a82c94de5d8';
+    const patientName = (currentUser?.name || 'Citizen Patient').trim();
+    const patientPhone = currentUser?.phone || null;
+    const patientUhid = activeUHID || currentUser?.uhid || null;
+
+    // Foreign Key Safety: Check or create patient row to prevent 23503 error
+    let patientUuid = null;
+    try {
+      const candidateUuid = currentUser?.id;
+      if (candidateUuid && candidateUuid.length >= 30 && candidateUuid.includes('-')) {
+        const { data: pt } = await supabase.from('patients').select('id').eq('id', candidateUuid).maybeSingle();
+        if (pt?.id) {
+          patientUuid = pt.id;
+        } else {
+          const { data: newPt } = await supabase.from('patients').upsert([{
+            id: candidateUuid,
+            center_id: MASTER_CENTER_ID,
+            patient_code: patientUhid || `PAT-${Date.now().toString().slice(-5)}`,
+            full_name: patientName,
+            phone: patientPhone || ''
+          }], { onConflict: 'id' }).select('id').maybeSingle();
+          patientUuid = newPt?.id || null;
+        }
+      }
+    } catch (fkErr) {
+      console.warn('[CitizenHomeCollection] FK resolution note:', fkErr);
+    }
 
     const appointmentPayload = {
+      center_id: MASTER_CENTER_ID,
+      patient_id: patientUuid || null,
+      department: 'Pathology',
       appointment_date: form.date,
+      slot_start: '08:00:00',
+      slot_end: '09:00:00',
+      status: 'booked',
       visit_type: 'home_collection',
-      status: 'Confirmed',
-      tracking_status: 'Order Placed',
-      estimated_delivery_time: '30-45 mins',
-      assigned_lab_id: assignedLab.id,
-      patient_id: currentUser?.id && currentUser.id.includes('-') ? currentUser.id : null,
-      patient_name: currentUser?.name || 'Citizen Patient',
-      patient_phone: currentUser?.phone || null,
-      patient_email: currentUser?.email || null,
-      uhid: activeUHID || currentUser?.uhid || null,
-      patient_latitude: geoState.coords?.latitude,
-      patient_longitude: geoState.coords?.longitude,
+      booking_source: 'CENTRAL_PORTAL',
       purpose: form.tests,
-      preparation_instructions: prepNotice,
-      notes: `Ref: ${newId}, Address: ${form.address}, MatchedLab: ${assignedLab.name}`
+      assistant_data: {
+        patient_name: patientName,
+        patient_phone: patientPhone,
+        patient_email: currentUser?.email || null,
+        uhid: patientUhid,
+        tracking_status: 'Order Placed',
+        time_slot: form.timeSlot || '08:00 AM - 09:00 AM',
+        slot: form.timeSlot || '08:00 AM - 09:00 AM',
+        address: form.address,
+        estimated_delivery_time: '30-45 mins',
+        assigned_lab_id: assignedLab.id,
+        matched_lab: assignedLab.name,
+        preparation_instructions: prepNotice,
+        ref: newId,
+        host: 'shozab64@gmail.com',
+        source: 'home_collection',
+        notes: `Ref: ${newId}, Address: ${form.address}, MatchedLab: ${assignedLab.name}`
+      }
     };
 
-    console.log('[CitizenHomeCollection] Submitting appointment payload:', appointmentPayload);
+    console.log('[CitizenHomeCollection] Submitting appointment payload for master center:', appointmentPayload);
 
     try {
-      const { data, error } = await supabase.from('appointments').insert(appointmentPayload).select();
+      let { data, error } = await supabase.from('appointments').insert([appointmentPayload]).select();
+
+      if (error && error.code === '23503') {
+        // Retry without patient_id to bypass foreign key constraint
+        const retryRes = await supabase.from('appointments').insert([{ ...appointmentPayload, patient_id: null }]).select();
+        data = retryRes.data;
+        error = retryRes.error;
+      }
 
       if (error) {
         console.error('[CitizenHomeCollection] Supabase appointment insert error:', error);

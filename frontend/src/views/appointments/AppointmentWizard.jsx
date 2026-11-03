@@ -152,19 +152,24 @@ export default function AppointmentWizard() {
     setStep((current) => Math.min(4, current + 1)); 
   };
 
-  const confirm = () => {
+  const confirm = async () => {
     if (!verified || !department || !date || !slot) { 
       setNotice('Complete all appointment details first.'); 
       return; 
     }
     const id = `APT-${Date.now().toString().slice(-7)}`;
     const matchedLabName = geoMatch.lab?.name || 'LabSetu Central Reference Lab';
+    const MASTER_CENTER_ID = 'cb17e71d-cb76-49e6-a202-4a82c94de5d8';
+    const patientName = (patient.name || activeMember?.name || (currentUser?.name && !currentUser.name.includes('@') ? currentUser.name : 'Patient')).trim();
+    const patientPhone = patient.mobile || currentUser?.phone || '';
+    const patientUhid = activeUHID || currentUser?.uhid || '';
+
     const record = { 
       id, 
       aptId: id,
-      patientName: (patient.name || activeMember?.name || (currentUser?.name && !currentUser.name.includes('@') ? currentUser.name : 'Patient')).trim(), 
-      mobile: patient.mobile || currentUser?.phone || '', 
-      uhid: activeUHID || currentUser?.uhid || '',
+      patientName, 
+      mobile: patientPhone, 
+      uhid: patientUhid,
       department, 
       visitType,
       homeAddress: visitType === 'home' ? homeAddress : undefined,
@@ -196,26 +201,70 @@ export default function AppointmentWizard() {
       // Safe fallback for restricted storage
     }
 
+    // Direct Supabase Insertion strictly matching production schema & foreign keys
     try {
-      supabase.from('appointments').insert({
+      // Foreign Key Safety: Check or create patient row to prevent 23503 error
+      let patientUuid = null;
+      const candidateUuid = currentUser?.id || activeMember?.id;
+      if (candidateUuid && candidateUuid.length >= 30 && candidateUuid.includes('-')) {
+        const { data: pt } = await supabase.from('patients').select('id').eq('id', candidateUuid).maybeSingle();
+        if (pt?.id) {
+          patientUuid = pt.id;
+        } else {
+          const { data: newPt } = await supabase.from('patients').upsert([{
+            id: candidateUuid,
+            center_id: MASTER_CENTER_ID,
+            patient_code: patientUhid || `PAT-${Date.now().toString().slice(-5)}`,
+            full_name: patientName,
+            phone: patientPhone
+          }], { onConflict: 'id' }).select('id').maybeSingle();
+          patientUuid = newPt?.id || null;
+        }
+      }
+
+      const appointmentPayload = {
+        center_id: MASTER_CENTER_ID,
+        patient_id: patientUuid || null,
+        department: selectedDepartment?.name || department || 'Pathology',
         appointment_date: date,
+        slot_start: '10:00:00',
+        slot_end: '11:00:00',
+        status: 'booked',
         visit_type: visitType === 'home' ? 'home_collection' : 'lab_visit',
-        status: 'Confirmed',
-        tracking_status: 'Order Placed',
-        assigned_lab_id: geoMatch.lab?.id || 'lab-central',
-        patient_latitude: geoMatch.coords?.latitude,
-        patient_longitude: geoMatch.coords?.longitude,
-        purpose: department,
-        notes: `Patient: ${(patient.name || activeMember?.name || currentUser?.name || '').trim()}, UHID: ${activeUHID || currentUser?.uhid || ''}, Phone: ${patient.mobile}, Slot: ${slot}, Type: ${visitType === 'home' ? 'Home Sample Collection' : 'Manual Lab Visit'}${visitType === 'home' && homeAddress ? ', Address: ' + homeAddress : ''}, MatchedLab: ${matchedLabName}`
-      }).then(({ error }) => {
-        if (error) console.warn('Supabase appointment insert error:', error);
-      });
+        booking_source: 'CENTRAL_PORTAL',
+        purpose: selectedDepartment?.name || department || 'General Diagnostics',
+        assistant_data: {
+          patient_name: patientName,
+          patient_phone: patientPhone,
+          uhid: patientUhid,
+          time_slot: slot,
+          slot: slot,
+          tracking_status: 'Order Placed',
+          visit_type: visitType,
+          home_address: visitType === 'home' ? homeAddress : undefined,
+          host: 'shozab64@gmail.com',
+          master_center_override: true,
+          source: 'AppointmentWizard',
+          notes: `Ref: ${id}, Slot: ${slot}, Lab: ${matchedLabName}`
+        }
+      };
+
+      const { data, error } = await supabase.from('appointments').insert([appointmentPayload]).select();
+      if (error) {
+        console.warn('[AppointmentWizard] Insert retry note:', error.message);
+        if (error.code === '23503') {
+          // If 23503 FK error occurs, retry without patient_id
+          await supabase.from('appointments').insert([{ ...appointmentPayload, patient_id: null }]);
+        }
+      } else {
+        console.log('[AppointmentWizard] Successfully inserted appointment for master center:', data?.[0]);
+      }
     } catch (e) {
       console.warn('Supabase insert warning:', e);
     }
 
     try {
-      window.dispatchEvent(new CustomEvent('labsetu:addNewBooking', { detail: record }));
+      window.dispatchEvent(new CustomEvent('labsetu:addNewBooking', { detail: { ...record, synced: true } }));
     } catch {}
 
     setReference(id); 
