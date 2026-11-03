@@ -273,12 +273,22 @@ export default function TodaysReports() {
     setTimeout(() => setModalNotice(''), 3000);
   };
 
+  const [isPrinting, setIsPrinting] = useState(false);
+
   const handleDownloadPdf = () => {
-    window.print();
+    setIsPrinting(true);
+    setTimeout(() => {
+      window.print();
+      setIsPrinting(false);
+    }, 400);
   };
 
   const handlePrintReport = () => {
-    window.print();
+    setIsPrinting(true);
+    setTimeout(() => {
+      window.print();
+      setIsPrinting(false);
+    }, 400);
   };
 
   const testMap = Object.fromEntries(TEST_CATALOGUE.map(t => [t.test_id, t]));
@@ -313,10 +323,6 @@ export default function TodaysReports() {
             <ChevronRightIcon className="lab-small-icon" />
           </button>
         </div>
-        
-        <button type="button" className="lab-btn lab-btn-outline" onClick={() => alert(`Today's summary: ${reports.length} total samples, ${reports.filter(r => r.status === 'Final' || r.status === 'Signed off').length} signed off/final.`)}>
-          <ChartBarIcon className="lab-btn-icon" /> Stats
-        </button>
       </div>
 
       <div className="lab-tabs-row">

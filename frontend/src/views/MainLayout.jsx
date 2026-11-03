@@ -3,7 +3,9 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import logo from '../assets/logo.png';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
+import { PRESET_SECURITY_QUESTIONS } from '../services/authService';
 import LabSetuVideoPlayer from '../components/common/LabSetuVideoPlayer';
+import Footer from '../components/common/Footer';
 import './MainLayout.css';
 import { 
   MagnifyingGlassIcon, 
@@ -74,72 +76,12 @@ export default function MainLayout() {
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [isVideoOpen, setIsVideoOpen] = useState(false);
-  const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
-  const [accountName, setAccountName] = useState(currentUser?.name || '');
-  const [isSavingAccount, setIsSavingAccount] = useState(false);
-  const [accountNotice, setAccountNotice] = useState('');
   const [legalModal, setLegalModal] = useState(null);
   const [isNewLabModalOpen, setIsNewLabModalOpen] = useState(false);
   const [isEmailPrefModalOpen, setIsEmailPrefModalOpen] = useState(false);
   const [isNewNavEnabled, setIsNewNavEnabled] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [copiedLabId, setCopiedLabId] = useState(false);
-
-  useEffect(() => {
-    if (isAccountModalOpen && currentUser) {
-      setAccountName(currentUser.name || '');
-      setAccountNotice('');
-    }
-  }, [isAccountModalOpen, currentUser]);
-
-  const handleSaveAccount = async (e) => {
-    e.preventDefault();
-    if (!accountName.trim()) return;
-
-    try {
-      setIsSavingAccount(true);
-      setAccountNotice('');
-      const newName = accountName.trim();
-      const targetUserId = currentUser?.id || '6296e1a6-8a20-4fa7-b26a-883b53800335';
-
-      // 1. Commit update to Supabase database
-      try {
-        let updateRes = await supabase
-          .from('profiles')
-          .update({ full_name: newName, display_name: newName })
-          .eq('id', targetUserId);
-
-        if (updateRes.error && updateRes.error.message?.includes('display_name')) {
-          updateRes = await supabase
-            .from('profiles')
-            .update({ full_name: newName })
-            .eq('id', targetUserId);
-        }
-      } catch (dbErr) {
-        console.warn('Supabase profile update warning:', dbErr);
-      }
-
-      // 2. Immediately update local auth state / user context
-      const updatedUser = {
-        ...(currentUser || {}),
-        id: targetUserId,
-        name: newName,
-        role: 'authority'
-      };
-      updateCurrentUser(updatedUser);
-
-      setAccountNotice('Profile updated successfully!');
-      setTimeout(() => {
-        setIsAccountModalOpen(false);
-        setAccountNotice('');
-      }, 700);
-    } catch (err) {
-      console.error('Account update error:', err);
-      setAccountNotice('Error updating profile. Please try again.');
-    } finally {
-      setIsSavingAccount(false);
-    }
-  };
 
   const [notifications, setNotifications] = useState([
     { id: 1, title: 'Sample Collected', desc: 'Sample collected for Patient Riya Sharma (CBC).', time: '10 mins ago', read: false },
@@ -362,14 +304,13 @@ export default function MainLayout() {
               </div>
 
               <div className="user-menu-links">
-                <button 
-                  type="button" 
+                <NavLink 
+                  to="/app/settings" 
                   className="user-menu-link" 
-                  style={{ width: '100%', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer' }}
-                  onClick={() => { setIsUserMenuExpanded(false); setIsAccountModalOpen(true); }}
+                  onClick={() => setIsUserMenuExpanded(false)}
                 >
-                  <UserIcon style={{width:'18px'}} /> My account
-                </button>
+                  <UserIcon style={{width:'18px'}} /> My account / Settings
+                </NavLink>
                 <NavLink 
                   to="/app/setup/center-details" 
                   className="user-menu-link" 
@@ -479,7 +420,6 @@ export default function MainLayout() {
                   <NavLink to="/app/business/due-reports" onClick={() => setIsMobileNavOpen(false)} className={({isActive}) => `layout-submenu-item ${isActive ? 'layout-nav-active' : ''}`}><DocumentDuplicateIcon/> Due reports</NavLink>
                   <NavLink to="/app/business/activities" onClick={() => setIsMobileNavOpen(false)} className={({isActive}) => `layout-submenu-item ${isActive ? 'layout-nav-active' : ''}`}><BellIcon/> Activities</NavLink>
                   <NavLink to="/app/business/referral" onClick={() => setIsMobileNavOpen(false)} className={({isActive}) => `layout-submenu-item ${isActive ? 'layout-nav-active' : ''}`}><UsersIcon/> Referral business</NavLink>
-                  <NavLink to="/app/business/case-wise" onClick={() => setIsMobileNavOpen(false)} className={({isActive}) => `layout-submenu-item ${isActive ? 'layout-nav-active' : ''}`}><DocumentTextIcon/> Case wise report</NavLink>
                   <NavLink to="/app/business/analysis" onClick={() => setIsMobileNavOpen(false)} className={({isActive}) => `layout-submenu-item ${isActive ? 'layout-nav-active' : ''}`}><ChartBarIcon/> Business analysis</NavLink>
                   <NavLink to="/app/business/data-export" onClick={() => setIsMobileNavOpen(false)} className={({isActive}) => `layout-submenu-item ${isActive ? 'layout-nav-active' : ''}`}><ArrowDownTrayIcon/> Data export</NavLink>
                 </div>
@@ -501,13 +441,10 @@ export default function MainLayout() {
               
               <div className={`layout-submenu-wrapper ${isCasesExpanded ? 'expanded' : ''}`}>
                 <div className="layout-submenu">
-                  <NavLink to="/app/business/daily" onClick={() => setIsMobileNavOpen(false)} className={({isActive}) => `layout-submenu-item ${isActive ? 'layout-nav-active' : ''}`}><ReceiptRefundIcon/> Bills</NavLink>
                   <NavLink to="/app/cases/outsource" onClick={() => setIsMobileNavOpen(false)} className={({isActive}) => `layout-submenu-item ${isActive ? 'layout-nav-active' : ''}`}><GlobeAltIcon/> Outsource cases</NavLink>
                   <NavLink to="/app/cases/ctscan" onClick={() => setIsMobileNavOpen(false)} className={({isActive}) => `layout-submenu-item ${isActive ? 'layout-nav-active' : ''}`}><FilmIcon/> Ct scan cases</NavLink>
                   <NavLink to="/app/cases/patients" onClick={() => setIsMobileNavOpen(false)} className={({isActive}) => `layout-submenu-item ${isActive ? 'layout-nav-active' : ''}`}><UserGroupIcon/> Patients</NavLink>
                   <NavLink to="/app/cases/transactions" onClick={() => setIsMobileNavOpen(false)} className={({isActive}) => `layout-submenu-item ${isActive ? 'layout-nav-active' : ''}`}><ArrowsRightLeftIcon/> Transactions</NavLink>
-                  <NavLink to="/app/cases/referral-doctors" onClick={() => setIsMobileNavOpen(false)} className={({isActive}) => `layout-submenu-item ${isActive ? 'layout-nav-active' : ''}`}><UserPlusIcon/> Referral Doctors</NavLink>
-                  <NavLink to="/app/cases/agents" onClick={() => setIsMobileNavOpen(false)} className={({isActive}) => `layout-submenu-item ${isActive ? 'layout-nav-active' : ''}`}><IdentificationIcon/> Agents</NavLink>
                 </div>
               </div>
             </div>
@@ -632,16 +569,7 @@ export default function MainLayout() {
             <Outlet />
           </div>
 
-          <footer className="w-full text-center text-sm text-gray-500 mt-10 pb-6">
-            <div className="flex justify-center gap-6 mb-1">
-              <a href="/terms" onClick={(e) => { e.preventDefault(); setLegalModal('terms'); }} className="hover:text-emerald-600">Terms &amp; Conditions</a>
-              <a href="/privacy" onClick={(e) => { e.preventDefault(); setLegalModal('privacy'); }} className="hover:text-emerald-600">Privacy Policy</a>
-            </div>
-            <div className="mb-4">
-              <a href="/refund" onClick={(e) => { e.preventDefault(); setLegalModal('refund'); }} className="hover:text-emerald-600">Refund Policy</a>
-            </div>
-            <p>&copy; 2026 LabSetu LIMS. All rights reserved.</p>
-          </footer>
+          <Footer onLegalClick={setLegalModal} />
         </main>
       </div>
 
@@ -698,101 +626,6 @@ export default function MainLayout() {
                 Done Watching
               </button>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* My Account Modal */}
-      {isAccountModalOpen && (
-        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '1rem' }} onClick={() => setIsAccountModalOpen(false)}>
-          <div style={{ backgroundColor: '#ffffff', borderRadius: '12px', maxWidth: '480px', width: '100%', padding: '1.5rem', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)' }} onClick={e => e.stopPropagation()}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
-              <h3 style={{ margin: 0, fontSize: '1.25rem', color: '#0f172a' }}>Account Owner Profile</h3>
-              <button type="button" onClick={() => setIsAccountModalOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
-                <XMarkIcon style={{ width: '20px', color: '#64748b' }} />
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveAccount} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              <div>
-                <label style={{ display: 'block', marginBottom: '0.4rem', fontSize: '0.85rem', fontWeight: '600', color: '#334155' }}>
-                  Full Name
-                </label>
-                <input
-                  type="text"
-                  value={accountName}
-                  onChange={(e) => setAccountName(e.target.value)}
-                  required
-                  placeholder="e.g. Dr. Shozab Rizvi"
-                  style={{
-                    width: '100%',
-                    padding: '0.65rem 0.85rem',
-                    border: '1px solid #cbd5e1',
-                    borderRadius: '8px',
-                    fontSize: '0.9rem',
-                    boxSizing: 'border-box',
-                    outline: 'none',
-                    color: '#0f172a'
-                  }}
-                />
-              </div>
-
-              <div style={{ backgroundColor: '#f8fafc', borderRadius: '8px', padding: '0.85rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', fontSize: '0.85rem', border: '1px solid #e2e8f0' }}>
-                <div><span style={{ color: '#64748b' }}>Role:</span> <strong style={{ color: '#15803d' }}>Authority / Center Admin</strong></div>
-                <div><span style={{ color: '#64748b' }}>Registered Email:</span> <strong>{currentUser?.email || 'admin@labsetu.com'}</strong></div>
-                <div><span style={{ color: '#64748b' }}>Associated Center:</span> <strong>{currentUser?.centerName || 'LabSetu Diagnostics'}</strong></div>
-                <div><span style={{ color: '#64748b' }}>Lab ID #:</span> <strong>{currentUser?.labId || '61326885'}</strong></div>
-              </div>
-
-              {accountNotice && (
-                <div style={{
-                  padding: '0.55rem 0.85rem',
-                  borderRadius: '6px',
-                  backgroundColor: accountNotice.includes('Error') ? '#fef2f2' : '#f0fdf4',
-                  color: accountNotice.includes('Error') ? '#dc2626' : '#15803d',
-                  fontSize: '0.85rem',
-                  fontWeight: '500'
-                }}>
-                  {accountNotice}
-                </div>
-              )}
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '0.5rem' }}>
-                <button
-                  type="button"
-                  onClick={() => setIsAccountModalOpen(false)}
-                  style={{
-                    padding: '0.55rem 1rem',
-                    borderRadius: '6px',
-                    border: '1px solid #cbd5e1',
-                    backgroundColor: '#ffffff',
-                    color: '#475569',
-                    fontSize: '0.875rem',
-                    fontWeight: '500',
-                    cursor: 'pointer'
-                  }}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSavingAccount}
-                  style={{
-                    padding: '0.55rem 1.25rem',
-                    borderRadius: '6px',
-                    border: 'none',
-                    backgroundColor: '#15803d',
-                    color: '#ffffff',
-                    fontWeight: '600',
-                    fontSize: '0.875rem',
-                    cursor: isSavingAccount ? 'not-allowed' : 'pointer',
-                    opacity: isSavingAccount ? 0.75 : 1
-                  }}
-                >
-                  {isSavingAccount ? 'Saving...' : 'Save Changes'}
-                </button>
-              </div>
-            </form>
           </div>
         </div>
       )}

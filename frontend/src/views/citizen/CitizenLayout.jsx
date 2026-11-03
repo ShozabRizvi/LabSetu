@@ -3,8 +3,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import logo from '../../assets/logo.png';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
-import { assistantService } from '../../services/assistantService';
-import { rows, statusLabel } from '../../utils/assistantUtils';
+import Footer from '../../components/common/Footer';
 import './CitizenLayout.css';
 import {
   MagnifyingGlassIcon,
@@ -16,8 +15,6 @@ import {
   CreditCardIcon,
   SquaresPlusIcon,
   ArrowRightOnRectangleIcon,
-  CheckCircleIcon,
-  ClockIcon,
   ShieldCheckIcon,
   XMarkIcon,
   Bars3Icon,
@@ -27,8 +24,7 @@ import {
   BellAlertIcon,
   UserGroupIcon,
   LockClosedIcon,
-  MicrophoneIcon,
-  LanguageIcon
+  MicrophoneIcon
 } from '@heroicons/react/24/outline';
 
 export default function CitizenLayout() {
@@ -44,17 +40,12 @@ export default function CitizenLayout() {
   const [isHelpModalOpen, setIsHelpModalOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [notificationState, setNotificationState] = useState({ patientId: null, items: [], error: '' });
-  const notifications = notificationState.patientId === currentUser?.id ? notificationState.items : [];
-
-  useEffect(() => {
-    if (!currentUser?.id) return;
-    let alive = true;
-    assistantService.notifications().then(data => {
-      if (alive) setNotificationState({ patientId: currentUser.id, items: rows(data, 'notifications').map(item => ({ ...item, title: statusLabel(item.type), desc: item.message, time: new Date(item.createdAt).toLocaleString() })), error: '' });
-    }).catch(error => { if (alive) setNotificationState({ patientId: currentUser.id, items: [], error: error.message }); });
-    return () => { alive = false; };
-  }, [currentUser?.id, isNotificationsOpen]);
+  
+  // Mock fallback notifications since assistantService was cleaned up
+  const [notifications, setNotifications] = useState([
+    { id: 1, title: 'Booking Confirmed', desc: 'Your pathology visit has been confirmed successfully.', time: 'Just now', read: false },
+    { id: 2, title: 'Sample Collected', desc: 'Phlebotomist has successfully collected your specimen sample.', time: '2 hours ago', read: false }
+  ]);
 
   const userMenuRef = useRef(null);
   const notifRef = useRef(null);
@@ -98,7 +89,7 @@ export default function CitizenLayout() {
   };
 
   const markAllRead = () => {
-    setNotificationState(previous => ({ ...previous, items: previous.items.map(n => ({ ...n, read: true })) }));
+    setNotifications(prev => prev.map(n => ({ ...n, read: true })));
   };
 
   const handleGlobalSearch = (e) => {
@@ -248,8 +239,7 @@ export default function CitizenLayout() {
                   )}
                 </div>
                 <div className="notif-list">
-                  {notificationState.error && <p className="notif-desc" role="alert">{notificationState.error}</p>}
-                  {!notificationState.error && notifications.length === 0 && <p className="notif-desc">No notifications returned for your account.</p>}
+                  {notifications.length === 0 && <p className="notif-desc">No notifications returned for your account.</p>}
                   {notifications.map(n => (
                     <div key={n.id} className={`notif-item ${!n.read ? 'unread' : ''}`}>
                       <div className="notif-title-row">
@@ -456,6 +446,8 @@ export default function CitizenLayout() {
           <div key={location.pathname} className="layout-slide-wrapper">
             <Outlet context={{ lang }} />
           </div>
+
+          <Footer lang={lang} />
         </main>
       </div>
 

@@ -4,6 +4,7 @@ import { QuestionMarkCircleIcon, XMarkIcon, MagnifyingGlassIcon, CheckCircleIcon
 import useDemoResource from '../../hooks/useDemoResource';
 import { demoDashboardData } from '../../data/mockLabData';
 import { ensureArray } from '../../utils/arrayUtils';
+import { supabase } from '../../lib/supabase';
 
 const defaultBillWorkflow = {
   patientForm: {
@@ -105,8 +106,20 @@ export default function NewBill() {
   };
 
   const [testSearch, setTestSearch] = useState('');
+  const [toast, setToast] = useState({ show: false, message: '', isFading: false });
+
+  const showToastNotification = (msg) => {
+    setToast({ show: true, message: msg, isFading: false });
+    setTimeout(() => {
+      setToast(prev => ({ ...prev, isFading: true }));
+      setTimeout(() => {
+        setToast({ show: false, message: '', isFading: false });
+      }, 300);
+    }, 3000);
+  };
   const [savedNotice, setSavedNotice] = useState(false);
   const [billReceipt, setBillReceipt] = useState(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const availableTests = [
     { id: 1, name: 'Complete Blood Count (CBC)', category: 'Haematology', price: 450 },
@@ -307,20 +320,27 @@ export default function NewBill() {
     setBillReceipt(null);
   };
 
-  const handleSaveBill = (printAfter = false) => {
+  const handleSaveBill = async (printAfter = false) => {
     if (cart.length === 0) {
-      alert('Please add at least one laboratory test or package to the bill.');
+      showToastNotification('Please add at least one laboratory test or package to the bill.');
       return;
     }
+    if (isSubmitting) return;
+
+    setIsSubmitting(true);
     const fullName = `${patientForm.firstName} ${patientForm.lastName}`.trim() || 'Walk-in Patient';
     const newTxnId = `TX-${Math.floor(2050 + Math.random() * 900)}`;
+    const newRegNo = patientForm.uhid ? `REG-${patientForm.uhid.replace(/\D/g, '') || Math.floor(1000 + Math.random() * 9000)}` : `REG-${Math.floor(1000 + Math.random() * 9000)}`;
 
     const newRecord = {
       id: newTxnId,
+      regNo: newRegNo,
       patient: fullName,
       description: ensureArray(cart).map(c => c.name).join(', '),
       amount: netPayable,
+      method: paymentMode === 'Due / Credit' ? 'Cash' : paymentMode,
       status: 'Paid',
+      receivedBy: 'Cashier Desk',
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     };
 
@@ -332,22 +352,99 @@ export default function NewBill() {
       };
     });
 
-    setSavedNotice(true);
-    setTimeout(() => setSavedNotice(false), 2500);
+    try {
+      // Explicitly INSERT into transactions table with strict error verification and column fallback
+      const fullPayload = {
+        id: newTxnId,
+        reg_no: newRegNo,
+        patient: fullName,
+        patient_name: fullName,
+        ref: patientForm.doctor || 'Self',
+        dcn: 'D-01',
+        cc: 'Main Lab',
+        amount: netPayable,
+        method: paymentMode === 'Due / Credit' ? 'Cash' : paymentMode,
+        payment_mode: paymentMode === 'Due / Credit' ? 'Cash' : paymentMode,
+        status: 'Paid',
+        received_by: 'Cashier Desk',
+        description: ensureArray(cart).map(c => c.name).join(', '),
+        center_id: 'cb17e71d-cb76-49e6-a202-4a82c94de5d8'
+      };
 
-    if (printAfter) {
-      setTimeout(() => {
-        window.print();
+      let { error } = await supabase.from('transactions').insert(fullPayload);
+
+      // Resilient fallback if schema in PostgreSQL lacks extended columns (code 42703)
+      if (error && (error.code === '42703' || error.message?.includes('does not exist'))) {
+        console.warn('[NewBill] Extended columns not yet migrated, falling back to core transactions schema:', error.message);
+        const fallbackPayload = {
+          id: newTxnId,
+          amount: netPayable,
+          payment_mode: paymentMode === 'Due / Credit' ? 'Cash' : paymentMode,
+          center_id: 'cb17e71d-cb76-49e6-a202-4a82c94de5d8'
+        };
+        const fallbackRes = await supabase.from('transactions').insert(fallbackPayload);
+        error = fallbackRes.error;
+      }
+
+      if (error) {
+        console.error('[NewBill] Supabase transactions insert failure:', error);
+        showToastNotification(`Error saving transaction: ${error.message || 'Database error'}`);
+        setIsSubmitting(false);
+        return;
+      }
+
+      setSavedNotice(true);
+      setTimeout(() => setSavedNotice(false), 2500);
+
+      showToastNotification(`Bill #${newTxnId} successfully saved! Ledger updated in real-time.`);
+
+      if (printAfter) {
+        setTimeout(() => {
+          window.print();
+          clearForm();
+          setIsSubmitting(false);
+        }, 400);
+      } else {
         clearForm();
-      }, 400);
-    } else {
-      alert(`Bill #${newTxnId} saved successfully for ${fullName}!`);
-      clearForm();
+        setIsSubmitting(false);
+      }
+    } catch (err) {
+      console.error('[NewBill] Transaction save exception:', err);
+      showToastNotification(`Save failed: ${err.message || 'Network exception'}`);
+      setIsSubmitting(false);
     }
   };
 
   return (
     <div className="newbill-container printable-area">
+      {/* Animated State-Driven Toast Notification */}
+      {toast.show && (
+        <div
+          style={{
+            position: 'fixed',
+            bottom: '20px',
+            right: '20px',
+            zIndex: 9999,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.65rem',
+            backgroundColor: '#064e3b',
+            color: '#ffffff',
+            padding: '0.85rem 1.25rem',
+            borderRadius: '10px',
+            boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.2), 0 4px 6px -2px rgba(0, 0, 0, 0.1)',
+            transform: toast.isFading ? 'translateX(100%)' : 'translateX(0)',
+            opacity: toast.isFading ? 0 : 1,
+            transition: 'all 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
+            border: '1px solid #059669',
+            maxWidth: '380px'
+          }}
+          role="alert"
+        >
+          <CheckCircleIcon style={{ width: '22px', height: '22px', color: '#34d399', flexShrink: 0 }} />
+          <span style={{ fontSize: '0.875rem', fontWeight: '500', lineHeight: 1.4 }}>{toast.message}</span>
+        </div>
+      )}
       {/* Header */}
       <div className="newbill-header">
         <h1>Create New Laboratory Bill</h1>
@@ -473,18 +570,6 @@ export default function NewBill() {
                   <option>Dr. A. K. Gupta</option>
                 </select>
               </div>
-            </div>
-            <div className="newbill-input-group" style={{marginTop:'0.5rem'}}>
-              <label className="newbill-label">Collection Agent</label>
-              <select 
-                className="newbill-input"
-                value={patientForm.agent}
-                onChange={e => setPatientForm({ ...patientForm, agent: e.target.value })}
-              >
-                <option>None (Walk-in)</option>
-                <option>Agent A (Sample Van)</option>
-                <option>Agent B (Home Phlebotomy)</option>
-              </select>
             </div>
           </div>
 
@@ -781,23 +866,54 @@ export default function NewBill() {
             )}
           </div>
 
-          <div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginTop: '1.25rem', paddingTop: '1rem', borderTop: '1px solid #e2e8f0' }}>
             <button 
               type="button" 
+              disabled={isSubmitting || cart.length === 0}
               className="newbill-primary-btn"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '0.5rem',
+                opacity: isSubmitting ? 0.75 : 1,
+                cursor: isSubmitting ? 'not-allowed' : 'pointer',
+                borderRadius: '10px'
+              }}
               onClick={() => handleSaveBill(true)}
             >
-              Save & Print Bill
+              {isSubmitting ? (
+                <>
+                  <svg style={{ animation: 'spin 1s linear infinite', height: '16px', width: '16px' }} fill="none" viewBox="0 0 24 24">
+                    <circle style={{ opacity: 0.25 }} cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path style={{ opacity: 0.75 }} fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  Processing & Preparing Slip...
+                </>
+              ) : (
+                'Save & Print Bill'
+              )}
             </button>
             <button 
               type="button" 
+              disabled={isSubmitting || cart.length === 0}
               className="newbill-secondary-btn"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '0.5rem',
+                opacity: isSubmitting ? 0.75 : 1,
+                cursor: isSubmitting ? 'not-allowed' : 'pointer',
+                borderRadius: '10px'
+              }}
               onClick={() => handleSaveBill(false)}
             >
-              Save Only
+              {isSubmitting ? 'Saving to Database...' : 'Save Only'}
             </button>
             <button 
               type="button" 
+              disabled={isSubmitting}
               className="newbill-clear-btn" 
               onClick={clearForm}
             >

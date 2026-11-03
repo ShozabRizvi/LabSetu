@@ -171,21 +171,51 @@ create policy "Reports all operations" on public.reports for all using (true) wi
 drop policy if exists "Bills all operations" on public.bills;
 create policy "Bills all operations" on public.bills for all using (true) with check (true);
 
--- 8. TRIGGER FOR NEW AUTH SIGNUPS
+-- 8. SEQUENCES & TRIGGER FOR COLLISION-PROOF UHID AND LAB ID GENERATION
+create sequence if not exists public.uhid_seq start 1000;
+create sequence if not exists public.lab_id_seq start 1000;
+alter table public.profiles add column if not exists lab_id text;
+
 create or replace function public.handle_new_user()
 returns trigger as $$
+declare
+  v_role text;
+  v_uhid text;
+  v_lab_id text;
 begin
-  insert into public.profiles (id, email, full_name, uhid)
+  v_role := coalesce(new.raw_user_meta_data->>'role', 'citizen');
+
+  if v_role = 'authority' or v_role = 'admin' then
+    v_lab_id := 'LAB-' || nextval('public.lab_id_seq')::text;
+    v_uhid := null;
+  else
+    v_uhid := 'UHID-' || nextval('public.uhid_seq')::text;
+    v_lab_id := null;
+  end if;
+
+  insert into public.profiles (id, email, full_name, role, uhid, lab_id)
   values (
     new.id, 
     new.email, 
-    coalesce(new.raw_user_meta_data->>'full_name', 'Patient'), 
-    'UHID-' || to_char(current_date, 'YYYY') || '-' || floor(random() * (9999-1000+1) + 1000)::text
+    coalesce(new.raw_user_meta_data->>'full_name', case when v_role = 'authority' or v_role = 'admin' then 'Dr. Shozab Rizvi' else 'Patient' end), 
+    case when v_role = 'authority' or v_role = 'admin' then 'admin' else 'citizen' end,
+    v_uhid,
+    v_lab_id
   )
   on conflict (id) do update set
     full_name = coalesce(excluded.full_name, profiles.full_name),
     email = excluded.email,
-    uhid = coalesce(profiles.uhid, excluded.uhid);
+    role = coalesce(excluded.role, profiles.role),
+    uhid = case 
+      when (profiles.role is null or profiles.role = 'citizen') and (profiles.uhid is null or profiles.uhid = 'Pending' or trim(profiles.uhid) = '' or profiles.uhid like 'UHID-____-%')
+      then coalesce(excluded.uhid, 'UHID-' || nextval('public.uhid_seq')::text)
+      else profiles.uhid 
+    end,
+    lab_id = case
+      when (profiles.role = 'admin' or profiles.role = 'authority') and (profiles.lab_id is null or trim(profiles.lab_id) = '')
+      then coalesce(excluded.lab_id, 'LAB-' || nextval('public.lab_id_seq')::text)
+      else profiles.lab_id
+    end;
   return new;
 end;
 $$ language plpgsql security definer;
@@ -195,7 +225,348 @@ create trigger on_auth_user_created
   after insert on auth.users
   for each row execute procedure public.handle_new_user();
 
+-- Retroactive fix for existing accounts using collision-proof sequences
+update public.profiles
+set uhid = 'UHID-' || nextval('public.uhid_seq')::text
+where (role is null or role = 'citizen') and (uhid is null or uhid = 'Pending' or trim(uhid) = '' or uhid like 'UHID-____-%');
+
+update public.profiles
+set lab_id = 'LAB-' || nextval('public.lab_id_seq')::text
+where (role = 'admin' or role = 'authority') and (lab_id is null or trim(lab_id) = '');
+
+update public.patients
+set patient_code = 'UHID-' || substring(id::text from 1 for 4) || '-' || to_char(coalesce(created_at, current_date), 'YYYY')
+where patient_code is null or patient_code = 'Pending' or trim(patient_code) = '';
+
 -- Enable realtime on dashboard tables
 alter publication supabase_realtime add table public.appointments;
 alter publication supabase_realtime add table public.reports;
 alter publication supabase_realtime add table public.bills;
+
+-- 9. SECURITY QUESTION BYPASS FOR PASSWORD RESET (RPC)
+create extension if not exists pgcrypto with schema extensions;
+
+alter table public.profiles add column if not exists security_question text;
+alter table public.profiles add column if not exists security_answer text;
+alter table public.profiles add column if not exists security_question_1 text;
+alter table public.profiles add column if not exists security_answer_1 text;
+
+alter table public.patients add column if not exists security_question text;
+alter table public.patients add column if not exists security_answer text;
+
+drop function if exists public.get_security_question_by_email(text);
+
+create or replace function public.get_security_question_by_email(p_email text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, auth, extensions
+as $$
+declare
+  v_user_id uuid;
+  v_question text;
+  v_cleaned_email text;
+begin
+  v_cleaned_email := lower(trim(p_email));
+
+  if v_cleaned_email is null or v_cleaned_email = '' then
+    return jsonb_build_object('success', false, 'error', 'Please enter a valid email address.');
+  end if;
+
+  select coalesce(p.security_question, p.security_question_1) into v_question
+  from public.profiles p
+  where lower(trim(p.email)) = v_cleaned_email
+  order by (case when p.security_question is not null then 1 else 2 end)
+  limit 1;
+
+  if v_question is null or trim(v_question) = '' then
+    select pt.security_question into v_question
+    from public.patients pt
+    where lower(trim(pt.email)) = v_cleaned_email
+    limit 1;
+  end if;
+
+  if v_question is null or trim(v_question) = '' then
+    select u.id into v_user_id
+    from auth.users u
+    where lower(trim(u.email)) = v_cleaned_email
+    limit 1;
+
+    if v_user_id is not null then
+      v_question := 'What is your childhood nickname?';
+    else
+      return jsonb_build_object('success', false, 'error', 'No account found with this email address.');
+    end if;
+  end if;
+
+  return jsonb_build_object('success', true, 'question', v_question);
+end;
+$$;
+
+grant execute on function public.get_security_question_by_email(text) to anon, authenticated, service_role;
+
+drop function if exists public.reset_password_via_security_question(text, text, text);
+
+create or replace function public.reset_password_via_security_question(
+  p_email text,
+  p_security_answer text,
+  p_new_password text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, auth, extensions
+as $$
+declare
+  v_user_id uuid;
+  v_stored_answer text;
+  v_cleaned_email text;
+  v_cleaned_answer text;
+  v_hashed_password text;
+begin
+  v_cleaned_email := lower(trim(p_email));
+  v_cleaned_answer := lower(trim(p_security_answer));
+
+  if v_cleaned_email is null or v_cleaned_email = '' then
+    return jsonb_build_object('success', false, 'error', 'Email address is required.');
+  end if;
+
+  if v_cleaned_answer is null or v_cleaned_answer = '' then
+    return jsonb_build_object('success', false, 'error', 'Please provide an answer to your security question.');
+  end if;
+
+  if p_new_password is null or length(p_new_password) < 6 then
+    return jsonb_build_object('success', false, 'error', 'Password must be at least 6 characters long.');
+  end if;
+
+  select u.id into v_user_id
+  from auth.users u
+  where lower(trim(u.email)) = v_cleaned_email
+  limit 1;
+
+  if v_user_id is null then
+    return jsonb_build_object('success', false, 'error', 'No account found with this email address.');
+  end if;
+
+  select coalesce(p.security_answer, p.security_answer_1) into v_stored_answer
+  from public.profiles p
+  where p.id = v_user_id or lower(trim(p.email)) = v_cleaned_email
+  order by (case when p.security_answer is not null then 1 else 2 end)
+  limit 1;
+
+  if v_stored_answer is null then
+    select pt.security_answer into v_stored_answer
+    from public.patients pt
+    where pt.id = v_user_id or lower(trim(pt.email)) = v_cleaned_email
+    limit 1;
+  end if;
+
+  if v_stored_answer is null or trim(v_stored_answer) = '' then
+    return jsonb_build_object('success', false, 'error', 'No security question configured for this account. Please contact laboratory support.');
+  end if;
+
+  if lower(trim(v_stored_answer)) <> v_cleaned_answer then
+    return jsonb_build_object('success', false, 'error', 'Incorrect security answer. Please check your answer and try again.');
+  end if;
+
+  begin
+    v_hashed_password := extensions.crypt(p_new_password, extensions.gen_salt('bf'));
+  exception when others then
+    v_hashed_password := crypt(p_new_password, gen_salt('bf'));
+  end;
+
+  update auth.users
+  set 
+    encrypted_password = v_hashed_password,
+    updated_at = now()
+  where auth.users.id = v_user_id;
+
+  return jsonb_build_object('success', true, 'message', 'Password updated successfully! You may now sign in.');
+end;
+$$;
+
+grant execute on function public.reset_password_via_security_question(text, text, text) to anon, authenticated, service_role;
+
+
+-- =====================================================================================
+-- 9. OUTSOURCE TRACKING TABLE WITH STATUS ENUM
+-- Stages: Dispatched, Transit, Partner Lab Processing, Report Uploaded
+-- =====================================================================================
+create table if not exists public.outsource_tracking (
+  id uuid primary key default gen_random_uuid(),
+  case_id text not null,
+  reg_no text,
+  patient_name text not null,
+  investigations text not null,
+  partner_lab text not null,
+  status text not null default 'Dispatched' 
+    check (status in ('Dispatched', 'Transit', 'Partner Lab Processing', 'Report Uploaded')),
+  dispatched_at timestamptz default now(),
+  transit_at timestamptz,
+  processing_at timestamptz,
+  report_uploaded_at timestamptz,
+  notes text,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+alter table public.outsource_tracking enable row level security;
+drop policy if exists "Outsource tracking all operations" on public.outsource_tracking;
+create policy "Outsource tracking all operations" on public.outsource_tracking for all using (true) with check (true);
+
+-- =====================================================================================
+-- 10. TRANSACTIONS TABLE & REALTIME FINANCIAL LEDGER
+-- Row Level Security (RLS) configured for authenticated and authority access
+-- =====================================================================================
+create table if not exists public.transactions (
+  id text primary key default ('TX-' || floor(random() * 90000 + 10000)::text),
+  reg_no text default ('REG-' || floor(random() * 9000 + 1000)::text),
+  patient text not null,
+  ref text default 'Self',
+  dcn text default 'D-01',
+  cc text default 'Main Lab',
+  amount numeric not null default 0,
+  method text default 'Cash', -- 'Cash' | 'UPI' | 'Card'
+  received_by text default 'Counter 1',
+  status text default 'Paid',
+  description text,
+  created_at timestamptz default now()
+);
+
+-- Enable RLS and grant full permissions for authenticated / authority / anon operations
+alter table public.transactions enable row level security;
+drop policy if exists "Transactions all operations" on public.transactions;
+create policy "Transactions all operations" on public.transactions for all using (true) with check (true);
+
+-- Ensure transactions columns exist if table was previously created with minimal schema
+alter table public.transactions add column if not exists patient text;
+alter table public.transactions add column if not exists patient_name text;
+alter table public.transactions add column if not exists ref text default 'Self';
+alter table public.transactions add column if not exists dcn text default 'D-01';
+alter table public.transactions add column if not exists cc text default 'Main Lab';
+alter table public.transactions add column if not exists amount numeric default 0;
+alter table public.transactions add column if not exists method text default 'Cash';
+alter table public.transactions add column if not exists payment_mode text default 'Cash';
+alter table public.transactions add column if not exists received_by text default 'Counter 1';
+alter table public.transactions add column if not exists status text default 'Paid';
+alter table public.transactions add column if not exists description text;
+alter table public.transactions add column if not exists created_at timestamptz default now();
+alter table public.transactions add column if not exists reg_no text;
+alter table public.transactions add column if not exists date text;
+alter table public.transactions add column if not exists time text;
+
+-- =====================================================================================
+-- 11. CASHIER DESK TABLE
+-- =====================================================================================
+create table if not exists public.cashier (
+  id text primary key default ('CSH-' || floor(random() * 90000 + 10000)::text),
+  name text not null,
+  desk_name text,
+  lab_id text default 'LAB-1001',
+  status text default 'Active',
+  created_at timestamptz default now()
+);
+
+alter table public.cashier add column if not exists lab_id text default 'LAB-1001';
+alter table public.cashier add column if not exists desk_name text;
+alter table public.cashier add column if not exists status text default 'Active';
+alter table public.cashier add column if not exists created_at timestamptz default now();
+
+alter table public.cashier enable row level security;
+drop policy if exists "Cashier all operations" on public.cashier;
+create policy "Cashier all operations" on public.cashier for all using (true) with check (true);
+
+insert into public.cashier (id, name, desk_name, lab_id, status)
+values
+  ('CSH-1001', 'Counter 1 (Main Reception)', 'Desk 01', 'LAB-1001', 'Active'),
+  ('CSH-1002', 'Counter 2 (OPD Registration)', 'Desk 02', 'LAB-1001', 'Active'),
+  ('CSH-1003', 'Counter 3 (Emergency / Night)', 'Desk 03', 'LAB-1001', 'Active')
+on conflict (id) do nothing;
+
+-- =====================================================================================
+-- 12. PARTICIPATING LABS DIRECTORY TABLE (External Partner Labs)
+-- =====================================================================================
+create table if not exists public.labs (
+  id text primary key,
+  name text not null,
+  accreditation text default 'NABL Accredited',
+  nabl boolean default true,
+  nabl_certified boolean default true,
+  latitude numeric,
+  longitude numeric,
+  address text not null,
+  city text default 'Gurugram',
+  state text default 'Haryana',
+  rating numeric default 4.8,
+  review_count text default '500+',
+  home_pickup boolean default true,
+  home_pickup_fee text default 'FREE above ₹500',
+  supported_tests jsonb default '["cbc", "lipid", "thyroid", "sugar"]'::jsonb,
+  price_list jsonb default '{"cbc": 350, "lipid": 650, "sugar": 100, "thyroid": 550}'::jsonb,
+  created_at timestamptz default now()
+);
+
+alter table public.labs enable row level security;
+drop policy if exists "Labs all operations" on public.labs;
+create policy "Labs all operations" on public.labs for all using (true) with check (true);
+
+insert into public.labs (id, name, accreditation, nabl, nabl_certified, latitude, longitude, address, city, state, rating, review_count, home_pickup, home_pickup_fee, supported_tests, price_list)
+values
+  ('lab-maxpath', 'MaxPath Precision Laboratories', 'NABL Certified & CAP Accredited', true, true, 28.4721, 77.0428, 'MG Road Medical Arcade, Ground Floor, Gurugram', 'Gurugram', 'Haryana', 4.8, '890', true, '₹50 flat', '["cbc", "lipid", "sugar", "thyroid", "vitd", "b12"]'::jsonb, '{"cbc": 400, "lipid": 700, "sugar": 120, "thyroid": 600}'::jsonb),
+  ('lab-delhi-south', 'Metropolis South Reference Lab', 'NABL & CAP Gold Standard', true, true, 28.5244, 77.2066, 'Hauz Khas Enclave, New Delhi', 'New Delhi', 'Delhi', 4.9, '2,150', true, 'FREE above ₹400', '["cbc", "lipid", "thyroid", "sugar", "hormones"]'::jsonb, '{"cbc": 380, "lipid": 680, "sugar": 110, "thyroid": 580}'::jsonb),
+  ('lab-apex', 'Apex Clinical Diagnostics', 'NABL Accredited Category A', true, true, 28.5355, 77.3910, 'Sector 62 Institutional Area, Noida', 'Noida', 'Uttar Pradesh', 4.7, '740', true, 'FREE above ₹600', '["cbc", "lipid", "thyroid", "sugar", "rtpcr"]'::jsonb, '{"cbc": 360, "lipid": 670, "sugar": 110, "thyroid": 560}'::jsonb),
+  ('lab-quest', 'Quest Diagnostic Center', 'NABL Certified Reference Pathology', true, true, 28.4520, 77.0690, 'Golf Course Road Medical Hub, Sector 54, Gurugram', 'Gurugram', 'Haryana', 4.9, '1,120', true, 'FREE above ₹500', '["cbc", "lipid", "thyroid", "sugar", "lft", "kft"]'::jsonb, '{"cbc": 370, "lipid": 690, "sugar": 100, "thyroid": 590}'::jsonb),
+  ('lab-sanjeevani', 'Sanjeevani Community Path Lab', 'State Medical Council Registered', false, false, 28.4680, 77.0210, 'Opposite Civil Hospital Gate, Old Railway Road, Gurugram', 'Gurugram', 'Haryana', 4.5, '410', false, 'Clinic Visit Only', '["cbc", "lipid", "sugar", "thyroid"]'::jsonb, '{"cbc": 280, "lipid": 550, "sugar": 80, "thyroid": 450}'::jsonb)
+on conflict (id) do update set
+  name = excluded.name,
+  accreditation = excluded.accreditation,
+  nabl = excluded.nabl,
+  nabl_certified = excluded.nabl_certified,
+  latitude = excluded.latitude,
+  longitude = excluded.longitude,
+  address = excluded.address;
+
+-- =====================================================================================
+-- 13. FAMILY MEMBERS TABLE ALIAS (Matches dependents)
+-- =====================================================================================
+create table if not exists public.family_members (
+  id text primary key,
+  primary_user_id uuid,
+  full_name text not null,
+  name text,
+  relation text not null,
+  gender text,
+  age integer,
+  uhid text,
+  blood_group text,
+  phone text,
+  created_at timestamptz default now()
+);
+
+alter table public.family_members enable row level security;
+drop policy if exists "Family members all operations" on public.family_members;
+create policy "Family members all operations" on public.family_members for all using (true) with check (true);
+
+-- Realtime Publication for instant UI state synchronization
+do $$
+begin
+  begin
+    alter publication supabase_realtime add table public.transactions;
+  exception when others then null;
+  end;
+  begin
+    alter publication supabase_realtime add table public.appointments;
+  exception when others then null;
+  end;
+  begin
+    alter publication supabase_realtime add table public.cashier;
+  exception when others then null;
+  end;
+  begin
+    alter publication supabase_realtime add table public.labs;
+  exception when others then null;
+  end;
+end $$;
+
+-- Force PostgREST schema cache reload immediately
+notify pgrst, 'reload schema';

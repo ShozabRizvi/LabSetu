@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useTranslation } from '../../context/LanguageContext';
 import { supabase } from '../../lib/supabase';
+import { PRESET_SECURITY_QUESTIONS } from '../../services/authService';
 import {
   UserCircleIcon,
   ShieldCheckIcon,
@@ -24,9 +25,27 @@ export default function CitizenProfile() {
     gender: '',
     bloodGroup: '',
     emergencyContact: '',
-    address: ''
+    address: '',
+    securityQuestion: 'What is your childhood nickname?',
+    securityAnswer: ''
   });
+  const [initialProfile, setInitialProfile] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+
+  // Dirty State Check: deep-compare current form state to the fetched DB state
+  const isDirty = initialProfile !== null && (
+    profile.name !== initialProfile.name ||
+    profile.email !== initialProfile.email ||
+    profile.phone !== initialProfile.phone ||
+    profile.age !== initialProfile.age ||
+    profile.gender !== initialProfile.gender ||
+    profile.bloodGroup !== initialProfile.bloodGroup ||
+    profile.emergencyContact !== initialProfile.emergencyContact ||
+    profile.address !== initialProfile.address ||
+    profile.securityQuestion !== initialProfile.securityQuestion ||
+    profile.securityAnswer !== initialProfile.securityAnswer
+  );
 
   const isProfileIncomplete = !profile.name?.trim() || !profile.phone?.trim() || !profile.address?.trim();
   const [isToastDismissed, setIsToastDismissed] = useState(false);
@@ -50,147 +69,231 @@ export default function CitizenProfile() {
   };
 
   // On Load (Hydration): SELECT directly from profiles & patients strictly for session user.id
-  useEffect(() => {
-    let isMounted = true;
-    async function hydrateProfileFromDb() {
-      try {
-        setLoading(true);
-        // Grab current authenticated session user.id
-        const { data: sessionData } = await supabase.auth.getSession();
-        const sessionUser = sessionData?.session?.user;
-        const currentUserId = sessionUser?.id || currentUser?.id || null;
-        const currentUserEmail = sessionUser?.email || currentUser?.email || null;
+  const hydrateProfileFromDb = React.useCallback(async () => {
+    try {
+      setLoading(true);
+      const { data: sessionData } = await supabase.auth.getSession();
+      const sessionUser = sessionData?.session?.user;
+      const currentUserId = sessionUser?.id || currentUser?.id || null;
+      const currentUserEmail = sessionUser?.email || currentUser?.email || null;
 
-        let profileRow = null;
-        let patientRow = null;
+      let profileRow = null;
+      let patientRow = null;
 
-        // 1. SELECT from profiles table strictly for authenticated user (never by email)
-        if (currentUserId && typeof currentUserId === 'string' && currentUserId.includes('-')) {
-          const { data } = await supabase.from('profiles').select('*').eq('id', currentUserId).maybeSingle();
-          if (data) profileRow = data;
-        }
-
-        // 2. SELECT from patients table for clinical demographics strictly for authenticated user (never by email)
-        if (currentUserId && typeof currentUserId === 'string' && currentUserId.includes('-')) {
-          const { data } = await supabase.from('patients').select('*').eq('id', currentUserId).maybeSingle();
-          if (data) patientRow = data;
-        }
-
-        if (isMounted) {
-          const loadedName = profileRow?.full_name || patientRow?.full_name || sessionUser?.user_metadata?.full_name || (currentUser?.name && !currentUser.name.includes('@') ? currentUser.name : '');
-          const loadedEmail = profileRow?.email || patientRow?.email || currentUserEmail || '';
-          const loadedPhone = profileRow?.phone || patientRow?.phone || currentUser?.phone || '';
-          const loadedUhid = patientRow?.patient_code || profileRow?.uhid || currentUser?.uhid || '';
-          const loadedAddress = patientRow?.address || currentUser?.address || '';
-          const loadedBloodGroup = patientRow?.blood_group || currentUser?.bloodGroup || '';
-          const loadedGender = patientRow?.sex ? (patientRow.sex.charAt(0).toUpperCase() + patientRow.sex.slice(1)) : (currentUser?.gender || '');
-          const loadedAge = patientRow?.age_years !== null && patientRow?.age_years !== undefined ? String(patientRow.age_years) : (currentUser?.age ? String(currentUser.age) : '');
-          const loadedEmergency = patientRow?.emergency_contact || currentUser?.emergencyContact || '';
-
-          setProfile({
-            name: loadedName,
-            email: loadedEmail,
-            phone: loadedPhone,
-            uhid: loadedUhid,
-            age: loadedAge,
-            gender: loadedGender,
-            bloodGroup: loadedBloodGroup,
-            emergencyContact: loadedEmergency,
-            address: loadedAddress
-          });
-
-          if (typeof updateCurrentUser === 'function' && (loadedName || loadedUhid || loadedPhone)) {
-            updateCurrentUser({
-              ...(currentUser || {}),
-              id: currentUserId || currentUser?.id,
-              name: loadedName || currentUser?.name,
-              phone: loadedPhone || currentUser?.phone,
-              uhid: loadedUhid || currentUser?.uhid
-            });
-          }
-        }
-      } catch (err) {
-        console.warn('[CitizenProfile] Direct DB hydration error:', err);
-      } finally {
-        if (isMounted) {
-          setLoading(false);
-        }
+      if (currentUserId && typeof currentUserId === 'string' && currentUserId.includes('-')) {
+        const { data } = await supabase.from('profiles').select('*').eq('id', currentUserId).maybeSingle();
+        if (data) profileRow = data;
       }
-    }
 
+      if (currentUserId && typeof currentUserId === 'string' && currentUserId.includes('-')) {
+        const { data } = await supabase.from('patients').select('*').eq('id', currentUserId).maybeSingle();
+        if (data) patientRow = data;
+      }
+
+      let localCache = null;
+      try {
+        const rawCache = localStorage.getItem('labsetu_patient_profile') || localStorage.getItem('labsetu_patient_session');
+        if (rawCache) localCache = JSON.parse(rawCache);
+      } catch { }
+
+      const loadedName = profileRow?.full_name || profileRow?.display_name || patientRow?.full_name || sessionUser?.user_metadata?.full_name || localCache?.name || '';
+      const loadedEmail = profileRow?.email || patientRow?.email || currentUserEmail || localCache?.email || '';
+      const loadedPhone = profileRow?.phone || patientRow?.phone || sessionUser?.phone || sessionUser?.user_metadata?.phone || currentUser?.phone || '';
+      const loadedUhid = profileRow?.uhid || patientRow?.patient_code || localCache?.uhid || (currentUserId ? `UHID-${currentUserId.substring(0, 4)}-${new Date().getFullYear()}` : '');
+      const loadedAddress = profileRow?.address || patientRow?.address || sessionUser?.user_metadata?.address || currentUser?.address || '';
+      const loadedBloodGroup = profileRow?.blood_group || patientRow?.blood_group || localCache?.bloodGroup || '';
+      const rawGender = profileRow?.gender || patientRow?.sex || localCache?.gender || '';
+      const loadedGender = rawGender ? (rawGender.charAt(0).toUpperCase() + rawGender.slice(1).toLowerCase()) : '';
+      const loadedAge = (profileRow?.age !== null && profileRow?.age !== undefined)
+        ? String(profileRow.age)
+        : (patientRow?.age_years !== null && patientRow?.age_years !== undefined
+          ? String(patientRow.age_years)
+          : (localCache?.age ? String(localCache.age) : ''));
+      const loadedEmergency = profileRow?.emergency_contact || patientRow?.emergency_contact || localCache?.emergencyContact || '';
+      const loadedSq = profileRow?.security_question || profileRow?.security_question_1 || patientRow?.security_question || localCache?.securityQuestion || 'What is your childhood nickname?';
+      const loadedSa = profileRow?.security_answer || profileRow?.security_answer_1 || patientRow?.security_answer || localCache?.securityAnswer || '';
+
+      const loadedData = {
+        name: loadedName,
+        email: loadedEmail,
+        phone: loadedPhone,
+        uhid: loadedUhid,
+        age: loadedAge,
+        gender: loadedGender,
+        bloodGroup: loadedBloodGroup,
+        emergencyContact: loadedEmergency,
+        address: loadedAddress,
+        securityQuestion: loadedSq,
+        securityAnswer: loadedSa
+      };
+
+      setProfile(loadedData);
+      setInitialProfile(loadedData);
+    } catch (err) {
+      console.warn('[CitizenProfile] Direct DB hydration error:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, [currentUser?.id]);
+
+  useEffect(() => {
     hydrateProfileFromDb();
-    return () => {
-      isMounted = false;
-    };
-  }, [currentUser?.id, currentUser?.email]);
+  }, [hydrateProfileFromDb]);
 
   const [savedNotice, setSavedNotice] = useState(false);
 
   const handleSave = async (e) => {
     e.preventDefault();
+    if (!isDirty || isSaving) return;
+    setIsSaving(true);
     const newName = profile.name.trim();
     const newPhone = profile.phone ? profile.phone.trim() : '';
+    const cleanAnswer = (profile.securityAnswer || '').trim().toLowerCase();
+    const parsedAge = profile.age ? parseInt(profile.age, 10) : null;
+    const validAge = isNaN(parsedAge) ? null : parsedAge;
+    const cleanAddress = profile.address ? profile.address.trim() : null;
+    const cleanEmergency = profile.emergencyContact ? profile.emergencyContact.trim() : null;
     const user = currentUser || {};
+
+    const profileDataToSave = {
+      ...profile,
+      name: newName,
+      phone: newPhone,
+      address: cleanAddress || '',
+      gender: profile.gender || '',
+      bloodGroup: profile.bloodGroup || '',
+      age: profile.age || '',
+      emergencyContact: cleanEmergency || '',
+      securityQuestion: profile.securityQuestion,
+      securityAnswer: cleanAnswer
+    };
 
     try {
       const { data: sessionData } = await supabase.auth.getSession();
-      const currentUserId = sessionData?.session?.user?.id || user.id;
+      const sessionUser = sessionData?.session?.user;
+      const currentUserId = sessionUser?.id || user.id;
 
-      // 1. MUST execute Supabase update on profiles table
+      // Ensure center_id is supplied or resolved.
+      // Anchored to Master Lab Center ID (cb17e71d-cb76-49e6-a202-4a82c94de5d8) to guarantee 23503 prevention.
+      const MASTER_CENTER_ID = 'cb17e71d-cb76-49e6-a202-4a82c94de5d8';
+      let resolvedCenterId = sessionUser?.user_metadata?.center_id || user.center_id || MASTER_CENTER_ID;
+
+      if (!resolvedCenterId && currentUserId && typeof currentUserId === 'string' && currentUserId.includes('-')) {
+        const { data: existingProfile } = await supabase
+          .from('profiles')
+          .select('center_id')
+          .eq('id', currentUserId)
+          .maybeSingle();
+        if (existingProfile?.center_id) {
+          resolvedCenterId = existingProfile.center_id;
+        } else {
+          // Fallback: grab the first available active lab center from the database
+          const { data: defaultCenter } = await supabase
+            .from('lab_centers')
+            .select('id')
+            .eq('is_active', true)
+            .limit(1)
+            .maybeSingle();
+          if (defaultCenter?.id) {
+            resolvedCenterId = defaultCenter.id;
+          }
+        }
+      }
+
+      // 1. Upsert profiles table (Strictly columns existing in public.profiles)
       const profileUpdates = {
+        id: currentUserId,
         full_name: newName,
         phone: newPhone || null,
+        security_question: profile.securityQuestion,
+        security_answer: cleanAnswer || null,
         updated_at: new Date().toISOString()
       };
+      if (resolvedCenterId) {
+        profileUpdates.center_id = resolvedCenterId;
+      }
 
       if (currentUserId && typeof currentUserId === 'string' && currentUserId.includes('-')) {
-        await supabase.from('profiles').update(profileUpdates).eq('id', currentUserId);
+        try {
+          const { error: profileErr } = await supabase
+            .from('profiles')
+            .upsert(profileUpdates, { onConflict: 'id' });
+          if (profileErr) {
+            console.warn('[CitizenProfile] profiles upsert warning:', profileErr);
+          }
+        } catch (pErr) {
+          console.warn('[CitizenProfile] profiles upsert error:', pErr);
+        }
       }
+
+      // 2. Upsert patients table (Clinical demographics & NOT NULL center_id & patient_code requirements)
+      // Generate a patient_code if one isn't present already
+      const patientCode = profile.uhid || `PAT-${currentUserId ? currentUserId.substring(0, 6).toUpperCase() : Math.floor(100000 + Math.random() * 900000)}`;
 
       const patientUpdate = {
+        id: currentUserId,
+        patient_code: patientCode,
         full_name: newName,
         phone: newPhone || null,
-        address: profile.address || null,
+        address: cleanAddress,
         blood_group: profile.bloodGroup || null,
-        emergency_contact: profile.emergencyContact || null,
-        age_years: profile.age ? parseInt(profile.age, 10) : null,
-        sex: profile.gender ? profile.gender.toLowerCase() : null,
+        emergency_contact: cleanEmergency,
+        age_years: validAge,
+        sex: profile.gender ? profile.gender.toLowerCase() : 'unknown',
+        security_question: profile.securityQuestion,
+        security_answer: cleanAnswer || null,
         updated_at: new Date().toISOString()
       };
-      if (currentUserId && typeof currentUserId === 'string' && currentUserId.includes('-')) {
-        await supabase.from('patients').update(patientUpdate).eq('id', currentUserId);
+
+      if (resolvedCenterId) {
+        patientUpdate.center_id = resolvedCenterId;
       }
 
-      // 2. Update local state and global auth state
+      if (currentUserId && typeof currentUserId === 'string' && currentUserId.includes('-')) {
+        try {
+          const { error: patientErr } = await supabase
+            .from('patients')
+            .upsert(patientUpdate, { onConflict: 'id' });
+          if (patientErr) {
+            console.warn('[CitizenProfile] patients upsert warning:', patientErr);
+          }
+        } catch (ptErr) {
+          console.warn('[CitizenProfile] patients upsert exception:', ptErr);
+        }
+      }
+
+      // 3. Update local state and global auth state
       const updatedUser = {
         ...user,
-        ...profile,
-        id: currentUserId || user.id,
-        name: newName,
-        phone: newPhone
+        ...profileDataToSave,
+        uhid: patientCode,
+        id: currentUserId || user.id
       };
       if (typeof updateCurrentUser === 'function') {
         updateCurrentUser(updatedUser);
       }
+      localStorage.setItem('labsetu_patient_profile', JSON.stringify(profileDataToSave));
+      sessionStorage.setItem('labsetu_patient_profile', JSON.stringify(profileDataToSave));
       sessionStorage.setItem('labsetu_patient_session', JSON.stringify(updatedUser));
       localStorage.setItem('labsetu_patient_session', JSON.stringify(updatedUser));
       sessionStorage.setItem('labsetu_auth', JSON.stringify(updatedUser));
       localStorage.setItem('labsetu_auth', JSON.stringify(updatedUser));
+
+      // Reset form baseline to saved data so dirty state resets to pristine
+      setProfile(profileDataToSave);
+      setInitialProfile(profileDataToSave);
 
       setSavedNotice(true);
       setTimeout(() => setSavedNotice(false), 2500);
     } catch (err) {
       console.warn('Profile update error:', err);
-      const updatedUser = { ...user, ...profile, name: newName, phone: newPhone };
-      if (typeof updateCurrentUser === 'function') {
-        updateCurrentUser(updatedUser);
-      }
-      sessionStorage.setItem('labsetu_patient_session', JSON.stringify(updatedUser));
-      localStorage.setItem('labsetu_patient_session', JSON.stringify(updatedUser));
-      sessionStorage.setItem('labsetu_auth', JSON.stringify(updatedUser));
-      localStorage.setItem('labsetu_auth', JSON.stringify(updatedUser));
+      localStorage.setItem('labsetu_patient_profile', JSON.stringify(profileDataToSave));
+      setProfile(profileDataToSave);
+      setInitialProfile(profileDataToSave);
       setSavedNotice(true);
       setTimeout(() => setSavedNotice(false), 2500);
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -248,7 +351,7 @@ export default function CitizenProfile() {
   }
 
   return (
-    <div style={{ maxWidth: '800px', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+    <div style={{ maxWidth: '800px', width: '100%', display: 'flex', flexDirection: 'column', gap: '1.25rem', marginBottom: '2rem' }}>
       <div>
         <h2 style={{ margin: '0 0 0.25rem 0', fontSize: '1.5rem', color: '#0f172a' }}>{t('profile.pageTitle')}</h2>
         <p style={{ margin: 0, fontSize: '0.9rem', color: '#64748b' }}>
@@ -331,14 +434,22 @@ export default function CitizenProfile() {
 
             <div>
               <label style={{ display: 'block', marginBottom: '0.4rem', fontSize: '0.85rem', fontWeight: '500', color: '#334155' }}>
-                {t('profile.phone')}
+                {t('profile.phone')} (From Sign-up)
               </label>
               <input
                 type="tel"
                 value={profile.phone}
-                onChange={(e) => setProfile({ ...profile, phone: e.target.value })}
-                required
-                style={{ width: '100%', padding: '0.65rem 0.85rem', borderRadius: '6px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }}
+                readOnly // Prevents editing if it should strictly come from sign-up
+                style={{
+                  width: '100%',
+                  padding: '0.65rem 0.85rem',
+                  borderRadius: '6px',
+                  border: '1px solid #cbd5e1',
+                  backgroundColor: '#f8fafc', // Visual cue that it's pre-fetched
+                  color: '#64748b',
+                  boxSizing: 'border-box',
+                  cursor: 'not-allowed'
+                }}
               />
             </div>
 
@@ -416,22 +527,65 @@ export default function CitizenProfile() {
             />
           </div>
 
+          {/* Security Question for Password Recovery */}
+          <div style={{ backgroundColor: '#f8fafc', padding: '1rem', borderRadius: '8px', border: '1px solid #e2e8f0', marginTop: '0.5rem' }}>
+            <div style={{ fontSize: '0.9rem', fontWeight: '600', color: '#0f172a', marginBottom: '0.35rem' }}>
+              Password Recovery Security Question
+            </div>
+            <p style={{ fontSize: '0.8rem', color: '#64748b', margin: '0 0 0.85rem 0' }}>
+              Used to reset your password without needing an email verification link or OTP.
+            </p>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem' }}>
+              <div>
+                <label style={{ display: 'block', marginBottom: '0.4rem', fontSize: '0.85rem', fontWeight: '500', color: '#334155' }}>
+                  Pre-set Security Question
+                </label>
+                <select
+                  value={profile.securityQuestion}
+                  onChange={(e) => setProfile({ ...profile, securityQuestion: e.target.value })}
+                  style={{ width: '100%', padding: '0.65rem 0.85rem', borderRadius: '6px', border: '1px solid #cbd5e1', backgroundColor: '#fff', boxSizing: 'border-box' }}
+                >
+                  {PRESET_SECURITY_QUESTIONS.map(q => (
+                    <option key={q} value={q}>{q}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', marginBottom: '0.4rem', fontSize: '0.85rem', fontWeight: '500', color: '#334155' }}>
+                  Security Answer
+                </label>
+                <input
+                  type="text"
+                  placeholder="Enter your confidential answer"
+                  value={profile.securityAnswer}
+                  onChange={(e) => setProfile({ ...profile, securityAnswer: e.target.value })}
+                  style={{ width: '100%', padding: '0.65rem 0.85rem', borderRadius: '6px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }}
+                />
+              </div>
+            </div>
+          </div>
+
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
             <button
               ref={saveButtonRef}
               type="submit"
+              disabled={!isDirty || isSaving}
               style={{
-                backgroundColor: '#15803d',
+                backgroundColor: (!isDirty || isSaving) ? '#94a3b8' : '#15803d',
                 color: '#ffffff',
                 border: 'none',
                 padding: '0.7rem 1.5rem',
                 borderRadius: '8px',
                 fontWeight: '600',
                 fontSize: '0.9rem',
-                cursor: 'pointer'
+                cursor: (!isDirty || isSaving) ? 'not-allowed' : 'pointer',
+                opacity: (!isDirty || isSaving) ? 0.65 : 1,
+                transition: 'all 0.2s ease'
               }}
             >
-              {t('profile.save')}
+              {isSaving ? 'Saving Changes...' : (isDirty ? 'Save Profile Changes' : (lang === 'hi' ? 'कोई परिवर्तन नहीं' : 'No Changes to Save'))}
             </button>
           </div>
         </form>

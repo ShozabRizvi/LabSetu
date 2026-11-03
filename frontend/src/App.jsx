@@ -19,7 +19,7 @@ import Expenses from './views/business/Expenses';
 import DueReports from './views/business/DueReports';
 import Activities from './views/business/Activities';
 import ReferralBusiness from './views/business/ReferralBusiness';
-import CaseWiseReport from './views/business/CaseWiseReport';
+
 import BusinessAnalysis from './views/business/BusinessAnalysis';
 import DataExport from './views/business/DataExport';
 
@@ -27,8 +27,6 @@ import OutsourceCases from './views/cases/OutsourceCases';
 import CtScanCases from './views/cases/CtScanCases';
 import Patients from './views/cases/Patients';
 import Transactions from './views/cases/Transactions';
-import ReferralDoctors from './views/cases/ReferralDoctors';
-import Agents from './views/cases/Agents';
 
 import TodaysReports from './views/lab/TodaysReports';
 import SearchReports from './views/lab/SearchReports';
@@ -55,6 +53,7 @@ import XraySignatures from './views/xray/Signatures';
 import BrowserSecurity from './views/manage/BrowserSecurity';
 import EmployeeLogin from './views/manage/EmployeeLogin';
 import DoctorAccess from './views/manage/DoctorAccess';
+import AuthoritySettings from './views/manage/AuthoritySettings';
 
 // Setup
 import SetupLayout from './views/setup/SetupLayout';
@@ -197,7 +196,7 @@ function App() {
             <Route path="business/due-reports" element={<DueReports />} />
             <Route path="business/activities" element={<Activities />} />
             <Route path="business/referral" element={<ReferralBusiness />} />
-            <Route path="business/case-wise" element={<CaseWiseReport />} />
+
             <Route path="business/analysis" element={<BusinessAnalysis />} />
             <Route path="business/data-export" element={<DataExport />} />
             
@@ -209,8 +208,6 @@ function App() {
               <Route path="ctscan" element={<CtScanCases />} />
               <Route path="patients" element={<Patients />} />
               <Route path="transactions" element={<Transactions />} />
-              <Route path="referral-doctors" element={<ReferralDoctors />} />
-              <Route path="agents" element={<Agents />} />
             </Route>
 
             {/* Lab Sub-routes */}
@@ -241,7 +238,13 @@ function App() {
             <Route path="manage/employee-login" element={<EmployeeLogin />} />
             <Route path="manage/doctor-access" element={<DoctorAccess />} />
 
+            {/* Dedicated Authority Account & Settings Route */}
+            <Route path="settings" element={<AuthoritySettings />} />
           </Route>
+
+          {/* Authority Settings Direct URL Alias */}
+          <Route path="/authority/settings" element={<Navigate to="/app/settings" replace />} />
+          <Route path="/ct-scan/:scanId" element={<Navigate to="/app/cases/ctscan" replace />} />
 
           {/* Catch-all fallback */}
           <Route path="*" element={<NotFound />} />

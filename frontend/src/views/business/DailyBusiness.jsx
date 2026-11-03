@@ -1,64 +1,213 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import './DailyBusiness.css';
-import { FunnelIcon, MagnifyingGlassIcon, UserPlusIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import { supabase } from '../../lib/supabase';
+import { FunnelIcon, MagnifyingGlassIcon, UserPlusIcon, XMarkIcon, CheckCircleIcon, ExclamationCircleIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
 
 export default function DailyBusiness() {
   const navigate = useNavigate();
-  const [date, setDate] = useState('2026-09-13');
+  const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [activeTab, setActiveTab] = useState('transactions');
   const [search, setSearch] = useState('');
   const [isCashierModalOpen, setIsCashierModalOpen] = useState(false);
   const [cashierName, setCashierName] = useState('');
+  const [isAddingCashier, setIsAddingCashier] = useState(false);
   const [cashiers, setCashiers] = useState(['Counter 1 (Main Reception)', 'Dr. Shozab']);
   const [isMonthlyModalOpen, setIsMonthlyModalOpen] = useState(false);
+  const [records, setRecords] = useState(null);
+  const [toast, setToast] = useState({ show: false, message: '', isFading: false, isError: false });
 
-  const [records, setRecords] = useState([
-    { id: 'TX-2041', regNo: 'REG-1049', patient: 'Riya Sharma', ref: 'Self', date: '13/09/2026', time: '10:42 AM', dcn: 'D-01', cc: 'Main Lab', amount: 850, method: 'UPI', receivedBy: 'Counter 1' },
-    { id: 'TX-2040', regNo: 'REG-1050', patient: 'Aarav Singh', ref: 'Dr. Smith', date: '13/09/2026', time: '10:15 AM', dcn: 'D-01', cc: 'Main Lab', amount: 600, method: 'Cash', receivedBy: 'Counter 1' },
-    { id: 'TX-2039', regNo: 'REG-1051', patient: 'Meera Verma', ref: 'Dr. Jones', date: '13/09/2026', time: '09:54 AM', dcn: 'D-02', cc: 'Branch A', amount: 250, method: 'Card', receivedBy: 'Counter 2' }
-  ]);
+  const showToastNotification = (msg, isError = false) => {
+    setToast({ show: true, message: msg, isFading: false, isError });
+    setTimeout(() => {
+      setToast(prev => ({ ...prev, isFading: true }));
+      setTimeout(() => {
+        setToast({ show: false, message: '', isFading: false, isError: false });
+      }, 300); // 300ms fade-out animation
+    }, 3500); // 3.5-second auto-dismiss
+  };
+
+  // Live Supabase query filtered by calendar day with crash-proof column safety
+  const fetchLiveTransactions = async (selectedDate) => {
+    try {
+      const targetDate = selectedDate || date;
+
+      // Query ordered by 'id' to prevent HTTP 400 schema crashes when created_at is syncing
+      const { data, error } = await supabase
+        .from('transactions')
+        .select('*')
+        .order('id', { ascending: false });
+
+      if (!error && Array.isArray(data)) {
+        // Filter in-memory for the calendar date
+        const matched = data.filter(d => {
+          if (d.created_at) {
+            return d.created_at.startsWith(targetDate);
+          }
+          if (d.date) {
+            return d.date === targetDate;
+          }
+          return true;
+        });
+
+        // Sort descending by timestamp when available, else id
+        const sorted = [...matched].sort((a, b) => {
+          if (a.created_at && b.created_at) {
+            return new Date(b.created_at) - new Date(a.created_at);
+          }
+          return String(b.id || '').localeCompare(String(a.id || ''));
+        });
+
+        setRecords(sorted.map(d => {
+          const dDate = d.created_at ? new Date(d.created_at) : (d.date ? new Date(d.date) : new Date());
+          return {
+            id: d.id,
+            regNo: d.reg_no || 'REG-1049',
+            patient: d.patient || d.patient_name || 'Walk-in Patient',
+            ref: d.ref || 'Self',
+            date: dDate.toLocaleDateString(),
+            time: d.created_at ? dDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : (d.time || '10:00 AM'),
+            dcn: d.dcn || 'D-01',
+            cc: d.cc || 'Main Lab',
+            amount: Number(d.amount) || 0,
+            method: d.method || d.payment_mode || 'Cash',
+            receivedBy: d.received_by || 'Counter 1'
+          };
+        }));
+      } else {
+        setRecords([]);
+      }
+    } catch (err) {
+      console.warn('Live transactions query error:', err);
+      setRecords([]);
+    }
+  };
+
+  useEffect(() => {
+    fetchLiveTransactions(date);
+
+    // Bind Supabase Realtime channel listener on transactions and cashier tables
+    const channel = supabase.channel('custom-insert-channel')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'transactions' }, (payload) => {
+        fetchLiveTransactions(date);
+        showToastNotification(`New live transaction recorded: Rs.${payload.new?.amount || 0}`);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, () => {
+        fetchLiveTransactions(date);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'cashier' }, () => {
+        fetchLiveTransactions(date);
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [date]);
 
   const changeDateBy = (days) => {
     const cur = new Date(date);
     cur.setDate(cur.getDate() + days);
-    setDate(cur.toISOString().split('T')[0]);
+    const newDateStr = cur.toISOString().split('T')[0];
+    setDate(newDateStr);
   };
 
-  const handleAddCashier = (e) => {
+  const handleAddCashier = async (e) => {
     e.preventDefault();
-    if (cashierName.trim()) {
-      setCashiers([...cashiers, cashierName.trim()]);
+    if (!cashierName.trim() || isAddingCashier) return;
+    const added = cashierName.trim();
+    const cashierPayload = {
+      id: `CSH-${Date.now()}`,
+      name: added,
+      desk_name: added,
+      lab_id: 'LAB-1001',
+      status: 'Active',
+      created_at: new Date().toISOString()
+    };
+
+    console.log('[AddCashier] Submitting cashier payload:', cashierPayload);
+    setIsAddingCashier(true);
+
+    try {
+      const { data, error } = await supabase.from('cashier').insert(cashierPayload).select();
+
+      if (error) {
+        console.error('[AddCashier] Supabase cashier insert error:', error);
+        showToastNotification(`Failed to save cashier to database: ${error.message || 'Check database schema'}`, true);
+        setIsAddingCashier(false);
+        return;
+      }
+
+      console.log('[AddCashier] Successfully registered cashier:', data);
+      setCashiers(prev => [...prev, added]);
       setCashierName('');
       setIsCashierModalOpen(false);
-      alert('Cashier successfully registered.');
+      showToastNotification(`Cashier "${added}" registered and assigned to Active Cash Desk.`);
+    } catch (err) {
+      console.error('[AddCashier] Exception during cashier insert:', err);
+      showToastNotification(`Cashier registration error: ${err.message || 'Network exception'}`, true);
+    } finally {
+      setIsAddingCashier(false);
     }
   };
 
-  const filteredRecords = records.filter(r => 
+  const safeRecords = records || [];
+
+  const filteredRecords = safeRecords.filter(r => 
     !search.trim() || 
     r.patient.toLowerCase().includes(search.toLowerCase()) ||
     r.regNo.toLowerCase().includes(search.toLowerCase()) ||
     r.method.toLowerCase().includes(search.toLowerCase())
   );
 
-  const totalIncome = records.reduce((acc, r) => acc + r.amount, 0);
-  const cashTotal = records.filter(r => r.method === 'Cash').reduce((acc, r) => acc + r.amount, 0);
-  const upiTotal = records.filter(r => r.method === 'UPI').reduce((acc, r) => acc + r.amount, 0);
-  const cardTotal = records.filter(r => r.method === 'Card').reduce((acc, r) => acc + r.amount, 0);
+  const totalIncome = safeRecords.reduce((acc, r) => acc + r.amount, 0);
+  const cashTotal = safeRecords.filter(r => r.method === 'Cash').reduce((acc, r) => acc + r.amount, 0);
+  const upiTotal = safeRecords.filter(r => r.method === 'UPI').reduce((acc, r) => acc + r.amount, 0);
+  const cardTotal = safeRecords.filter(r => r.method === 'Card').reduce((acc, r) => acc + r.amount, 0);
 
   return (
     <div className="daily-business-container">
+      {/* Animated State-Driven Toast Notification */}
+      {toast.show && (
+        <div
+          style={{
+            position: 'fixed',
+            bottom: '20px',
+            right: '20px',
+            zIndex: 9999,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.65rem',
+            backgroundColor: toast.isError ? '#991b1b' : '#064e3b',
+            color: '#ffffff',
+            padding: '0.85rem 1.25rem',
+            borderRadius: '10px',
+            boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.2), 0 4px 6px -2px rgba(0, 0, 0, 0.1)',
+            transform: toast.isFading ? 'translateX(100%)' : 'translateX(0)',
+            opacity: toast.isFading ? 0 : 1,
+            transition: 'all 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
+            border: toast.isError ? '1px solid #ef4444' : '1px solid #059669',
+            maxWidth: '380px'
+          }}
+          role="alert"
+        >
+          {toast.isError ? (
+            <ExclamationCircleIcon style={{ width: '22px', height: '22px', color: '#fca5a5', flexShrink: 0 }} />
+          ) : (
+            <CheckCircleIcon style={{ width: '22px', height: '22px', color: '#34d399', flexShrink: 0 }} />
+          )}
+          <span style={{ fontSize: '0.875rem', fontWeight: '500', lineHeight: 1.4 }}>{toast.message}</span>
+        </div>
+      )}
+
       <div className="daily-business-header">
-        <h2>Daily business</h2>
+        <div>
+          <h2>Daily business</h2>
+          <span style={{ fontSize: '0.75rem', color: '#059669', fontWeight: '700', background: '#ecfdf5', padding: '0.2rem 0.5rem', borderRadius: '4px', border: '1px solid #a7f3d0' }}>
+            ● SUPABASE REALTIME SYNC ACTIVE
+          </span>
+        </div>
         <div className="daily-business-actions">
-          <button 
-            type="button" 
-            className="db-action-btn"
-            onClick={() => navigate('/app/business/case-wise')}
-          >
-            Business Report
-          </button>
           <button 
             type="button" 
             className="db-action-btn"
@@ -78,7 +227,7 @@ export default function DailyBusiness() {
             className="db-action-btn"
             onClick={() => {
               const email = window.prompt('Enter email to dispatch daily business ledger:', 'accounts@labsetu.com');
-              if (email) alert(`Ledger dispatched to ${email}!`);
+              if (email) showToastNotification(`Daily ledger dispatched to ${email}!`);
             }}
           >
             Email
@@ -97,7 +246,38 @@ export default function DailyBusiness() {
         <button type="button" className="db-arrow-btn" onClick={() => changeDateBy(1)}>&gt;</button>
       </div>
 
-      <div className="db-summary-card">
+      {records === null ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginTop: '1rem' }}>
+          <div style={{
+            backgroundColor: '#ffffff',
+            borderRadius: '12px',
+            border: '1px solid #e2e8f0',
+            padding: '1.5rem',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '1rem'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem' }}>
+              {[1, 2, 3, 4].map(i => (
+                <div key={i} style={{ flex: 1, height: '48px', backgroundColor: '#e2e8f0', borderRadius: '8px' }} className="animate-pulse" />
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: '1rem', borderTop: '1px solid #f1f5f9', paddingTop: '1rem' }}>
+              {[1, 2, 3, 4].map(i => (
+                <div key={i} style={{ flex: 1, height: '28px', backgroundColor: '#f1f5f9', borderRadius: '6px' }} className="animate-pulse" />
+              ))}
+            </div>
+          </div>
+          <div style={{ height: '240px', backgroundColor: '#ffffff', borderRadius: '12px', border: '1px solid #e2e8f0', padding: '1.25rem' }}>
+            <div style={{ height: '36px', backgroundColor: '#f1f5f9', borderRadius: '6px', marginBottom: '1rem' }} className="animate-pulse" />
+            {[1, 2, 3, 4].map(i => (
+              <div key={i} style={{ height: '36px', backgroundColor: '#f8fafc', borderRadius: '6px', marginBottom: '0.5rem' }} className="animate-pulse" />
+            ))}
+          </div>
+        </div>
+      ) : (
+        <>
+          <div className="db-summary-card">
         <div className="db-summary-row">
           <div className="db-summary-item">
             <span className="db-label">Total Income</span>
@@ -154,13 +334,6 @@ export default function DailyBusiness() {
         </button>
         <button 
           type="button" 
-          className={`db-tab ${activeTab === 'bills' ? 'active' : ''}`}
-          onClick={() => setActiveTab('bills')}
-        >
-          Bills <span className="db-badge">{filteredRecords.length}</span>
-        </button>
-        <button 
-          type="button" 
           className={`db-tab ${activeTab === 'expenses' ? 'active' : ''}`}
           onClick={() => setActiveTab('expenses')}
         >
@@ -178,8 +351,8 @@ export default function DailyBusiness() {
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-        <button type="button" className="db-filter-btn" onClick={() => alert('Filtering by previous day bills...')}>
-          <FunnelIcon className="db-icon" /> Previous day bills 0
+        <button type="button" className="db-filter-btn" onClick={() => showToastNotification('Filtering active transactions for current register.')}>
+          <FunnelIcon className="db-icon" /> Filter Transactions
         </button>
       </div>
 
@@ -208,21 +381,29 @@ export default function DailyBusiness() {
           </tr>
         </thead>
         <tbody>
-          {filteredRecords.map(r => (
-            <tr key={r.id}>
-              <td>{r.id}</td>
-              <td>{r.regNo}</td>
-              <td><strong>{r.patient}</strong></td>
-              <td>{r.ref}</td>
-              <td>{r.date}</td>
-              <td>{r.time}</td>
-              <td>{r.dcn}</td>
-              <td>{r.cc}</td>
-              <td><strong>Rs. {r.amount}</strong></td>
-              <td>{r.method}</td>
-              <td>{r.receivedBy}</td>
+          {filteredRecords.length === 0 ? (
+            <tr>
+              <td colSpan="11" style={{ textAlign: 'center', padding: '2.5rem', color: '#64748b' }}>
+                No live transactions recorded for this calendar date.
+              </td>
             </tr>
-          ))}
+          ) : (
+            filteredRecords.map(r => (
+              <tr key={r.id}>
+                <td>{r.id}</td>
+                <td>{r.regNo}</td>
+                <td><strong>{r.patient}</strong></td>
+                <td>{r.ref}</td>
+                <td>{r.date}</td>
+                <td>{r.time}</td>
+                <td>{r.dcn}</td>
+                <td>{r.cc}</td>
+                <td><strong>Rs. {r.amount}</strong></td>
+                <td>{r.method}</td>
+                <td>{r.receivedBy}</td>
+              </tr>
+            ))
+          )}
           <tr>
             <td colSpan="11" className="db-table-total">
               Total income: <span className="db-total-green">Rs. {totalIncome}</span>
@@ -230,6 +411,8 @@ export default function DailyBusiness() {
           </tr>
         </tbody>
       </table>
+      </>
+      )}
 
       {/* Add Cashier Modal */}
       {isCashierModalOpen && (
@@ -247,8 +430,32 @@ export default function DailyBusiness() {
                 <input required type="text" placeholder="e.g. Counter 3 (Pathology)" value={cashierName} onChange={e => setCashierName(e.target.value)} style={{ width: '100%', padding: '0.6rem', border: '1px solid #cbd5e1', borderRadius: '6px', boxSizing: 'border-box' }} />
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '0.5rem' }}>
-                <button type="button" onClick={() => setIsCashierModalOpen(false)} style={{ padding: '0.55rem 1rem', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#ffffff', cursor: 'pointer' }}>Cancel</button>
-                <button type="submit" style={{ padding: '0.55rem 1rem', borderRadius: '6px', border: 'none', background: '#15803d', color: '#ffffff', fontWeight: '600', cursor: 'pointer' }}>Add Cashier</button>
+                <button type="button" disabled={isAddingCashier} onClick={() => setIsCashierModalOpen(false)} style={{ padding: '0.55rem 1rem', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#ffffff', cursor: isAddingCashier ? 'not-allowed' : 'pointer' }}>Cancel</button>
+                <button 
+                  type="submit" 
+                  disabled={isAddingCashier}
+                  style={{ 
+                    padding: '0.55rem 1rem', 
+                    borderRadius: '6px', 
+                    border: 'none', 
+                    background: isAddingCashier ? '#94a3b8' : '#15803d', 
+                    color: '#ffffff', 
+                    fontWeight: '600', 
+                    cursor: isAddingCashier ? 'wait' : 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.4rem'
+                  }}
+                >
+                  {isAddingCashier ? (
+                    <>
+                      <ArrowPathIcon style={{ width: '16px', height: '16px', animation: 'spin 1s linear infinite' }} />
+                      Saving Cashier...
+                    </>
+                  ) : (
+                    'Add Cashier'
+                  )}
+                </button>
               </div>
             </form>
           </div>
@@ -260,7 +467,7 @@ export default function DailyBusiness() {
         <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '1rem' }} onClick={() => setIsMonthlyModalOpen(false)}>
           <div style={{ backgroundColor: '#ffffff', borderRadius: '12px', maxWidth: '540px', width: '100%', padding: '1.5rem', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)' }} onClick={e => e.stopPropagation()}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-              <h3 style={{ margin: 0, fontSize: '1.25rem' }}>September 2026 Monthly Overview</h3>
+              <h3 style={{ margin: 0, fontSize: '1.25rem' }}>Monthly Overview</h3>
               <button type="button" onClick={() => setIsMonthlyModalOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
                 <XMarkIcon style={{ width: '20px' }} />
               </button>

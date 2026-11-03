@@ -1,22 +1,93 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import './Transactions.css';
-import { MagnifyingGlassIcon, ChevronDownIcon, QuestionMarkCircleIcon } from '@heroicons/react/24/outline';
+import { MagnifyingGlassIcon, QuestionMarkCircleIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
+import { supabase } from '../../lib/supabase';
 
 export default function Transactions() {
-  const initialData = [
-    { id: 'TX-2041', regNo: 'REG-1049', patient: 'Riya Sharma', ref: 'Self', date: '13 Sep 2026', time: '10:42 AM', dcn: 'D-01', cc: 'Main Lab', amount: 850, method: 'UPI', receivedBy: 'Counter 1' },
-    { id: 'TX-2040', regNo: 'REG-1050', patient: 'Aarav Singh', ref: 'Dr. Smith', date: '13 Sep 2026', time: '10:15 AM', dcn: 'D-01', cc: 'Main Lab', amount: 600, method: 'Cash', receivedBy: 'Counter 1' },
-    { id: 'TX-2039', regNo: 'REG-1051', patient: 'Meera Verma', ref: 'Dr. Jones', date: '12 Sep 2026', time: '09:54 AM', dcn: 'D-02', cc: 'Branch A', amount: 250, method: 'Card', receivedBy: 'Counter 2' },
-    { id: 'TX-2038', regNo: 'REG-1042', patient: 'Vikram Joshi', ref: 'Self', date: '11 Sep 2026', time: '14:20 PM', dcn: 'D-01', cc: 'Main Lab', amount: 1200, method: 'UPI', receivedBy: 'Counter 1' },
-    { id: 'TX-2037', regNo: 'REG-1038', patient: 'Ananya Sharma', ref: 'Dr. A. K. Gupta', date: '10 Sep 2026', time: '11:10 AM', dcn: 'D-01', cc: 'Main Lab', amount: 450, method: 'UPI', receivedBy: 'Online Portal' }
-  ];
-
-  const [transactions] = useState(initialData);
+  const [transactions, setTransactions] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [modeFilter, setModeFilter] = useState('All');
   const [centreFilter, setCentreFilter] = useState('All');
-  const [typeFilter, setTypeFilter] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilters, setActiveFilters] = useState({ mode: 'All', centre: 'All', query: '' });
+
+  // Map database transaction row to UI display object
+  const mapDbTransaction = (row) => {
+    const createdDate = row.created_at ? new Date(row.created_at) : (row.date ? new Date(row.date) : new Date());
+    return {
+      id: row.id,
+      regNo: row.reg_no || 'REG-1001',
+      patient: row.patient || row.patient_name || 'Walk-in Patient',
+      ref: row.ref || 'Self',
+      date: row.date || createdDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
+      time: row.time || createdDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      dcn: row.dcn || 'D-01',
+      cc: row.cc || 'Main Lab',
+      amount: Number(row.amount || 0),
+      method: row.method || row.payment_mode || 'Cash',
+      receivedBy: row.received_by || 'Cashier Desk'
+    };
+  };
+
+  const fetchTransactions = async () => {
+    try {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('transactions')
+        .select('*')
+        .order('id', { ascending: false });
+
+      if (error) {
+        console.warn('[Transactions] Supabase query notice:', error);
+      }
+
+      if (data && data.length > 0) {
+        const sorted = [...data].sort((a, b) => {
+          if (a.created_at && b.created_at) {
+            return new Date(b.created_at) - new Date(a.created_at);
+          }
+          return String(b.id || '').localeCompare(String(a.id || ''));
+        });
+        setTransactions(sorted.map(mapDbTransaction));
+      } else {
+        setTransactions([]);
+      }
+    } catch (err) {
+      console.warn('[Transactions] Fetch exception:', err);
+      setTransactions([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchTransactions();
+
+    // Attach Realtime listener to push new rows into local state array as they occur
+    const channel = supabase.channel('transactions-live-channel')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'transactions' }, (payload) => {
+        if (payload.new) {
+          const newRow = mapDbTransaction(payload.new);
+          setTransactions(prev => [newRow, ...prev.filter(t => t.id !== newRow.id)]);
+        }
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'transactions' }, (payload) => {
+        if (payload.new) {
+          const updatedRow = mapDbTransaction(payload.new);
+          setTransactions(prev => prev.map(t => t.id === updatedRow.id ? updatedRow : t));
+        }
+      })
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'transactions' }, (payload) => {
+        if (payload.old) {
+          setTransactions(prev => prev.filter(t => t.id !== payload.old.id));
+        }
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
 
   const handleSearch = () => {
     setActiveFilters({ mode: modeFilter, centre: centreFilter, query: searchQuery });
@@ -25,7 +96,6 @@ export default function Transactions() {
   const handleClear = () => {
     setModeFilter('All');
     setCentreFilter('All');
-    setTypeFilter('All');
     setSearchQuery('');
     setActiveFilters({ mode: 'All', centre: 'All', query: '' });
   };
@@ -41,18 +111,34 @@ export default function Transactions() {
 
   return (
     <div className="cases-view-container">
-      <h2>Financial Transactions Ledger</h2>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+        <div>
+          <h2 style={{ margin: '0 0 0.25rem' }}>Financial Transactions Ledger</h2>
+          <p style={{ margin: 0, fontSize: '0.85rem', color: '#64748b' }}>
+            Real-time cashier journal & transaction auditing directly linked to Supabase.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={fetchTransactions}
+          className="cases-btn cases-btn-white"
+          style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem' }}
+          title="Refresh ledger from database"
+        >
+          <ArrowPathIcon style={{ width: '15px' }} /> Refresh Ledger
+        </button>
+      </div>
       
       <div className="cases-form-row">
         <div className="cases-field cases-field-duration">
           <label className="cases-label-with-icon">Duration <QuestionMarkCircleIcon className="cases-help-icon" /></label>
           <div className="cases-duration-group">
             <select className="cases-select cases-select-duration">
+              <option>All Calendar Records</option>
               <option>Past 7 days</option>
-              <option>Past 30 days</option>
               <option>Today</option>
             </select>
-            <input type="text" className="cases-input cases-input-date" value="06 Sep 2026 to 13 Sep 2026" readOnly />
+            <input type="text" className="cases-input cases-input-date" value="Live Realtime Journal" readOnly />
           </div>
         </div>
         
@@ -113,10 +199,17 @@ export default function Transactions() {
           </tr>
         </thead>
         <tbody>
-          {filtered.length === 0 ? (
+          {loading ? (
+            <tr>
+              <td colSpan="11" style={{ textAlign: 'center', padding: '2.5rem' }}>
+                <div style={{ display: 'inline-block', width: '28px', height: '28px', border: '3px solid #cbd5e1', borderTopColor: '#15803d', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                <div style={{ marginTop: '0.75rem', fontSize: '0.875rem', color: '#64748b' }}>Hydrating transactions ledger in real time...</div>
+              </td>
+            </tr>
+          ) : filtered.length === 0 ? (
             <tr>
               <td colSpan="11" style={{ textAlign: 'center', padding: '2rem', color: '#64748b' }}>
-                No transactions found for the selected filter.
+                No live transactions found for the selected filter.
               </td>
             </tr>
           ) : (
@@ -131,12 +224,23 @@ export default function Transactions() {
                 <td>{t.dcn}</td>
                 <td>{t.cc}</td>
                 <td><strong>Rs. {t.amount}</strong></td>
-                <td>{t.method}</td>
+                <td>
+                  <span style={{
+                    padding: '0.2rem 0.55rem',
+                    borderRadius: '12px',
+                    fontSize: '0.75rem',
+                    fontWeight: '700',
+                    backgroundColor: t.method === 'Cash' ? '#ecfdf5' : t.method === 'UPI' ? '#eff6ff' : '#fef3c7',
+                    color: t.method === 'Cash' ? '#047857' : t.method === 'UPI' ? '#1d4ed8' : '#b45309'
+                  }}>
+                    {t.method}
+                  </span>
+                </td>
                 <td>{t.receivedBy}</td>
               </tr>
             ))
           )}
-          {filtered.length > 0 && (
+          {!loading && filtered.length > 0 && (
             <tr style={{ backgroundColor: '#f8fafc', fontWeight: '700' }}>
               <td colSpan="8" style={{ textAlign: 'right', padding: '0.85rem' }}>Filtered Transactions Total:</td>
               <td colSpan="3" style={{ color: '#15803d', padding: '0.85rem', fontSize: '1rem' }}>Rs. {totalAmount}</td>

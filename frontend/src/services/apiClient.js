@@ -17,6 +17,8 @@
  *   3. http://localhost:5000  for local dev
  */
 
+import { logger } from '../utils/logger';
+
 const resolveBaseUrl = () => {
   // 1. Explicit env var — set in .env (dev) or .env.production (Vercel build)
   if (import.meta.env.VITE_API_BASE_URL) {
@@ -138,6 +140,13 @@ class ApiClient {
       }
 
       if (!response.ok) {
+        logger.network(`HTTP ${response.status} ${response.statusText || 'Error'} on ${method} ${url}`, {
+          endpoint,
+          status: response.status,
+          method,
+          data
+        });
+
         // For /api/resources/* a non-ok response should still use fallback
         // rather than throwing, so the UI never breaks.
         if (fallbackFn) {
@@ -154,15 +163,20 @@ class ApiClient {
       return { success: true, data, status: response.status };
 
     } catch (err) {
-      // Silently fall back — no console.error that would spam DevTools
+      // Log through diagnostic interceptor
       if (ENABLE_LOGS) {
-        console.warn(`[API Fallback] ${method} ${url}: ${err.message}`);
+        logger.network(`[API Fallback] ${method} ${url}`, { error: err.message });
       }
 
       if (fallbackFn) {
         this.isBackendAvailable = false;
         return await fallbackFn();
       }
+
+      logger.network(`Network API connection error: ${method} ${url}`, {
+        error: err.message,
+        stack: err.stack
+      });
 
       return {
         success: false,

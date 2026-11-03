@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
 import { supabase } from './lib/supabase';
+import authService, { PRESET_SECURITY_QUESTIONS } from './services/authService';
+import Footer from './components/common/Footer';
 import './Registration.css';
 import logo from './assets/logo.png';
 import { 
@@ -59,7 +61,7 @@ export default function Registration({ initialMode }) {
   const [showLoginPassword, setShowLoginPassword] = useState(false);
   const [copiedPassword, setCopiedPassword] = useState(false);
 
-  // Sign up state - expanded
+  // Sign up state - expanded with Security Questions
   const [signUpForm, setSignUpForm] = useState({
     name: '',
     email: '',
@@ -70,18 +72,23 @@ export default function Registration({ initialMode }) {
     centerName: '',
     designation: '',
     password: '',
-    confirmPassword: ''
+    confirmPassword: '',
+    securityQuestion: "What is your childhood nickname?",
+    securityAnswer: '',
+    securityQuestion1: "What is your childhood nickname?",
+    securityAnswer1: ''
   });
   const [showSignupPassword, setShowSignupPassword] = useState(false);
   const [showSignupConfirm, setShowSignupConfirm] = useState(false);
   const [copiedSignupPassword, setCopiedSignupPassword] = useState(false);
 
-  // Forgot password state
+  // Forgot password state - 3-step Security Questions recovery flow
   const [forgotEmail, setForgotEmail] = useState('');
-  const [resetCode, setResetCode] = useState('');
+  const [securityQuestion, setSecurityQuestion] = useState('');
+  const [securityAnswerInput, setSecurityAnswerInput] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmNewPassword, setConfirmNewPassword] = useState('');
-  const [forgotStep, setForgotStep] = useState(1);
+  const [forgotStep, setForgotStep] = useState(1); // 1: Identify, 2: Challenge & Enter New Password, 3: Success
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmNewPassword, setShowConfirmNewPassword] = useState(false);
 
@@ -184,24 +191,29 @@ export default function Registration({ initialMode }) {
     }
 
     setIsSubmitting(true);
-    const result = await login(trimmedEmail, loginPassword, role);
-    setIsSubmitting(false);
-
-    // Gatekeeper Logic: Mathematically locked behind a verified Supabase session object
-    if (result.success && result.session) {
-      const fromPath = location.state?.from?.pathname;
-      if (fromPath && (
-        (result.user.role === 'citizen' && fromPath.startsWith('/portal')) ||
-        (result.user.role === 'authority' && fromPath.startsWith('/app'))
-      )) {
-        navigate(fromPath);
-      } else if (result.user.role === 'citizen') {
-        navigate('/portal/dashboard');
+    try {
+      const result = await login(trimmedEmail, loginPassword, role);
+      // Gatekeeper Logic: Mathematically locked behind a verified Supabase session object
+      if (result && result.success && result.session) {
+        const fromPath = location.state?.from?.pathname;
+        if (fromPath && (
+          (result.user.role === 'citizen' && fromPath.startsWith('/portal')) ||
+          (result.user.role === 'authority' && fromPath.startsWith('/app'))
+        )) {
+          navigate(fromPath);
+        } else if (result.user.role === 'citizen') {
+          navigate('/portal/dashboard');
+        } else {
+          navigate('/app/getting-started');
+        }
       } else {
-        navigate('/app/getting-started');
+        setError(result?.error || 'Authentication failed. Invalid credentials or user not found.');
       }
-    } else {
-      setError(result.error || 'Authentication failed. Invalid credentials or user not found.');
+    } catch (err) {
+      console.warn('Authentication exception caught:', err);
+      setError(err?.message || 'Server or network error encountered during sign in. Please try again.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -257,94 +269,129 @@ export default function Registration({ initialMode }) {
       return;
     }
 
+    const chosenAnswer = (signUpForm.securityAnswer || signUpForm.securityAnswer1 || '').trim();
+    if (!chosenAnswer) {
+      setError('Please provide an answer to your security question for password recovery.');
+      return;
+    }
+
     setIsSubmitting(true);
     const userFullName = signUpForm.name.trim();
 
-    // Execute Supabase signUp with required options.data.full_name payload
-    const result = await signup({
-      name: userFullName,
-      email: signUpForm.email.trim().toLowerCase(),
-      phone: cleanPhone,
-      dob: signUpForm.dob || '',
-      gender: signUpForm.gender || '',
-      address: signUpForm.address || '',
-      centerName: signUpForm.centerName,
-      designation: signUpForm.designation || '',
-      password: signUpForm.password,
-      role
-    });
-    setIsSubmitting(false);
+    try {
+      // Execute Supabase signUp with required options.data.full_name payload and security questions
+      const result = await signup({
+        name: userFullName,
+        email: signUpForm.email.trim().toLowerCase(),
+        phone: cleanPhone,
+        dob: signUpForm.dob || '',
+        gender: signUpForm.gender || '',
+        address: signUpForm.address || '',
+        centerName: signUpForm.centerName,
+        designation: signUpForm.designation || '',
+        password: signUpForm.password,
+        securityQuestion: signUpForm.securityQuestion || signUpForm.securityQuestion1,
+        securityAnswer: chosenAnswer.toLowerCase(),
+        securityQuestion1: signUpForm.securityQuestion || signUpForm.securityQuestion1,
+        securityAnswer1: chosenAnswer.toLowerCase(),
+        role
+      });
 
-    if (result.success) {
-      // Do NOT auto-login — redirect to sign in with success message
-      setSignUpForm({ name: '', email: '', phone: '', dob: '', gender: '', address: '', centerName: '', designation: '', password: '', confirmPassword: '' });
-      setSuccessMsg('Account created successfully in database! Please sign in with your credentials.');
-      setTimeout(() => {
-        switchMode('signin');
-      }, 1500);
-    } else {
-      setError(result.error || 'Registration failed with database.');
+      if (result && result.success) {
+        // Do NOT auto-login — redirect to sign in with success message
+        setSignUpForm({
+          name: '', email: '', phone: '', dob: '', gender: '', address: '',
+          centerName: '', designation: '', password: '', confirmPassword: '',
+          securityQuestion: "What is your childhood nickname?",
+          securityAnswer: '',
+          securityQuestion1: "What is your childhood nickname?",
+          securityAnswer1: ''
+        });
+        setSuccessMsg('Account created successfully in database! Please sign in with your credentials.');
+        setTimeout(() => {
+          switchMode('signin');
+        }, 1500);
+      } else {
+        setError(result?.error || 'Registration failed with database.');
+      }
+    } catch (err) {
+      console.warn('Signup exception caught:', err);
+      setError(err?.message || 'Server error encountered during registration. Please verify details.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
-  // Forgot password - Step 1: Send Supabase password reset email
-  const handleRequestResetCode = async (e) => {
+  // Forgot password - Step 1 (Identify): Query user's security question tied to email
+  const handleQuerySecurityQuestion = async (e) => {
     e.preventDefault();
     setError('');
-    const cleanEmail = forgotEmail.trim().toLowerCase();
+    const cleanEmail = (forgotEmail || '').trim().toLowerCase();
     if (!cleanEmail || !EMAIL_REGEX.test(cleanEmail)) {
       setError('Please enter a valid email address.');
       return;
     }
+
     setIsSubmitting(true);
-    const { error: resetErr } = await supabase.auth.resetPasswordForEmail(cleanEmail);
-    setIsSubmitting(false);
+    try {
+      const result = await authService.getSecurityQuestion(cleanEmail);
+      if (!result || !result.success) {
+        setError(result?.error || 'No account found with this email address.');
+        return;
+      }
 
-    if (resetErr) {
-      setError(resetErr.message || 'Could not send recovery link. Please try again.');
-      return;
+      setSecurityQuestion(result.question || 'What is your childhood nickname?');
+      setForgotStep(2);
+      setSuccessMsg('Security question loaded. Please answer the question and enter your new password.');
+    } catch (err) {
+      console.warn('Security question query exception:', err);
+      setError(err?.message || 'Unable to retrieve security question. Please try again.');
+    } finally {
+      setIsSubmitting(false);
     }
-
-    setForgotStep(2);
-    setSuccessMsg(`A password recovery email has been sent to ${cleanEmail}. Please check your inbox.`);
   };
 
-  // Forgot password - Step 2: Verify code and set new password in Supabase
-  const handleResetPassword = async (e) => {
+  // Forgot password - Step 2 (Challenge & Execute): Verify answer and execute custom Postgres RPC
+  const handleExecutePasswordReset = async (e) => {
     e.preventDefault();
     setError('');
+
+    const cleanAnswer = (securityAnswerInput || '').trim();
+    if (!cleanAnswer) {
+      setError('Please enter your security answer.');
+      return;
+    }
 
     if (!newPassword || newPassword.length < 6) {
       setError('New password must be at least 6 characters long.');
       return;
     }
-    if (newPassword !== confirmNewPassword) {
+
+    if (confirmNewPassword && newPassword !== confirmNewPassword) {
       setError('Passwords do not match.');
       return;
     }
 
     setIsSubmitting(true);
-    if (resetCode && resetCode.length >= 6) {
-      const { error: verifyErr } = await supabase.auth.verifyOtp({
-        email: forgotEmail.trim().toLowerCase(),
-        token: resetCode.trim(),
-        type: 'recovery'
-      });
-      if (verifyErr) {
-        setIsSubmitting(false);
-        setError(verifyErr.message || 'Invalid or expired recovery code.');
-        return;
+    try {
+      // Step 3 (Execute): Trigger custom Supabase RPC function (SECURITY DEFINER bypass)
+      const result = await authService.resetPasswordViaSecurityQuestion(forgotEmail, cleanAnswer, newPassword);
+      if (result && result.success) {
+        setForgotStep(3);
+        setSuccessMsg(result.message || 'Password updated successfully! Redirecting to sign in...');
+        setTimeout(() => {
+          setLoginEmail(forgotEmail);
+          setLoginPassword('');
+          switchMode('signin');
+        }, 1800);
+      } else {
+        setError(result?.error || 'Incorrect security answer. Please check your answer and try again.');
       }
-    }
-
-    const { error: updateErr } = await supabase.auth.updateUser({ password: newPassword });
-    setIsSubmitting(false);
-
-    if (updateErr) {
-      setError(updateErr.message || 'Password update failed.');
-    } else {
-      setForgotStep(3);
-      setSuccessMsg('Your password has been successfully updated in Supabase! You can now sign in.');
+    } catch (err) {
+      console.warn('Password reset exception:', err);
+      setError(err?.message || 'Password update encountered an error. Please try again.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -353,7 +400,8 @@ export default function Registration({ initialMode }) {
 
   return (
     <div className="registration-container">
-      <div className="registration-card">
+      <div className="registration-content-wrapper">
+        <div className="registration-card">
         {/* Brand Logo in the middle */}
         <div className="registration-logo-wrapper">
           <Link to="/" title="LabSetu Home">
@@ -676,6 +724,39 @@ export default function Registration({ initialMode }) {
               )}
             </div>
 
+            {/* Security Questions for Password Recovery */}
+            <div style={{ marginTop: '0.75rem', marginBottom: '1.25rem', padding: '0.85rem', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+              <div style={{ fontSize: '0.85rem', fontWeight: '700', color: '#0f172a', marginBottom: '0.35rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                <ShieldCheckIcon style={{ width: '18px', height: '18px', color: '#15803d' }} />
+                Password Recovery Security Questions (Required)
+              </div>
+              <p style={{ fontSize: '0.75rem', color: '#64748b', margin: '0 0 0.75rem 0' }}>
+                These questions allow you to securely recover your account without relying on email OTPs.
+              </p>
+
+              <div className="registration-input-group" style={{ marginBottom: '0.65rem' }}>
+                <label htmlFor="signup-sq" style={{ fontSize: '0.8rem' }}>Security Question <span className="req">*</span></label>
+                <select
+                  id="signup-sq"
+                  value={signUpForm.securityQuestion}
+                  onChange={(e) => setSignUpForm({ ...signUpForm, securityQuestion: e.target.value, securityQuestion1: e.target.value })}
+                  style={{ width: '100%', padding: '0.55rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.85rem', background: '#fff' }}
+                >
+                  {PRESET_SECURITY_QUESTIONS.map((q) => (
+                    <option key={q} value={q}>{q}</option>
+                  ))}
+                </select>
+                <input
+                  type="text"
+                  placeholder="Your answer (e.g. Sunny)"
+                  value={signUpForm.securityAnswer}
+                  onChange={(e) => setSignUpForm({ ...signUpForm, securityAnswer: e.target.value, securityAnswer1: e.target.value })}
+                  style={{ width: '100%', marginTop: '0.35rem', padding: '0.55rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.85rem' }}
+                  required
+                />
+              </div>
+            </div>
+
             <button 
               type="submit" 
               className="registration-button primary" 
@@ -697,14 +778,15 @@ export default function Registration({ initialMode }) {
           </form>
         )}
 
-        {/* VIEW 3: FORGOT PASSWORD */}
+        {/* VIEW 3: FORGOT PASSWORD VIA CUSTOM SECURITY QUESTION BYPASS */}
         {mode === 'forgot' && (
           <div className="forgot-password-flow">
+            {/* Step 1 (Identify): Query custom security question tied to account email */}
             {forgotStep === 1 && (
-              <form className="registration-form" onSubmit={handleRequestResetCode}>
-                <p className="forgot-description">
-                  Enter the email address associated with your account. If an account exists, a recovery code will be sent.
-                </p>
+              <form className="registration-form" onSubmit={handleQuerySecurityQuestion}>
+                <div style={{ padding: '0.75rem', background: '#ecfdf5', borderRadius: '8px', border: '1px solid #a7f3d0', marginBottom: '1rem', fontSize: '0.85rem', color: '#065f46' }}>
+                  <strong>Security Question Recovery:</strong> Recover and set your password instantly without needing an email verification link or 6-digit OTP.
+                </div>
 
                 <div className="registration-input-group">
                   <label htmlFor="forgot-email">Account Email</label>
@@ -718,8 +800,8 @@ export default function Registration({ initialMode }) {
                   />
                 </div>
 
-                <button type="submit" className="registration-button primary">
-                  Send Recovery Code
+                <button type="submit" className="registration-button primary" disabled={isSubmitting}>
+                  {isSubmitting ? 'Searching Account...' : 'Continue to Security Question'}
                 </button>
 
                 <button
@@ -733,31 +815,42 @@ export default function Registration({ initialMode }) {
               </form>
             )}
 
+            {/* Step 2 (Challenge & Execute): Display custom question & collect answer + new password */}
             {forgotStep === 2 && (
-              <form className="registration-form" onSubmit={handleResetPassword}>
-                <div className="demo-notice-box" style={{ background: '#f0fdf4', borderColor: '#86efac', color: '#166534' }}>
-                  <strong>Supabase Recovery:</strong> If your email came with a 6-digit confirmation code, enter it below with your new password.
+              <form className="registration-form" onSubmit={handleExecutePasswordReset}>
+                <div style={{ padding: '0.85rem', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '1rem' }}>
+                  <div style={{ fontSize: '0.75rem', textTransform: 'uppercase', color: '#64748b', fontWeight: '700', letterSpacing: '0.05em', marginBottom: '0.25rem' }}>
+                    Security Question for {forgotEmail}
+                  </div>
+                  <div style={{ fontSize: '0.95rem', fontWeight: '600', color: '#0f172a' }}>
+                    "{securityQuestion}"
+                  </div>
                 </div>
 
-                <div className="registration-input-group">
-                  <label htmlFor="reset-code">6-digit Verification Code</label>
+                {/* Field 1: Security Answer */}
+                <div className="registration-input-group" style={{ marginBottom: '1rem' }}>
+                  <label htmlFor="security-answer-input" style={{ fontWeight: '600', color: '#1e293b' }}>
+                    Your Security Answer <span className="req">*</span>
+                  </label>
                   <input
                     type="text"
-                    id="reset-code"
-                    placeholder="Enter 6-digit code"
-                    value={resetCode}
-                    onChange={(e) => setResetCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    id="security-answer-input"
+                    placeholder="Enter the answer you configured during registration"
+                    value={securityAnswerInput}
+                    onChange={(e) => setSecurityAnswerInput(e.target.value)}
                     required
+                    style={{ marginTop: '0.35rem' }}
                   />
                 </div>
 
-                <div className="registration-input-group">
-                  <label htmlFor="new-password">New Password (min 6 chars)</label>
+                {/* Field 2: New Password */}
+                <div className="registration-input-group" style={{ marginBottom: '1.25rem' }}>
+                  <label htmlFor="new-password">New Password (min 6 chars) <span className="req">*</span></label>
                   <div className="password-input-wrapper">
                     <input
                       type={showNewPassword ? 'text' : 'password'}
                       id="new-password"
-                      placeholder="New password"
+                      placeholder="Enter new password"
                       value={newPassword}
                       onChange={(e) => setNewPassword(e.target.value)}
                       required
@@ -766,46 +859,37 @@ export default function Registration({ initialMode }) {
                       {showNewPassword ? <EyeSlashIcon className="pw-toggle-icon" /> : <EyeIcon className="pw-toggle-icon" />}
                     </button>
                   </div>
+                  {newPassword && (
+                    <div style={{ marginTop: '0.35rem', fontSize: '0.75rem', color: '#64748b' }}>
+                      Strength: <strong style={{ color: getPasswordStrength(newPassword).color }}>{getPasswordStrength(newPassword).label}</strong>
+                    </div>
+                  )}
                 </div>
 
-                <div className="registration-input-group">
-                  <label htmlFor="confirm-new-password">Confirm New Password</label>
-                  <div className="password-input-wrapper">
-                    <input
-                      type={showConfirmNewPassword ? 'text' : 'password'}
-                      id="confirm-new-password"
-                      placeholder="Confirm new password"
-                      value={confirmNewPassword}
-                      onChange={(e) => setConfirmNewPassword(e.target.value)}
-                      required
-                    />
-                    <button type="button" className="password-toggle-btn" onClick={() => setShowConfirmNewPassword(!showConfirmNewPassword)} tabIndex={-1} aria-label={showConfirmNewPassword ? 'Hide password' : 'Show password'}>
-                      {showConfirmNewPassword ? <EyeSlashIcon className="pw-toggle-icon" /> : <EyeIcon className="pw-toggle-icon" />}
-                    </button>
-                  </div>
-                </div>
-
-                <button type="submit" className="registration-button primary">
-                  Update Password
+                {/* Submit button: Update Password */}
+                <button type="submit" className="registration-button primary" disabled={isSubmitting}>
+                  {isSubmitting ? 'Updating Password...' : 'Update Password'}
                 </button>
 
                 <button
                   type="button"
                   className="registration-button secondary back-button"
                   onClick={() => setForgotStep(1)}
+                  disabled={isSubmitting}
                 >
                   <ArrowLeftIcon style={{ width: '16px' }} />
-                  Back
+                  Change Email
                 </button>
               </form>
             )}
 
+            {/* Step 3 (Success): Confirmation state with auto-redirect to login */}
             {forgotStep === 3 && (
               <div className="forgot-success-state">
                 <CheckCircleIcon className="success-big-icon" />
                 <h3 className="success-heading">Password Reset Successful</h3>
                 <p className="success-sub">
-                  Your password has been securely updated. You can now log into your account with the new credentials.
+                  Your password has been securely updated in the database. You can now log into your account with your new credentials.
                 </p>
                 <button
                   type="button"
@@ -823,7 +907,10 @@ export default function Registration({ initialMode }) {
           </div>
         )}
 
+        </div>
       </div>
+
+      <Footer />
     </div>
   );
 }
