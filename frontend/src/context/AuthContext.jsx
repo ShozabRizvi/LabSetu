@@ -15,6 +15,20 @@ export function AuthProvider({ children }) {
       return null;
     }
   };
+  const persistAccessToken = (token, role) => {
+    if (!token) return;
+    const tokenKey = role === 'authority' ? 'labsetu_authority_token' : 'labsetu_patient_token';
+    sessionStorage.setItem(tokenKey, token);
+    localStorage.setItem(tokenKey, token);
+    apiClient.setToken(token);
+  };
+  const clearAccessTokens = () => {
+    for (const key of ['labsetu_authority_token', 'labsetu_patient_token', 'labsetu_token']) {
+      sessionStorage.removeItem(key);
+      localStorage.removeItem(key);
+    }
+    apiClient.setToken(null);
+  };
 
   // Synchronous initialization strictly from verified stored session, never fake users
   const [authorityUser, setAuthorityUser] = useState(() => {
@@ -110,14 +124,9 @@ export function AuthProvider({ children }) {
           localStorage.removeItem('labsetu_authority_session');
           localStorage.removeItem('labsetu_patient_session');
           localStorage.removeItem('labsetu_auth');
-          localStorage.removeItem('labsetu_token');
+          clearAccessTokens();
           sessionStorage.clear();
           return;
-        }
-
-        // Restore active token
-        if (session.access_token) {
-          apiClient.setToken(session.access_token);
         }
 
         const userId = sessionUser.id;
@@ -160,6 +169,7 @@ export function AuthProvider({ children }) {
         const resolvedUhid = dbUhid || (userRole === 'citizen' && userId ? `UHID-${userId.substring(0, 4)}-${new Date().getFullYear()}` : '');
 
         const resolvedLabId = profileRow?.lab_id || 'LAB-1001';
+        persistAccessToken(session.access_token, userRole);
 
         if (userRole === 'authority') {
           const updatedAuth = {
@@ -173,7 +183,8 @@ export function AuthProvider({ children }) {
             center_id: 'cb17e71d-cb76-49e6-a202-4a82c94de5d8',
             labId: resolvedLabId
           };
-          if (isMounted) setAuthorityUser(updatedAuth);
+          if (isMounted) { setPatientUser(null); setAuthorityUser(updatedAuth); }
+          sessionStorage.removeItem('labsetu_patient_session'); localStorage.removeItem('labsetu_patient_session');
           sessionStorage.setItem('labsetu_authority_session', JSON.stringify(updatedAuth));
           localStorage.setItem('labsetu_authority_session', JSON.stringify(updatedAuth));
           sessionStorage.setItem('labsetu_auth', JSON.stringify(updatedAuth));
@@ -196,7 +207,8 @@ export function AuthProvider({ children }) {
             securityQuestion: profileRow?.security_question || profileRow?.security_question_1 || patientRow?.security_question || '',
             securityAnswer: profileRow?.security_answer || profileRow?.security_answer_1 || patientRow?.security_answer || ''
           };
-          if (isMounted) setPatientUser(updatedPatient);
+          if (isMounted) { setAuthorityUser(null); setPatientUser(updatedPatient); }
+          sessionStorage.removeItem('labsetu_authority_session'); localStorage.removeItem('labsetu_authority_session');
           sessionStorage.setItem('labsetu_patient_session', JSON.stringify(updatedPatient));
           localStorage.setItem('labsetu_patient_session', JSON.stringify(updatedPatient));
           sessionStorage.setItem('labsetu_auth', JSON.stringify(updatedPatient));
@@ -212,71 +224,80 @@ export function AuthProvider({ children }) {
     hydrateAuth();
 
     // Listen to real-time auth state changes and dynamically fetch profiles table
-    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (!isMounted) return;
-      if (session?.user) {
-        let profile = null;
-        try {
-          const { data } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', session.user.id)
-            .maybeSingle();
-          if (data) profile = data;
-        } catch (err) {
-          logger.auth('AuthContext onAuthStateChange profile fetch error', { error: err?.message || err });
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      // Supabase invokes this callback while holding its auth lock. Defer profile
+      // queries until after the callback returns to avoid deadlocking refreshes.
+      queueMicrotask(async () => {
+        if (!isMounted) return;
+        if (session?.user) {
+          let profile = null;
+          try {
+            const { data } = await supabase
+              .from('profiles')
+              .select('*')
+              .eq('id', session.user.id)
+              .maybeSingle();
+            if (data) profile = data;
+          } catch (err) {
+            logger.auth('AuthContext onAuthStateChange profile fetch error', { error: err?.message || err });
+          }
+
+          const isAuthRole = session.user.user_metadata?.role === 'authority' || profile?.role === 'admin' || session.user.email === 'shozab64@gmail.com' || session.user.id === 'e1f0bc09-7826-490c-8162-fb0a69d81713';
+          persistAccessToken(session.access_token, isAuthRole ? 'authority' : 'citizen');
+
+          const rawAuthName = profile?.display_name || profile?.full_name || session.user.user_metadata?.full_name;
+          const cleanAuthName = (rawAuthName && !rawAuthName.includes('@')) ? rawAuthName : (isAuthRole ? 'Dr. Shozab Rizvi' : 'Patient');
+
+          const dbUhid = (profile?.uhid && profile.uhid !== 'Pending') ? profile.uhid : null;
+          const resolvedUhid = dbUhid || (isAuthRole ? undefined : (session.user?.id ? `UHID-${session.user.id.substring(0, 4)}-${new Date().getFullYear()}` : ''));
+
+          const resolvedUser = {
+            ...session.user,
+            id: session.user.id,
+            email: session.user.email,
+            role: isAuthRole ? 'authority' : 'citizen',
+            name: cleanAuthName,
+            uhid: resolvedUhid,
+            labId: profile?.lab_id || (isAuthRole ? 'LAB-1001' : undefined),
+            centerName: 'LabSetu Diagnostics',
+            centerId: 'cb17e71d-cb76-49e6-a202-4a82c94de5d8',
+            center_id: 'cb17e71d-cb76-49e6-a202-4a82c94de5d8',
+            phone: profile?.phone || '',
+            address: profile?.address || '',
+            bloodGroup: profile?.blood_group || '',
+            gender: profile?.gender || '',
+            age: profile?.age !== undefined && profile?.age !== null ? profile.age : undefined,
+            emergencyContact: profile?.emergency_contact || '',
+            securityQuestion: profile?.security_question || profile?.security_question_1 || '',
+            securityAnswer: profile?.security_answer || profile?.security_answer_1 || ''
+          };
+
+          if (isAuthRole) {
+            setAuthorityUser(prev => ({ ...(prev || {}), ...resolvedUser }));
+            setPatientUser(null);
+            sessionStorage.removeItem('labsetu_patient_session'); localStorage.removeItem('labsetu_patient_session');
+            sessionStorage.setItem('labsetu_authority_session', JSON.stringify(resolvedUser));
+            localStorage.setItem('labsetu_authority_session', JSON.stringify(resolvedUser));
+          } else {
+            setAuthorityUser(null);
+            setPatientUser(prev => ({ ...(prev || {}), ...resolvedUser }));
+            sessionStorage.removeItem('labsetu_authority_session'); localStorage.removeItem('labsetu_authority_session');
+            sessionStorage.setItem('labsetu_patient_session', JSON.stringify(resolvedUser));
+            localStorage.setItem('labsetu_patient_session', JSON.stringify(resolvedUser));
+          }
+          sessionStorage.setItem('labsetu_auth', JSON.stringify(resolvedUser));
+          localStorage.setItem('labsetu_auth', JSON.stringify(resolvedUser));
+        } else if (event === 'SIGNED_OUT') {
+          setPatientUser(null);
+          setAuthorityUser(null);
+          localStorage.removeItem('labsetu_patient_session');
+          localStorage.removeItem('labsetu_authority_session');
+          localStorage.removeItem('labsetu_auth');
+          localStorage.removeItem('labsetu_family_members');
+          clearAccessTokens();
+          sessionStorage.clear();
         }
-
-        const isAuthRole = session.user.user_metadata?.role === 'authority' || profile?.role === 'admin' || session.user.email === 'shozab64@gmail.com' || session.user.id === 'e1f0bc09-7826-490c-8162-fb0a69d81713';
-
-        const rawAuthName = profile?.display_name || profile?.full_name || session.user.user_metadata?.full_name;
-        const cleanAuthName = (rawAuthName && !rawAuthName.includes('@')) ? rawAuthName : (isAuthRole ? 'Dr. Shozab Rizvi' : 'Patient');
-
-        const dbUhid = (profile?.uhid && profile.uhid !== 'Pending') ? profile.uhid : null;
-        const resolvedUhid = dbUhid || (isAuthRole ? undefined : (session.user?.id ? `UHID-${session.user.id.substring(0, 4)}-${new Date().getFullYear()}` : ''));
-
-        const resolvedUser = {
-          ...session.user,
-          id: session.user.id,
-          email: session.user.email,
-          role: isAuthRole ? 'authority' : 'citizen',
-          name: cleanAuthName,
-          uhid: resolvedUhid,
-          labId: profile?.lab_id || (isAuthRole ? 'LAB-1001' : undefined),
-          centerName: 'LabSetu Diagnostics',
-          centerId: 'cb17e71d-cb76-49e6-a202-4a82c94de5d8',
-          center_id: 'cb17e71d-cb76-49e6-a202-4a82c94de5d8',
-          phone: profile?.phone || '',
-          address: profile?.address || '',
-          bloodGroup: profile?.blood_group || '',
-          gender: profile?.gender || '',
-          age: profile?.age !== undefined && profile?.age !== null ? profile.age : undefined,
-          emergencyContact: profile?.emergency_contact || '',
-          securityQuestion: profile?.security_question || profile?.security_question_1 || '',
-          securityAnswer: profile?.security_answer || profile?.security_answer_1 || ''
-        };
-
-        if (isAuthRole) {
-          setAuthorityUser(prev => ({ ...(prev || {}), ...resolvedUser }));
-          sessionStorage.setItem('labsetu_authority_session', JSON.stringify(resolvedUser));
-          localStorage.setItem('labsetu_authority_session', JSON.stringify(resolvedUser));
-        } else {
-          setPatientUser(prev => ({ ...(prev || {}), ...resolvedUser }));
-          sessionStorage.setItem('labsetu_patient_session', JSON.stringify(resolvedUser));
-          localStorage.setItem('labsetu_patient_session', JSON.stringify(resolvedUser));
-        }
-        sessionStorage.setItem('labsetu_auth', JSON.stringify(resolvedUser));
-        localStorage.setItem('labsetu_auth', JSON.stringify(resolvedUser));
-      } else if (event === 'SIGNED_OUT') {
-        setPatientUser(null);
-        setAuthorityUser(null);
-        localStorage.removeItem('labsetu_patient_session');
-        localStorage.removeItem('labsetu_authority_session');
-        localStorage.removeItem('labsetu_auth');
-        localStorage.removeItem('labsetu_family_members');
-        localStorage.removeItem('labsetu_token');
-        sessionStorage.clear();
-      }
+      });
     });
 
     return () => {
@@ -302,7 +323,6 @@ export function AuthProvider({ children }) {
     if (res.success && res.user && res.session) {
       const user = res.user;
       const sessionKey = user.role === 'authority' ? 'labsetu_authority_session' : 'labsetu_patient_session';
-      const tokenKey = user.role === 'authority' ? 'labsetu_authority_token' : 'labsetu_patient_token';
 
       if (user.role === 'authority') {
         setAuthorityUser(user);
@@ -316,11 +336,7 @@ export function AuthProvider({ children }) {
       localStorage.setItem('labsetu_auth', JSON.stringify(user));
 
       if (res.session.access_token) {
-        sessionStorage.setItem(tokenKey, res.session.access_token);
-        localStorage.setItem(tokenKey, res.session.access_token);
-        sessionStorage.setItem('labsetu_token', res.session.access_token);
-        localStorage.setItem('labsetu_token', res.session.access_token);
-        apiClient.setToken(res.session.access_token);
+        persistAccessToken(res.session.access_token, user.role);
       }
 
       return { ...res, user };

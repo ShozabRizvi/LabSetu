@@ -15,8 +15,6 @@ import {
   CreditCardIcon,
   SquaresPlusIcon,
   ArrowRightOnRectangleIcon,
-  CheckCircleIcon,
-  ClockIcon,
   ShieldCheckIcon,
   XMarkIcon,
   Bars3Icon,
@@ -26,8 +24,7 @@ import {
   BellAlertIcon,
   UserGroupIcon,
   LockClosedIcon,
-  MicrophoneIcon,
-  LanguageIcon
+  MicrophoneIcon
 } from '@heroicons/react/24/outline';
 
 export default function CitizenLayout() {
@@ -42,12 +39,12 @@ export default function CitizenLayout() {
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isHelpModalOpen, setIsHelpModalOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [isVoiceListening, setIsVoiceListening] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  
+  // Mock fallback notifications since assistantService was cleaned up
   const [notifications, setNotifications] = useState([
-    { id: 1, title: 'Lab Report Ready', desc: 'Your Complete Blood Count (CBC) report has been published.', time: '2 hours ago', read: false },
-    { id: 2, title: 'Appointment Confirmed', desc: 'Appointment booked for tomorrow at 10:00 AM.', time: '1 day ago', read: false },
-    { id: 3, title: 'Payment Receipt Available', desc: 'Invoice #INV-2026-1049 receipt is available for download.', time: '3 days ago', read: true }
+    { id: 1, title: 'Booking Confirmed', desc: 'Your pathology visit has been confirmed successfully.', time: 'Just now', read: false },
+    { id: 2, title: 'Sample Collected', desc: 'Phlebotomist has successfully collected your specimen sample.', time: '2 hours ago', read: false }
   ]);
 
   const userMenuRef = useRef(null);
@@ -92,7 +89,7 @@ export default function CitizenLayout() {
   };
 
   const markAllRead = () => {
-    setNotifications(notifications.map(n => ({ ...n, read: true })));
+    setNotifications(prev => prev.map(n => ({ ...n, read: true })));
   };
 
   const handleGlobalSearch = (e) => {
@@ -101,15 +98,6 @@ export default function CitizenLayout() {
       navigate(`/portal/tests?search=${encodeURIComponent(searchQuery.trim())}`);
       setSearchQuery('');
     }
-  };
-
-  const handleVoiceSearch = () => {
-    setIsVoiceListening(true);
-    setTimeout(() => {
-      setIsVoiceListening(false);
-      setSearchQuery('Complete Blood Count');
-      navigate('/portal/tests');
-    }, 2000);
   };
 
   const unreadCount = notifications.filter(n => !n.read).length;
@@ -137,15 +125,13 @@ export default function CitizenLayout() {
           </span>
         </div>
 
-        {/* Global Search with Voice Assistant Simulation */}
+        {/* Search and voice assistant entry */}
         <div className="citizen-header-center">
           <form onSubmit={handleGlobalSearch} className="citizen-search-wrapper" style={{ position: 'relative' }}>
             <MagnifyingGlassIcon className="citizen-search-icon" />
             <input
               type="text"
-              placeholder={isVoiceListening 
-                ? (lang === 'hi' ? '🎙️ सुन रहे हैं... बोलिए (उदा. "सीबीसी टेस्ट")' : '🎙️ Listening... speak test name...') 
-                : (lang === 'hi' ? 'टेस्ट रिपोर्ट, बिल, जांच खोजें...' : 'Search test reports, diagnostic scans, bills...')}
+              placeholder={lang === 'hi' ? 'टेस्ट रिपोर्ट, बिल, जांच खोजें...' : 'Search test reports, diagnostic scans, bills...'}
               className="citizen-search-input"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -153,17 +139,18 @@ export default function CitizenLayout() {
             />
             <button
               type="button"
-              onClick={handleVoiceSearch}
-              title={lang === 'hi' ? 'आवाज़ द्वारा खोजें' : 'Voice Search'}
+              onClick={() => navigate('/portal/assistant')}
+              aria-label={lang === 'hi' ? 'लैबसेतु AI वॉइस असिस्टेंट खोलें' : 'Open LabSetu AI voice assistant'}
+              title={lang === 'hi' ? 'लैबसेतु AI से बात करें' : 'Talk to LabSetu AI'}
               style={{
                 position: 'absolute',
                 right: '0.6rem',
                 top: '50%',
                 transform: 'translateY(-50%)',
-                background: isVoiceListening ? '#fee2e2' : 'none',
+                background: 'none',
                 border: 'none',
                 cursor: 'pointer',
-                color: isVoiceListening ? '#ef4444' : '#64748b',
+                color: '#15803d',
                 padding: '0.2rem',
                 borderRadius: '50%',
                 display: 'flex',
@@ -213,6 +200,14 @@ export default function CitizenLayout() {
             </button>
           </div>
 
+          <NavLink
+            to="/portal/assistant"
+            className="citizen-header-link citizen-assistant-link"
+          >
+            <SparklesIcon className="citizen-icon" />
+            <span>LabSetu Assistant</span>
+          </NavLink>
+
           <button 
             type="button" 
             className="citizen-header-link" 
@@ -244,6 +239,7 @@ export default function CitizenLayout() {
                   )}
                 </div>
                 <div className="notif-list">
+                  {notifications.length === 0 && <p className="notif-desc">No notifications returned for your account.</p>}
                   {notifications.map(n => (
                     <div key={n.id} className={`notif-item ${!n.read ? 'unread' : ''}`}>
                       <div className="notif-title-row">
@@ -598,6 +594,36 @@ export default function CitizenLayout() {
             Complete Profile
           </button>
         </div>
+      )}
+
+      {!['/portal/explainer', '/portal/ai-explainer'].includes(location.pathname) && (
+        <button
+          type="button"
+          onClick={() => navigate('/portal/explainer')}
+          aria-label={lang === 'hi' ? 'क्लिनोवा स्वास्थ्य सहायक खोलें' : 'Open Clinova health assistant'}
+          title={lang === 'hi' ? 'क्लिनोवा' : 'Clinova'}
+          style={{
+            position: 'fixed',
+            right: '1.25rem',
+            bottom: '1.25rem',
+            zIndex: 1000,
+            border: 'none',
+            background: 'linear-gradient(135deg, #15803d, #10b981)',
+            color: '#fff',
+            borderRadius: '999px',
+            boxShadow: '0 12px 30px rgba(21, 128, 61, 0.24)',
+            padding: '0.9rem 1rem',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.55rem',
+            cursor: 'pointer',
+            fontWeight: 700,
+            fontSize: '0.8rem'
+          }}
+        >
+          <MicrophoneIcon style={{ width: '18px', height: '18px' }} />
+          {lang === 'hi' ? 'क्लिनोवा' : 'Clinova'}
+        </button>
       )}
     </div>
   );

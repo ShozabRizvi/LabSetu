@@ -10,7 +10,7 @@ import {
   BuildingOffice2Icon,
   UserCircleIcon,
   ArrowRightIcon,
-  CheckBadgeIcon
+  CheckBadgeIcon,
 } from '@heroicons/react/24/outline';
 import './Home.css';
 

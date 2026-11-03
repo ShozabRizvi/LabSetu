@@ -1,0 +1,356 @@
+.labsetu-voice-panel {
+  width: min(100% - 2rem, 820px);
+  margin: 0 auto 2.5rem;
+  padding: clamp(1rem, 3vw, 1.75rem);
+  border: 1px solid #bbf7d0;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 16px 42px rgba(15, 23, 42, .1);
+  color: #0f172a;
+}
+
+.labsetu-voice-panel-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.labsetu-voice-panel-heading p {
+  margin: 0 0 .35rem;
+  color: #15803d;
+  font-size: .73rem;
+  font-weight: 800;
+  letter-spacing: .09em;
+}
+
+.labsetu-voice-panel-heading h2 {
+  margin: 0;
+  font-size: clamp(1.25rem, 3vw, 1.7rem);
+}
+
+.labsetu-voice-language {
+  display: grid;
+  gap: .25rem;
+  color: #475569;
+  font-size: .8rem;
+}
+
+.labsetu-voice-language select {
+  min-height: 40px;
+  padding: .4rem .6rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #fff;
+  color: #0f172a;
+}
+
+.labsetu-voice-close {
+  align-self: flex-start;
+  border: 0;
+  background: transparent;
+  color: #475569;
+  font-size: 1.6rem;
+  cursor: pointer;
+}
+
+.labsetu-voice-disclaimer,
+.labsetu-voice-review-hint {
+  color: #475569;
+  font-size: .84rem;
+  line-height: 1.5;
+}
+
+.labsetu-voice-messages {
+  display: grid;
+  gap: .8rem;
+  max-height: 360px;
+  overflow: auto;
+  margin: 1rem 0;
+  padding: .85rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #f8fafc;
+}
+
+.labsetu-voice-welcome {
+  margin: .25rem;
+  color: #475569;
+  line-height: 1.55;
+}
+
+.labsetu-voice-message {
+  max-width: 95%;
+  padding: .75rem .9rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.labsetu-voice-message.user {
+  justify-self: end;
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+}
+
+.labsetu-voice-message > strong {
+  font-size: .82rem;
+}
+
+.labsetu-voice-message > p {
+  margin: .4rem 0;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.labsetu-voice-message ul {
+  padding-left: 1.25rem;
+}
+
+.labsetu-voice-status {
+  color: #166534;
+}
+
+.labsetu-voice-composer {
+  display: grid;
+  gap: .55rem;
+}
+
+.labsetu-voice-composer > label {
+  font-weight: 700;
+  font-size: .9rem;
+}
+
+.labsetu-voice-composer textarea {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  padding: .8rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  font: inherit;
+}
+
+.assistant-composer textarea {
+  min-width: 0;
+  flex: 1 1 60%;
+}
+
+.assistant-composer .labsetu-voice-controls {
+  flex: 1 1 100%;
+}
+
+.assistant-message .labsetu-speech-controls {
+  margin: .4rem 0 0 .25rem;
+}
+
+.labsetu-voice-composer > button[type="submit"],
+.labsetu-voice-confirm > button:not(.secondary) {
+  min-height: 44px;
+  padding: .65rem 1rem;
+  border: 0;
+  border-radius: 9px;
+  background: #15803d;
+  color: white;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.labsetu-voice-composer > button:disabled,
+.labsetu-voice-confirm > button:disabled {
+  cursor: not-allowed;
+  opacity: .55;
+}
+
+.labsetu-voice-controls,
+.labsetu-speech-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: .55rem;
+}
+
+.labsetu-voice-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .4rem;
+  min-height: 40px;
+  padding: .45rem .75rem;
+  border: 1px solid #15803d;
+  border-radius: 8px;
+  background: #15803d;
+  color: #fff;
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.labsetu-voice-button svg {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+}
+
+.labsetu-voice-button.secondary {
+  min-height: 34px;
+  padding: .3rem .55rem;
+  border-color: #d1d5db;
+  background: #fff;
+  color: #334155;
+  font-size: .8rem;
+}
+
+.citizen-search-wrapper button[aria-label*="assistant"] {
+  min-width: 36px;
+  min-height: 36px;
+  justify-content: center;
+}
+
+.labsetu-voice-state,
+.labsetu-voice-error,
+.labsetu-speech-controls > span {
+  font-size: .82rem;
+  color: #475569;
+}
+
+.labsetu-voice-error {
+  color: #b91c1c;
+}
+
+.labsetu-speech-controls label {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  font-size: .8rem;
+}
+
+.labsetu-speech-controls input[type="checkbox"] {
+  width: 17px;
+  height: 17px;
+  flex: 0 0 17px;
+  accent-color: #15803d;
+}
+
+.labsetu-voice-button:focus-visible {
+  outline: 3px solid #86c9a0;
+  outline-offset: 3px;
+}
+
+.labsetu-voice-confirm {
+  margin: .8rem 0;
+  padding: .9rem;
+  border: 1px solid #facc15;
+  border-radius: 10px;
+  background: #fffbeb;
+}
+
+.labsetu-voice-confirm button {
+  margin: .35rem .35rem 0 0;
+}
+
+.labsetu-voice-confirm .secondary {
+  min-height: 40px;
+  padding: .55rem .8rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #fff;
+  color: #334155;
+  font: inherit;
+}
+
+.labsetu-voice-signin a {
+  color: #166534;
+  font-weight: 700;
+}
+
+.labsetu-report-explanation {
+  margin: .75rem 0;
+  padding: .9rem;
+  border: 1px solid #cbded0;
+  border-radius: 10px;
+  background: #f8fcf8;
+}
+
+.labsetu-report-explanation h3 {
+  margin: 0 0 .5rem;
+}
+
+.labsetu-report-explanation ul {
+  padding-left: 1.25rem;
+  line-height: 1.5;
+}
+
+.labsetu-report-demo {
+  padding: .55rem;
+  color: #854d0e;
+  background: #fef3c7;
+  font-weight: 800;
+}
+
+.labsetu-report-table-wrap {
+  overflow-x: auto;
+}
+
+.labsetu-report-explanation table {
+  width: 100%;
+  min-width: 600px;
+  border-collapse: collapse;
+  font-size: .82rem;
+}
+
+.labsetu-report-explanation caption {
+  padding: .45rem;
+  text-align: left;
+  font-weight: 700;
+}
+
+.labsetu-report-explanation th,
+.labsetu-report-explanation td {
+  padding: .55rem;
+  border: 1px solid #dbe5dc;
+  text-align: left;
+  vertical-align: top;
+}
+
+.labsetu-report-explanation tbody th span {
+  display: block;
+  margin-top: .3rem;
+  color: #475569;
+  font-weight: 400;
+}
+
+.labsetu-report-note {
+  color: #475569;
+  font-size: .82rem;
+  line-height: 1.5;
+}
+
+.labsetu-report-download {
+  min-height: 40px;
+  padding: .5rem .75rem;
+  border: 1px solid #15803d;
+  border-radius: 8px;
+  background: #fff;
+  color: #166534;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+@media (max-width: 560px) {
+  .labsetu-voice-panel {
+    width: calc(100% - 1rem);
+    padding: 1rem;
+  }
+
+  .labsetu-voice-panel-heading {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .labsetu-voice-message {
+    max-width: 100%;
+  }
+}

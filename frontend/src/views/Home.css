@@ -223,6 +223,34 @@
   transition: all 0.15s ease;
 }
 
+.home-hero-cta-group button.home-cta-btn {
+  border: 0;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.home-cta-ai {
+  background-color: #15803d;
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(21, 128, 61, 0.25);
+}
+
+.home-cta-ai:hover {
+  background-color: #166534;
+  transform: translateY(-1px);
+}
+
+.home-cta-text {
+  background-color: #ffffff;
+  color: #0f172a;
+  border: 1px solid #cbd5e1 !important;
+}
+
+.home-cta-text:hover {
+  background-color: #f8fafc;
+  border-color: #94a3b8 !important;
+}
+
 .home-cta-primary {
   background-color: #15803d;
   color: #ffffff;

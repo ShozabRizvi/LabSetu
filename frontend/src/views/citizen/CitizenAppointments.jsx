@@ -99,6 +99,8 @@ export default function CitizenAppointments({ lang: propLang, addNewBooking, onA
     }
 
     const MASTER_CENTER_ID = 'cb17e71d-cb76-49e6-a202-4a82c94de5d8';
+    const patientName = newAppointment.patientName || currentUser?.name || 'Patient';
+    const patientPhone = newAppointment.mobile || currentUser?.phone || '0000000000';
 
     try {
       // 1. Foreign Key Protection: Fetch or fallback to a valid patient UUID to prevent NOT NULL constraint violation
@@ -138,7 +140,7 @@ export default function CitizenAppointments({ lang: propLang, addNewBooking, onA
               center_id: MASTER_CENTER_ID,
               patient_code: activeUHID || currentUser?.uhid || `PAT-${Date.now().toString().slice(-5)}`,
               full_name: patientName,
-              phone: patientPhone || '0000000000'
+              phone: patientPhone
             }])
             .select('id')
             .maybeSingle();
