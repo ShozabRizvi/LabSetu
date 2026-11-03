@@ -113,37 +113,31 @@ export default function DashboardHome() {
     try {
       setUpdatingId(apptId);
 
-      // 1. Current appointment data find karein
       const target = (liveAppointments || []).find(a => a.id === apptId);
-
-      // 2. assistant_data object ko safely merge karein
       const updatedAssistantData = {
         ...(target?.assistant_data || {}),
         tracking_status: nextStatus,
         status_updated_at: new Date().toISOString()
       };
 
-      // 3. Supabase mein root 'status' aur JSONB 'assistant_data' dono ko ek sath update karein
+      // Database update: root 'status' aur JSONB 'assistant_data' update karein
       const { data, error } = await supabase
         .from('appointments')
         .update({
-          status: nextStatus, // Patient portal ke liye primary status
-          tracking_status: nextStatus, // Agar root column exist karta hai
-          assistant_data: updatedAssistantData, // Metadata sync ke liye
+          status: nextStatus,
+          assistant_data: updatedAssistantData,
           updated_at: new Date().toISOString()
         })
         .eq('id', apptId)
         .select();
 
       if (error) {
-        console.error('[Dashboard] Status update database error:', error.message, error.details);
+        console.error('[Dashboard] Status update error:', error.message);
         alert(`Failed to update status: ${error.message}`);
         return;
       }
 
-      console.log('[Dashboard] Status successfully updated in DB:', data);
-
-      // 4. Local state turant update karein taaki UI smooth rahe
+      // Local state update taaki LIMS dashboard turant refresh ho
       setLiveAppointments(prev =>
         prev.map(a => a.id === apptId ? {
           ...a,
@@ -153,6 +147,7 @@ export default function DashboardHome() {
         } : a)
       );
 
+      console.log('Status updated successfully in DB:', data);
     } catch (err) {
       console.warn('Status update exception:', err);
     } finally {

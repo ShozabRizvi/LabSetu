@@ -45,7 +45,6 @@ export default function CitizenAppointments({ lang: propLang, addNewBooking, onA
     });
   };
 
-  // Fetch appointments directly from Supabase on mount
   const fetchAppointments = async () => {
     try {
       const { data, error } = await supabase
@@ -55,13 +54,16 @@ export default function CitizenAppointments({ lang: propLang, addNewBooking, onA
 
       if (!error && Array.isArray(data)) {
         const mapped = data.map((row) => {
-          const s = (row.tracking_status || row.status || '').toLowerCase();
+          // assistant_data se tracking status read karein
+          const currentStatus = row.assistant_data?.tracking_status || row.status || 'Confirmed';
+          const s = currentStatus.toLowerCase();
+
           let stage = 1;
           if (s.includes('ready') || s.includes('signed') || s.includes('completed')) {
             stage = 4;
           } else if (s.includes('processing') || s.includes('transit') || s.includes('lab')) {
             stage = 3;
-          } else if (s.includes('collected') || s.includes('sample') || s.includes('assigned') || s.includes('phlebotomist')) {
+          } else if (s.includes('collected') || s.includes('sample') || s.includes('assigned') || s.includes('phlebotomist') || s.includes('out for collection')) {
             stage = 2;
           }
 
@@ -73,7 +75,7 @@ export default function CitizenAppointments({ lang: propLang, addNewBooking, onA
             department: row.purpose || 'dept-pathology',
             date: row.appointment_date || (row.created_at ? new Date(row.created_at).toISOString().slice(0, 10) : ''),
             slot: row.assistant_data?.time_slot || row.assistant_data?.slot || row.slot_start || '10:00 AM',
-            status: row.assistant_data?.tracking_status || row.status || 'Confirmed',
+            status: currentStatus, // Correct mapped status
             stage,
             uhid: row.assistant_data?.uhid || currentUser?.uhid,
             prep: row.preparation_instructions || 'Standard laboratory visit.',
